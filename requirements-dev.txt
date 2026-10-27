@@ -1,0 +1,4 @@
+# Só desenvolvimento e CI (qa.py). Nunca vão para o instalador.
+coverage==7.17.0
+ruff==0.17.2
+mutmut==2.5.1

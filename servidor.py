@@ -1,0 +1,476 @@
+"""Servidor local da Central de demandas: entrega a página, os arquivos do módulo e a API.
+
+Acesso: o próprio computador entra direto (papel "maquina", o Escritório); pela rede,
+com o acesso ligado, só com PIN. O PIN do escritório abre tudo ("completo"); o PIN dos operadores só alcança a tela
+de operador das demandas ("operador"). O papel chega ao demandas/api.py em ctx["papel"].
+Só biblioteca padrão. Rodar: py -3 servidor.py (ou iniciar.bat).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import importlib.util
+import ipaddress
+import json
+import os
+import re
+import secrets
+import socket
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs
+
+import store
+
+ROOT = Path(__file__).resolve().parent
+MOD = ROOT / "demandas"
+WEB = ROOT / "web"
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("DEMANDAS_PORT") or 8090)   # DEMANDAS_PORT troca a porta
+MAX_BODY = 16 * 1024 * 1024   # anexo de 5 MB em base64 cabe com folga
+MAX_BODY_ANON = 64 * 1024     # da rede sem sessão (só o PIN entra)
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
+         ".html": "text/html; charset=utf-8"}
+
+# Acesso pela rede (data/rede.json). Fora da máquina tudo exige o PIN; a própria máquina entra direto.
+NET_ON = False          # estado em uso: só muda ao religar o servidor (é ele que escolhe a interface)
+SESSIONS: dict = {}     # sha256 do cookie -> {"exp", "papel"}; cópia em data/sessoes.json (nunca o cookie)
+PAPEIS = ("completo", "operador")   # PIN do escritório (tudo) ou PIN dos operadores (só a tela de operador)
+FAILS: dict = {}        # IP -> [erros, bloqueado até]
+NET_LOCK = threading.RLock()
+SESSION_DAYS = 30
+COOKIE = "demandas_s"
+LOGIN_PAGE = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Central de demandas</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0C1224;color:#E7ECFA;font:16px system-ui,sans-serif}
+form{background:#151E38;border:1px solid #263457;border-radius:18px;padding:28px;width:min(320px,calc(100vw - 32px));box-sizing:border-box;display:grid;gap:14px}
+h1{font-size:20px;margin:0}p{margin:0;color:#93A0BF;font-size:14px}input{font:inherit;font-size:22px;letter-spacing:.3em;text-align:center;padding:10px;border-radius:10px;border:1px solid #263457;background:#0C1224;color:inherit}
+button{font:inherit;font-weight:700;padding:11px;border:0;border-radius:10px;background:#FFFFFF;color:#0C1224;cursor:pointer}.e{color:#EF5B67}</style></head>
+<body><form method="post" action="/api/login"><h1>Central de demandas</h1><p>Digite o PIN mostrado no computador principal, em ⚙ Rede.</p>
+%s<input name="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus aria-label="PIN"><button>Entrar</button></form></body></html>"""
+
+# Sessão do PIN dos operadores: lista fechada, todo o resto é 403 (HEAD conta como GET). As rotas de ADM das demandas
+# (setor/, pessoa/, prioridade, estender, crono, historico, GET anexo/<id>) ficam de fora; o api.py recusa de novo.
+OPERADOR_ROTAS = frozenset({
+    ("GET", "/"), ("GET", "/index.html"), ("GET", "/app.js"), ("GET", "/api/eu"), ("GET", "/api/rev"),
+    ("GET", "/api/local/demandas"),
+})
+OPERADOR_RE = re.compile(r"GET /local/demandas/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,59}"
+                         r"|POST /api/local/demandas/(entrar|sair|vista|demanda/(criar|aceitar|pausar|retomar|concluir"
+                         r"|cancelar|reatribuir|cobrar|comentar)|anexo/(enviar|ler|apagar)|nota/(lida|todas))")
+OPERADOR_MSG = "Aparelho de operador: só a tela de operador das demandas."
+FILE_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}\.(js|css|woff2)$")
+
+
+# ---------- módulo ----------
+_API: list = []
+
+
+def api_mod():
+    """demandas/api.py, carregado uma vez (a pasta entra no sys.path para os imports irmãos do módulo)."""
+    if not _API:
+        if str(MOD) not in sys.path:
+            sys.path.insert(0, str(MOD))
+        spec = importlib.util.spec_from_file_location("demandas_api", MOD / "api.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _API.append(mod)
+    return _API[0]
+
+
+def static_files() -> tuple:
+    return tuple(f for f in getattr(api_mod(), "STATIC", ()) if isinstance(f, str) and FILE_RE.match(f))
+
+
+_REV: dict = {"key": None, "rev": 0}
+
+
+def rev() -> int:
+    """rev do demandas.json sem ler o arquivo a cada consulta (a tela pergunta a cada 3 s)."""
+    p = store.data_dir() / getattr(api_mod(), "REV_FILE", "demandas.json")
+    try:
+        st = p.stat()
+    except OSError:
+        return 0
+    key = (st.st_mtime_ns, st.st_size)
+    if _REV["key"] != key:
+        try:
+            r = json.loads(p.read_text(encoding="utf-8")).get("rev")
+        except (OSError, ValueError, AttributeError):
+            return _REV["rev"]
+        _REV.update(key=key, rev=r if isinstance(r, int) and not isinstance(r, bool) else 0)
+    return _REV["rev"]
+
+
+# ---------- rede e PIN ----------
+def _net_path() -> Path:
+    return store.data_dir() / "rede.json"
+
+
+def _pin_ok(pin) -> bool:
+    return isinstance(pin, str) and pin.isdigit() and len(pin) >= 6
+
+
+def _pin_novo(outro: str = "") -> str:
+    """6 dígitos aleatórios, nunca iguais ao outro PIN (senão o perfil do login seria ambíguo)."""
+    while True:
+        pin = "%06d" % secrets.randbelow(10**6)
+        if pin != outro:
+            return pin
+
+
+def net_config() -> dict:
+    """{"on": bool, "pin": "6 dígitos", "pin_op": "6 dígitos"}; cria os PINs aleatórios na primeira leitura."""
+    with NET_LOCK:
+        try:
+            cfg = json.loads(_net_path().read_text(encoding="utf-8"))
+            if isinstance(cfg, dict) and _pin_ok(cfg.get("pin")):
+                out = {"on": cfg.get("on") is True, "pin": cfg["pin"], "pin_op": cfg.get("pin_op")}
+                if _pin_ok(out["pin_op"]) and out["pin_op"] != out["pin"]:
+                    return out
+                out["pin_op"] = _pin_novo(out["pin"])
+                store.atomic_write(_net_path(), json.dumps(out))
+                return out
+        except (OSError, ValueError):
+            pass
+        pin = _pin_novo()
+        cfg = {"on": False, "pin": pin, "pin_op": _pin_novo(pin)}
+        store.atomic_write(_net_path(), json.dumps(cfg))
+        return cfg
+
+
+def net_save(on=None, new_pin: bool = False, new_pin_op: bool = False) -> dict:
+    with NET_LOCK:
+        cfg = net_config()
+        if on is not None:
+            cfg["on"] = bool(on)
+        if new_pin:
+            cfg["pin"] = _pin_novo(cfg["pin_op"])
+            SESSIONS.clear()  # PIN novo derruba quem entrou com o antigo
+            _sessions_write()
+        if new_pin_op:
+            cfg["pin_op"] = _pin_novo(cfg["pin"])
+            for h in [h for h, s in SESSIONS.items() if s["papel"] == "operador"]:   # só os aparelhos de operador saem
+                del SESSIONS[h]
+            _sessions_write()
+        store.atomic_write(_net_path(), json.dumps(cfg))
+    return cfg
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _sessions_write() -> None:
+    """Chamar dentro de NET_LOCK. Só o hash: quem lê o arquivo não consegue entrar com ele."""
+    store.atomic_write(store.data_dir() / "sessoes.json", json.dumps(SESSIONS))
+
+
+def sessions_load() -> None:
+    """Sessões do PIN sobrevivem ao reinício do servidor; arquivo ruim = ninguém logado."""
+    with NET_LOCK:
+        try:
+            raw = json.loads((store.data_dir() / "sessoes.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(raw, dict):
+            return
+        for h, val in raw.items():
+            exp, papel = (val.get("exp"), val.get("papel")) if isinstance(val, dict) else (None, None)
+            if isinstance(h, str) and re.fullmatch(r"[0-9a-f]{64}", h) and papel in PAPEIS \
+                    and isinstance(exp, (int, float)) and not isinstance(exp, bool) and exp > time.time():
+                SESSIONS[h] = {"exp": float(exp), "papel": papel}
+
+
+def lan_addresses() -> list:
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        return []
+    return sorted({i[4][0] for i in infos if not i[4][0].startswith(("127.", "169.254."))})
+
+
+def check_pin(ip: str, pin: str, now: float | None = None) -> str | None:
+    """Token de sessão se um dos PINs confere; None se errado ou IP bloqueado (5 erros = 5 minutos parado).
+    O PIN digitado decide o perfil: o do escritório dá tudo, o dos operadores só a tela de operador."""
+    now = time.time() if now is None else now
+    with NET_LOCK:
+        cfg = net_config()
+        count, until = FAILS.get(ip, [0, 0.0])
+        if until > now:
+            return None
+        given = pin.encode("utf-8")
+        completo = hmac.compare_digest(given, cfg["pin"].encode("utf-8"))
+        oper = hmac.compare_digest(given, cfg["pin_op"].encode("utf-8"))   # sempre os dois: o tempo não diz qual errou
+        if not (completo or oper):
+            count += 1
+            FAILS[ip] = [0, now + 300] if count >= 5 else [count, 0.0]
+            return None
+        FAILS.pop(ip, None)
+        for tok in [t for t, s in SESSIONS.items() if s["exp"] < now]:
+            del SESSIONS[tok]
+        if len(SESSIONS) >= 200:  # teto: descarta a sessão mais antiga
+            del SESSIONS[min(SESSIONS, key=lambda t: SESSIONS[t]["exp"])]
+        token = secrets.token_urlsafe(32)
+        SESSIONS[_token_hash(token)] = {"exp": now + SESSION_DAYS * 86400, "papel": "completo" if completo else "operador"}
+        _sessions_write()
+        return token
+
+
+def session_ok(cookie_header: str | None) -> str | None:
+    """Perfil da sessão do cookie ("completo" ou "operador"); None = sem sessão válida."""
+    for part in (cookie_header or "").split(";"):
+        name, _, value = part.strip().partition("=")
+        if name == COOKIE and value:
+            with NET_LOCK:
+                s = SESSIONS.get(_token_hash(value))
+            return s["papel"] if s is not None and s["exp"] > time.time() else None
+    return None
+
+
+def ip_host(host: str, port: int) -> bool:
+    """Host "IPv4:porta": um IP literal não sofre DNS rebinding, por isso pode vir da rede."""
+    name, _, p = host.rpartition(":")
+    try:
+        return p == str(port) and ipaddress.ip_address(name).version == 4
+    except ValueError:
+        return False
+
+
+# ---------- HTTP ----------
+class Handler(BaseHTTPRequestHandler):
+    timeout = 60   # segundos sem receber nada: cliente lento ou parado não prende a thread para sempre
+    papel = None
+
+    def log_message(self, fmt, *args):   # sem eco de cada pedido no console
+        pass
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")  # no-referrer faz o form de PIN mandar Origin: null
+        self.send_header("Content-Security-Policy", CSP)
+        super().end_headers()
+
+    def _local(self) -> set:
+        port = self.server.server_address[1]
+        return {"127.0.0.1:%d" % port, "localhost:%d" % port}
+
+    def _host_ok(self) -> bool:
+        # Host estranho = outro site apontando um domínio para 127.0.0.1 (DNS rebinding)
+        host = self.headers.get("Host")
+        if host is None or host in self._local() or (NET_ON and ip_host(host, self.server.server_address[1])):
+            return True
+        self._fail(421, "Host não aceito.")
+        return False
+
+    def _remote(self) -> bool:
+        try:
+            return not ipaddress.ip_address(self.client_address[0]).is_loopback
+        except ValueError:
+            return True
+
+    def _auth_ok(self) -> bool:
+        """Quem vem da rede precisa da sessão aberta com o PIN; sem ela, a página de entrada.
+        Guarda o perfil do pedido em self.papel: "maquina", "completo" ou "operador"."""
+        self.papel = None
+        if not self._remote():
+            self.papel = "maquina"
+            return True
+        if not NET_ON:
+            self._fail(403, "Acesso pela rede desligado.")
+            return False
+        self.papel = session_ok(self.headers.get("Cookie"))
+        if self.papel:
+            return True
+        if self.command in ("GET", "HEAD") and self.path.split("?", 1)[0] in ("/", "/index.html"):
+            self._login_page("")
+        else:
+            self._fail(401, "Entre com o PIN.")
+        return False
+
+    def _operador_ok(self, method: str, path: str) -> bool:
+        """Logo depois de _auth_ok em todo verbo: a sessão de operador só alcança OPERADOR_ROTAS. False = já respondeu 403."""
+        if self.papel in ("maquina", "completo"):
+            return True
+        m = "GET" if method == "HEAD" else method
+        if self.papel == "operador" and ((m, path) in OPERADOR_ROTAS or OPERADOR_RE.fullmatch(m + " " + path)):
+            return True
+        self._fail(403, OPERADOR_MSG)   # perfil desconhecido também cai aqui: fecha em vez de abrir
+        return False
+
+    def _login_page(self, error: str) -> None:
+        self._send(200, (LOGIN_PAGE % ('<p class="e">%s</p>' % error if error else "")).encode("utf-8"), TYPES[".html"])
+
+    def _send(self, status: int, raw: bytes, mime: str) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _json(self, obj, status: int = 200) -> None:
+        try:
+            raw = json.dumps(obj, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except (TypeError, ValueError):
+            return self._fail(500, "resposta inválida")
+        self._send(status, raw, "application/json; charset=utf-8")
+
+    def _fail(self, status: int, message: str) -> None:
+        if status >= 400:
+            self.close_connection = True  # o corpo do pedido pode ter ficado sem ler
+        self._send(status, message.encode("utf-8"), "text/plain; charset=utf-8")
+
+    def _file(self, path: Path) -> None:
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            return self._fail(404, "Não encontrado.")
+        self._send(200, raw, TYPES[path.suffix.lower()])
+
+    def _static(self, path: str) -> bool:
+        """Só a página, a casca e os arquivos do STATIC do módulo. Nada de pastas, .py ou dados."""
+        if path in ("/", "/index.html"):
+            self._file(WEB / "index.html")
+        elif path == "/app.js":
+            self._file(WEB / "app.js")
+        elif path.startswith("/local/demandas/") and path[len("/local/demandas/"):] in static_files():
+            self._file(MOD / path[len("/local/demandas/"):])
+        else:
+            return False
+        return True
+
+    def _api(self, method: str, path: str, raw: bytes) -> None:
+        """/api/local/demandas/<resto> -> handle() do módulo; erro com status vira texto puro (a tela mostra)."""
+        rest = path[len("/api/local/demandas"):].lstrip("/") if path != "/api/local/demandas" else ""
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeError, ValueError):
+            return self._fail(400, "JSON inválido.")
+        if not isinstance(body, dict):
+            return self._fail(400, "Pedido inválido.")
+        try:
+            out = api_mod().handle(method, rest, body, {"papel": self.papel, "tab": self.headers.get("X-Tab")})
+        except Exception as exc:
+            status = getattr(exc, "status", None)
+            if isinstance(status, int) and 400 <= status < 600:
+                return self._fail(status, str(exc))
+            print("[erro] %s %s: %r" % (method, path, exc), file=sys.stderr)
+            return self._fail(500, "Erro interno do servidor.")   # sem caminho nem texto do sistema
+        if not isinstance(out, dict):
+            return self._fail(500, "Resposta do módulo inválida.")
+        self._json(out)
+
+    def _rede(self) -> dict:
+        cfg = net_config()
+        port = self.server.server_address[1]
+        return {"on": cfg["on"], "pin": cfg["pin"], "pin_op": cfg["pin_op"], "active": NET_ON,
+                "urls": ["http://%s:%d" % (a, port) for a in lan_addresses()]}
+
+    def do_HEAD(self):
+        self.do_GET()
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if not self._host_ok() or not self._auth_ok() or not self._operador_ok(self.command, path):
+            return
+        if path == "/api/eu":
+            return self._json({"papel": self.papel})
+        if path == "/api/rev":
+            return self._json({"rev": rev()})
+        if path == "/api/rede":
+            if self._remote():
+                return self._fail(403, "Só no computador principal.")
+            return self._json(self._rede())
+        if path == "/api/local/demandas" or path.startswith("/api/local/demandas/"):
+            return self._api("GET", path, b"")
+        if not self._static(path):
+            self._fail(404, "Não encontrado.")
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length"))
+        except (TypeError, ValueError):
+            length = -1
+        if length < 0:
+            return self._fail(400, "Content-Length ausente ou inválido.")
+        if length > MAX_BODY:
+            return self._fail(413, "Arquivo grande demais.")
+        if length > MAX_BODY_ANON and self._remote() and not (NET_ON and session_ok(self.headers.get("Cookie"))):
+            return self._fail(413, "Entre com o PIN antes de enviar arquivos.")
+        # o corpo é lido antes de qualquer recusa: fechar a conexão com dados por ler vira RST no Windows
+        data = self.rfile.read(length) if length else b""
+        if not self._host_ok():
+            return
+        origin = self.headers.get("Origin")
+        allowed = {"http://" + h for h in self._local()} | {"http://" + (self.headers.get("Host") or "")}
+        if origin is not None and origin not in allowed:
+            return self._fail(403, "Origem não aceita.")  # outro site postando no servidor
+        path = self.path.split("?", 1)[0]
+        if path == "/api/login":
+            if not (self._remote() and NET_ON):
+                return self._fail(403, "Acesso pela rede desligado.")
+            pin = (parse_qs(data.decode("utf-8", "replace")).get("pin") or [""])[0].strip()
+            token = check_pin(self.client_address[0], pin)
+            if token is None:
+                return self._login_page("PIN errado. Depois de 5 erros, espere 5 minutos.")
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (COOKIE, token, SESSION_DAYS * 86400))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if not self._auth_ok() or not self._operador_ok("POST", path):
+            return
+        if path == "/api/rede":
+            if self._remote():
+                return self._fail(403, "Só no computador principal.")
+            try:
+                body = json.loads(data.decode("utf-8") or "{}")
+                net_save(body["on"] if isinstance(body.get("on"), bool) else None, body.get("newpin") is True,
+                         body.get("newpin_op") is True)
+            except (ValueError, AttributeError, OSError):
+                return self._fail(400, "Falha ao gravar a configuração da rede.")
+            return self._json(self._rede())
+        if path.startswith("/api/local/demandas/"):
+            return self._api("POST", path, data)
+        self._fail(404, "Não encontrado.")
+
+
+class Server(ThreadingHTTPServer):
+    # Sem reaproveitar a porta: no Windows um segundo servidor ligaria na mesma porta sem erro.
+    allow_reuse_address = False
+    allow_reuse_port = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if os.name == "nt":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def main() -> None:
+    global NET_ON
+    NET_ON = net_config()["on"]
+    sessions_load()
+    api_mod()   # erro no módulo aparece já ao ligar, não no primeiro pedido
+    try:
+        server = Server(("0.0.0.0" if NET_ON else HOST, PORT), Handler)
+    except OSError:
+        print(f"Já existe um servidor na porta {PORT}: use a janela aberta ou feche-a")
+        sys.exit(1)
+    print(f"Central de demandas aberta em http://{HOST}:{PORT}")
+    if NET_ON:
+        print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

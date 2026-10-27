@@ -1,0 +1,5 @@
+# Só erros reais (nomes indefinidos, imports sem uso, sintaxe); estilo fica como está.
+extend-exclude = ["data", "tests/node_modules"]
+
+[lint]
+select = ["F", "E9"]

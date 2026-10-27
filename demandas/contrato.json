@@ -1,0 +1,379 @@
+{
+ "_comentario": "Exemplo da vista de GET /api/local/demandas (papel adm). A vista de pessoa tem papel 'pessoa', eu preenchido, sem anexos_uso, e só as demandas e notas dela. Ver CONTRATO.md.",
+ "vista_adm": {
+  "rev": 12,
+  "agora": 1792996800000,
+  "papel": "adm",
+  "eu": null,
+  "setores": [
+   {
+    "id": "PCP",
+    "nome": "Planejamento (PCP)",
+    "icone": "🗂️",
+    "cor": "#6366F1",
+    "ativo": true,
+    "_rv": 1
+   },
+   {
+    "id": "CNC",
+    "nome": "CNC",
+    "icone": "⚙️",
+    "cor": "#3B82F6",
+    "ativo": true,
+    "_rv": 1
+   },
+   {
+    "id": "ESP",
+    "nome": "Espumação",
+    "icone": "🧽",
+    "cor": "#D97706",
+    "ativo": true,
+    "_rv": 1
+   }
+  ],
+  "pessoas": [
+   {
+    "id": "p0",
+    "nome": "Helena",
+    "setor": "PCP",
+    "mat": "M100",
+    "ativo": true,
+    "_rv": 1
+   },
+   {
+    "id": "p1",
+    "nome": "Carlos",
+    "setor": "CNC",
+    "mat": "M101",
+    "ativo": true,
+    "_rv": 1
+   },
+   {
+    "id": "p2",
+    "nome": "Fernanda",
+    "setor": "ESP",
+    "mat": "M102",
+    "ativo": true,
+    "_rv": 1
+   },
+   {
+    "id": "p3",
+    "nome": "Bruno",
+    "setor": "CNC",
+    "mat": "M103",
+    "ativo": false,
+    "_rv": 2
+   }
+  ],
+  "demandas": [
+   {
+    "id": "SOL-1001",
+    "titulo": "Corte de 8 chapas de MDF 15mm para o lote L-0928",
+    "tipo": "dem",
+    "motivo": "Ajuste de planejamento",
+    "prio": "high",
+    "est": 120,
+    "de": {
+     "s": "PCP",
+     "p": "p0"
+    },
+    "para": {
+     "s": "CNC",
+     "p": "p1"
+    },
+    "desc": "Necessário para o lote em andamento. Confirmar o recebimento.",
+    "status": "prog",
+    "criado": 1792992360000,
+    "iniciado": 1792993080000,
+    "fim": null,
+    "atraso_avisado": false,
+    "pausas": [],
+    "eventos": [
+     {
+      "t": 1792992360000,
+      "ev": "created",
+      "quem": "Helena",
+      "nota": ""
+     },
+     {
+      "t": 1792993080000,
+      "ev": "started",
+      "quem": "Carlos",
+      "nota": ""
+     }
+    ],
+    "comentarios": [
+     {
+      "quem": "Helena",
+      "t": 1792994400000,
+      "texto": "Consegue priorizar antes do almoço?"
+     }
+    ],
+    "anexos": [
+     {
+      "id": "a0123456789abcdef",
+      "nome": "desenho.pdf",
+      "tipo": "pdf",
+      "bytes": 348160,
+      "por": "Helena",
+      "t": 1792992360000
+     }
+    ],
+    "_rv": 3,
+    "prazo": 1792999560000,
+    "atrasada": false,
+    "espera": 12.0,
+    "execucao": 62.0,
+    "pausado": 0,
+    "total": 74.0,
+    "sla": 61.7
+   },
+   {
+    "id": "SOL-1002",
+    "titulo": "Espuma D33 faltando para o sofá Milano",
+    "tipo": "mat",
+    "motivo": "Falta de material",
+    "prio": "urg",
+    "est": 90,
+    "de": {
+     "s": "CNC",
+     "p": "p1"
+    },
+    "para": {
+     "s": "ESP",
+     "p": null
+    },
+    "desc": "Necessário para o lote em andamento. Confirmar o recebimento.",
+    "status": "new",
+    "criado": 1792994940000,
+    "iniciado": null,
+    "fim": null,
+    "atraso_avisado": false,
+    "pausas": [],
+    "eventos": [
+     {
+      "t": 1792994940000,
+      "ev": "created",
+      "quem": "Helena",
+      "nota": ""
+     }
+    ],
+    "comentarios": [],
+    "anexos": [],
+    "_rv": 3,
+    "prazo": 1793000340000,
+    "atrasada": false,
+    "espera": 31.0,
+    "execucao": 0,
+    "pausado": 0,
+    "total": 31.0,
+    "sla": 34.4
+   },
+   {
+    "id": "SOL-1003",
+    "titulo": "Troca da serra circular",
+    "tipo": "man",
+    "motivo": "Quebra de máquina",
+    "prio": "norm",
+    "est": 60,
+    "de": {
+     "s": "PCP",
+     "p": null
+    },
+    "para": {
+     "s": "ESP",
+     "p": "p2"
+    },
+    "desc": "Necessário para o lote em andamento. Confirmar o recebimento.",
+    "status": "pause",
+    "criado": 1792991100000,
+    "iniciado": 1792992000000,
+    "fim": null,
+    "atraso_avisado": false,
+    "pausas": [
+     {
+      "ini": 1792995240000,
+      "fim": null,
+      "motivo": "Aguardando material",
+      "obs": "faltam lâminas",
+      "por": "Fernanda"
+     }
+    ],
+    "eventos": [
+     {
+      "t": 1792991100000,
+      "ev": "created",
+      "quem": "Helena",
+      "nota": ""
+     }
+    ],
+    "comentarios": [],
+    "anexos": [],
+    "_rv": 3,
+    "prazo": 1792994700000,
+    "atrasada": true,
+    "espera": 15.0,
+    "execucao": 54.0,
+    "pausado": 26.0,
+    "total": 95.0,
+    "sla": 158.3
+   },
+   {
+    "id": "SOL-1000",
+    "titulo": "Ajuste de gabarito para pés da banqueta",
+    "tipo": "alt",
+    "motivo": "Mudança de projeto",
+    "prio": "low",
+    "est": 60,
+    "de": {
+     "s": "PCP",
+     "p": "p0"
+    },
+    "para": {
+     "s": "CNC",
+     "p": "p3"
+    },
+    "desc": "Necessário para o lote em andamento. Confirmar o recebimento.",
+    "status": "done",
+    "criado": 1792978800000,
+    "iniciado": 1792980000000,
+    "fim": 1792982400000,
+    "atraso_avisado": false,
+    "pausas": [],
+    "eventos": [
+     {
+      "t": 1792978800000,
+      "ev": "created",
+      "quem": "Helena",
+      "nota": ""
+     }
+    ],
+    "comentarios": [],
+    "anexos": [],
+    "_rv": 3,
+    "prazo": 1792982400000,
+    "atrasada": false,
+    "espera": 20.0,
+    "execucao": 40.0,
+    "pausado": 0,
+    "total": 60.0,
+    "sla": 100.0
+   }
+  ],
+  "notas": [
+   {
+    "id": 7,
+    "aud": "adm",
+    "tipo": "urg",
+    "dem": "SOL-1002",
+    "texto": "",
+    "quem": "Carlos",
+    "t": 1792994940000,
+    "lida": false
+   },
+   {
+    "id": 6,
+    "aud": "adm",
+    "tipo": "pause",
+    "dem": "SOL-1003",
+    "texto": "Aguardando material",
+    "quem": "Fernanda",
+    "t": 1792995240000,
+    "lida": true
+   }
+  ],
+  "feed": [
+   {
+    "t": 1792995240000,
+    "tipo": "warn",
+    "dem": "SOL-1003",
+    "msg": "SOL-1003 · Pausada (Aguardando material — faltam lâminas)"
+   },
+   {
+    "t": 1792993080000,
+    "tipo": "ok",
+    "dem": "SOL-1001",
+    "msg": "SOL-1001 · Iniciada"
+   }
+  ],
+  "anexos_uso": {
+   "bytes": 348160,
+   "cota": 314572800
+  }
+ },
+ "crono_exemplo": {
+  "dias": 7,
+  "desde": 1792392000000,
+  "kpis": {
+   "abertas": 42,
+   "concluidas": 37,
+   "no_prazo": 31,
+   "pct_prazo": 84,
+   "espera": 14.2,
+   "execucao": 65.0,
+   "estimado": 80.0,
+   "pausado": 9.1
+  },
+  "setores": [
+   {
+    "s": "CNC",
+    "n": 12,
+    "espera": 10.5,
+    "execucao": 50.2,
+    "pausado": 4.0,
+    "estimado": 60.0,
+    "sla": 92
+   }
+  ],
+  "motivos": [
+   {
+    "motivo": "Falta de material",
+    "n": 11
+   }
+  ],
+  "ranking": [
+   {
+    "p": "p1",
+    "n": 9,
+    "sla": 89
+   }
+  ],
+  "gantt": {
+   "ini": 1792960800000,
+   "fim": 1793007600000,
+   "linhas": [
+    {
+     "id": "SOL-1001",
+     "de": "PCP",
+     "para": "CNC",
+     "titulo": "Corte de 8 chapas de MDF 15mm para o lote L-0928",
+     "segs": [
+      {
+       "k": "wait",
+       "a": 1792992360000,
+       "b": 1792993080000
+      },
+      {
+       "k": "exec",
+       "a": 1792993080000,
+       "b": 1792996800000
+      }
+     ],
+     "prazo": 1792999560000,
+     "atrasada": false,
+     "viva": true
+    }
+   ]
+  }
+ },
+ "entrar_exemplo": {
+  "tk": "q8V...",
+  "eu": {
+   "id": "p1",
+   "nome": "Carlos",
+   "setor": "CNC",
+   "mat": "M101"
+  },
+  "vista": "(vista da pessoa)"
+ }
+}

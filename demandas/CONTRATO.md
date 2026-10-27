@@ -1,0 +1,182 @@
+# Contrato do módulo Demandas (fonte de verdade entre banco, backend e frontend)
+
+Pasta `demandas/` da Central de demandas, porte da central do projeto DEMANDA. Rotas em
+`/api/local/demandas/<rest>` (o `servidor.py` chama `handle(method, rest, body, ctx)`), estáticos em
+`/local/demandas/<arquivo>` (só os do `STATIC`).
+
+## Arquivos e donos
+| Arquivo | Dono | Papel |
+|---|---|---|
+| `demandas_store.py` | banco | carga/gravação de `data/demandas.json`, arquivo morto, anexos em `data/demandas-anexos/` |
+| `api.py`, `demandas_calc.py` | backend | rotas, regras, autorização, vista, cálculos de tempo |
+| `demandas.js`, `demandas.css` | frontend | tela (porte do mockup v3 + telas do DEMANDA) |
+| `contrato.json` | coordenação | exemplo da vista devolvida pela API (o front desenvolve contra ele) |
+
+O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a gravação segura que o `demandas_store.py` usa.
+
+## Tempo e identificadores
+- Tempo sempre em **milissegundos desde a época** (int), como no DEMANDA. Cálculos recebem `agora` como
+  parâmetro (testável); a API usa `int(time.time() * 1000)`.
+- Setor: `id` = sigla `^[A-Z0-9]{2,4}$`. Pessoa: `id` = `"p" + n` (n sequencial), `mat` = `"M" + (100 + n)`.
+- Demanda: `id` = `"SOL-" + n`, n = maior existente (principal + arquivo morto) + 1, começa em `SOL-1001`.
+- Anexo: `id` = `"a" + 16 hex` (`secrets.token_hex(8)`), arquivo `<id>.<jpg|png|pdf>`.
+- Nota: `id` int sequencial.
+
+## Formato de `data/demandas.json` (versão `v = 1`)
+```json
+{"v": 1, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
+ "setores": [{"id": "CNC", "nome": "CNC", "icone": "⚙️", "cor": "#3B82F6", "ativo": true, "_rv": 0}],
+ "pessoas": [{"id": "p0", "nome": "Carlos", "setor": "CNC", "mat": "M100", "ativo": true,
+              "sal": "<32 hex>", "hash": "<pbkdf2 hex>", "_rv": 0}],
+ "demandas": [{"id": "SOL-1001", "titulo": "...", "tipo": "dem", "motivo": "Outro", "prio": "norm",
+               "est": 60, "de": {"s": "PCP", "p": "p1"}, "para": {"s": "CNC", "p": null},
+               "desc": "...", "status": "new", "criado": 0, "iniciado": null, "fim": null, "atraso_avisado": false,
+               "pausas": [{"ini": 0, "fim": null, "motivo": "...", "obs": "", "por": "Carlos"}],
+               "eventos": [{"t": 0, "ev": "created", "quem": "Helena", "nota": ""}],
+               "comentarios": [{"quem": "Helena", "t": 0, "texto": "..."}],
+               "anexos": [{"id": "a0123456789abcdef", "nome": "foto.jpg", "tipo": "jpg", "bytes": 1234, "por": "Helena", "t": 0}],
+               "_rv": 0}],
+ "notas": [{"id": 1, "aud": "CNC", "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0, "lida": false}]}
+```
+- `de.p = null` quando quem pediu foi o Escritório (ADM). `para.p = null` = fila do setor.
+- `data/demandas-arquivo.json`: `{"v": 1, "demandas": [...]}` com concluídas/canceladas antigas tiradas do
+  principal quando ele passa do teto (mesmo formato de demanda). Nunca volta ao principal.
+- Ambos são `*.json` no topo de `data/`, então entram sozinhos no backup `.cfbak`.
+
+## Domínios fixos (iguais ao DEMANDA)
+- `tipo`: `dem` Demanda 📌 · `alt` Alteração ✏️ · `set` Entre setores 🔁 · `man` Manutenção 🛠️ · `mat` Material 📦
+- `motivo`: Falta de material · Quebra de máquina · Defeito de qualidade · Mudança de projeto · Ajuste de
+  planejamento · Retrabalho · Solicitação do cliente · Outro
+- motivos de pausa: Aguardando material · Aguardando outro setor · Máquina parada · Aguardando aprovação ·
+  Troca de turno ou intervalo · Informação incompleta
+- `prio`: `low` Baixa · `norm` Normal · `high` Alta · `urg` Urgente
+- `status`: `new` Aberta · `prog` Em andamento · `pause` Pausada · `done` Concluída · `canc` Cancelada
+  (Atrasada é derivado: ativa e `agora > prazo`; ativa = new/prog/pause)
+- eventos: created, assigned, started, paused, resumed, done, canc, reassigned, prio, deadline, nudge, late, comment(não), attach
+  (`attach` = anexo enviado; comentário não vira evento, como no DEMANDA)
+- tipos de nota: new, urg, accepted, pause, done, canc, nudge, late
+- ícones de setor: 🗂️ ⚙️ 🔩 🪵 🪚 🧽 🛠️ 🧵 ✂️ 🪡 📦 ✅ 🔧 🏷️ 🚚 🎨 🧪 🖥️ 🧰 🏭
+- cores de setor: #6366F1 #3B82F6 #0EA5E9 #06B6D4 #0D9488 #10B981 #65A30D #D97706 #E4572E #EC4899 #8B5CF6 #64748B
+
+## Limites
+| Campo | Regra |
+|---|---|
+| título | 5 a 140 caracteres | 
+| descrição | até 2000 (vazia vira "Sem descrição adicional.") |
+| comentário | 1 a 1000 · obs de pausa/conclusão/cancelamento/reatribuição até 500 |
+| nome pessoa / setor | 2 a 60 / 3 a 40 |
+| `est` (min) | 1 a 43200 · estender: 1 a 1440 por vez |
+| código da pessoa | `^[0-9]{4}$`, pbkdf2-sha256 100 000 iterações com sal de 16 bytes (igual à Produção) |
+| tetos | setores 60 · pessoas 500 · demandas no principal 5000 (acima disso arquiva concluídas/canceladas mais antigas) · arquivo morto 50000 · pausas 200, eventos 500, comentários 300 por demanda · notas 120 (as mais antigas saem) |
+| anexos | JPG/PNG/PDF pelos bytes iniciais (`FF D8 FF`, `89 50 4E 47 0D 0A 1A 0A`, `%PDF-`) · até 5 MB cada · até 5 por demanda · cota total de 300 MB em `data/demandas-anexos/` |
+| texto | sem caractere de controle (`[\x00-\x1f\x7f]`, exceto `\n` em descrição/comentário) |
+
+## API do banco (`demandas_store.py`)
+```python
+V = 1
+LOCK: threading.Lock                     # segurado pelo api.py em toda leitura+escrita
+MAX = {...}; ANEXO_MAX = 5 * 1024 * 1024; ANEXOS_POR_DEMANDA = 5; COTA = 300 * 1024 * 1024
+class StoreError(Exception): status: int   # 400/404/413/507 com mensagem pronta para a tela
+def path() -> Path                       # store.data_dir() / "demandas.json"
+def anexos_dir() -> Path                 # store.data_dir() / "demandas-anexos"
+def empty() -> dict
+def load(cache: bool = True) -> dict     # normaliza, migra por "v" (cópia .bak antes de migrar), cache por (mtime, size)
+def commit(doc: dict) -> dict            # rev += 1, arquiva se passou do teto, grava atômico; devolve doc
+def load_arquivo() -> list               # demandas do arquivo morto (só leitura, cache por mtime)
+def salvar_anexo(dados: bytes, nome: str) -> dict   # confere tipo/tamanho/cota; devolve {id, nome, tipo, bytes}
+def ler_anexo(aid: str) -> tuple[bytes, str]        # (dados, tipo); StoreError 404 se não existe/id ruim
+def apagar_anexo(aid: str) -> None
+def uso_anexos() -> dict                 # {"bytes": int, "cota": COTA}
+```
+Chamar `salvar_anexo` fora do `LOCK` é permitido (grava arquivo novo com nome inédito); o metadado entra na
+demanda sob o `LOCK`. Se a gravação do JSON falhar depois, o api.py apaga o arquivo órfão.
+
+## Identidade e papéis
+- `ctx["papel"]` vem do servidor: `"maquina"` (o próprio PC), `"completo"` (PIN do escritório) ou `"operador"`
+  (PIN do chão; só a partir da fase 5).
+- **ADM / Escritório**: papel `maquina` ou `completo` agindo sem pessoa. Registrado como `"Escritório"`.
+- **Pessoa**: `POST entrar {pessoa, codigo}` confere o código (bloqueio: 5 erros = 60 s por pessoa, 429) e
+  devolve `{tk, eu, vista}`. `tk` = token aleatório (`secrets.token_urlsafe(24)`) guardado só em memória
+  (`tk -> {pessoa, exp}`), validade 12 h, máx. 500 (descarta o mais antigo); cai ao desativar a pessoa ou
+  trocar o código. Toda ação como pessoa manda `"tk"` no corpo. `tk` ruim/vencido = 401 "Identifique-se de novo."
+- Papel `operador` só age como pessoa (sem `tk` = 403).
+
+## Rotas
+Todas devolvem a **vista** do ator (ADM ou pessoa), salvo onde indicado. Erros: `ApiError(status, msg)`
+com 400 (dado inválido), 401 (tk), 403 (sem permissão), 404 (não existe), 409 (estado mudou, ex.: aceitar
+uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 429 (código bloqueado),
+507 (cota de anexos).
+
+| Método e caminho | Corpo | Quem pode |
+|---|---|---|
+| `GET ""` | — | ADM: vista completa. Operador: só `setores` e `pessoas` públicas (para a tela "quem é você") |
+| `POST entrar` | `{pessoa, codigo}` | qualquer papel → `{tk, eu, vista}` |
+| `POST sair` | `{tk}` | → `{ok: true}` |
+| `POST vista` | `{tk}` | pessoa → vista da pessoa |
+| `POST demanda/criar` | `{titulo, tipo, motivo, prio, est, para:{s,p}, desc, de_s?}` | ADM (`de_s` obrigatório) ou pessoa (`de` = ela) |
+| `POST demanda/aceitar` | `{id}` | pessoa do setor destino, status new → prog; vira responsável |
+| `POST demanda/pausar` | `{id, motivo, obs}` | responsável, prog → pause |
+| `POST demanda/retomar` | `{id}` | responsável, pause → prog |
+| `POST demanda/concluir` | `{id, nota}` | responsável, ativa → done |
+| `POST demanda/cancelar` | `{id, motivo}` | ADM ou quem pediu (`de.p`), ativa → canc |
+| `POST demanda/reatribuir` | `{id, s, p, nota}` | ADM (qualquer ativa) ou pessoa do setor destino (new ou ela é a responsável) |
+| `POST demanda/cobrar` | `{id}` | ADM ou quem pediu, ativa |
+| `POST demanda/prioridade` | `{id, prio}` | ADM |
+| `POST demanda/estender` | `{id, minutos}` | ADM, ativa |
+| `POST demanda/comentar` | `{id, texto}` | ADM, ou pessoa do setor de origem ou destino |
+| `POST anexo/enviar` | `{id, nome, dados}` (`dados` = base64) | ADM, quem pediu ou pessoa do setor destino; demanda não cancelada |
+| `GET anexo/<aid>` | — | ADM → `{id, nome, tipo, dados}` (base64) |
+| `POST anexo/ler` | `{tk, aid}` | pessoa que vê a demanda → `{id, nome, tipo, dados}` |
+| `POST anexo/apagar` | `{id, aid}` | ADM ou quem enviou, demanda ativa |
+| `POST nota/lida` | `{nid}` | dono da audiência (ADM = "adm", pessoa = setor dela) |
+| `POST nota/todas` | `{}` | idem, marca todas da audiência |
+| `POST setor/salvar` | `{modo: "novo"\|"editar", id, nome, icone, cor, rev}` | ADM |
+| `POST setor/ativar` | `{id, rev}` (alterna) | ADM; desativar recusa com demanda aberta (400 com `abertas`) |
+| `POST setor/apagar` | `{id, rev}` | ADM; recusa se há histórico (principal ou arquivo) |
+| `POST pessoa/salvar` | `{modo, id?, nome, setor, codigo?, rev}` | ADM; código obrigatório no novo |
+| `POST pessoa/ativar` | `{id, rev}` | ADM; desativar devolve as demandas dela à fila do setor |
+| `POST pessoa/apagar` | `{id, rev}` | ADM; recusa se há histórico |
+| `POST crono` | `{dias: 1\|7\|30}` | ADM → objeto de cronoanálise (abaixo) |
+
+Pessoa usa `tk` em todas as rotas de ação; ADM não manda `tk`. As regras de negócio são as de
+`DEMANDA/src/models/requests.js` e `factory.js` (ver plano), com autorização acrescentada.
+
+Notificações geradas (aud = setor ou "adm"): criar → `new` para o destino (+ `urg` para adm se urgente);
+aceitar → `accepted` para a origem (se setores diferentes); pausar → `pause` para adm e origem;
+concluir → `done` para a origem; cancelar → `canc` para o destino; reatribuir de setor → `new` para o novo;
+cobrar → `nudge` para o destino; prioridade urgente → `nudge`; atraso → `late` para adm e destino
+(gerado em qualquer gravação por `marcar_atrasos(doc, agora)`, uma vez por demanda, `atraso_avisado`).
+
+## Vista (resposta)
+Ver `contrato.json`. Campos:
+```
+rev, agora, papel ("adm"|"pessoa"), eu (null | {id, nome, setor, mat}),
+setores [{id, nome, icone, cor, ativo, _rv}],
+pessoas [{id, nome, setor, mat, ativo, _rv}]        # nunca sal/hash
+demandas [{...campos gravados sem _interno, + prazo, atrasada, espera, execucao, pausado, total, sla}]
+notas [{id, aud, tipo, dem, texto, quem, t, lida}]  # só da audiência do ator
+feed [{t, tipo: "warn"|"ok"|"", dem, msg}]          # 14 eventos mais recentes, sem "assigned"
+anexos_uso {bytes, cota}                            # só ADM
+```
+- Derivados por `demandas_calc.metricas(d, agora)`, em minutos com fração: `espera`, `execucao`,
+  `pausado`, `total`; `prazo` = criado + est·60000; `atrasada`; `sla` = total/est·100.
+- ADM vê todas as demandas do principal. Pessoa vê as do setor dela (destino) e as que ela pediu.
+- O histórico (aba Histórico) da ADM inclui o arquivo morto: `GET ""` traz só o principal; o arquivo vem em
+  `POST historico {de, ate}` → `{demandas: [...]}` (ADM).
+
+## Cronoanálise (`POST crono`)
+```
+{dias, desde, kpis: {abertas, concluidas, no_prazo, pct_prazo|null, espera, execucao, estimado, pausado},
+ setores: [{s, n, espera, execucao, pausado, estimado, sla}],     # ordenado por sla asc, n desc
+ motivos: [{motivo, n}],                                         # top 8 desc
+ ranking: [{p, n, sla}],                                         # top 6
+ gantt: {ini, fim, linhas: [{id, de, para, titulo, segs: [{k: "wait"|"exec"|"pause", a, b}], prazo, atrasada, viva}]}}
+```
+Médias `null` quando não há dado. Gantt: janela agora−10h a agora+3h, 14 ativas por atenção + 4 concluídas recentes.
+
+## Frontend
+- `STATIC` (CSS, JS e fontes) é tudo o que o servidor entrega desta pasta. `REV_FILE = "demandas.json"`.
+- `web/index.html` tem `<main data-view="demandas">`; o `demandas.js` monta `<section id="dmboard">` dentro dele e
+  registra `window.NestLocal.views.demandas = {open, rev, refresh}`. A casca `web/app.js` dá o `api()` (POST com
+  `X-Tab`, lança `Error` com `.status`) e o `toast()`, e chama `refresh()` quando o `/api/rev` muda.
+- Todo dado vindo da API entra escapado (`esc`) ou por `textContent`. Nada de `eval`/`new Function`.

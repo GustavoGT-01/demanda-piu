@@ -1,0 +1,590 @@
+"""servidor.py pelo HTTP de verdade: arquivos que saem, PIN e sessões, papéis, lista fechada do operador e defesas.
+
+Os pedidos "da rede" saem de um endereço que não é loopback: o teste liga o servidor em todas as interfaces e fala
+com ele pelo IP da máquina (sem IP de rede, esses testes são pulados). Dados num diretório temporário.
+"""
+
+import hashlib
+import http.client
+import json
+import os
+import socket
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+os.environ.setdefault("DEMANDAS_DATA", tempfile.mkdtemp(prefix="dem-srv-"))
+import servidor  # noqa: E402
+
+XSS = '<img src=x onerror="alert(1)">'
+TAB = "aaaaaaaa-1111"
+
+
+def ip_rede():
+    for ip in servidor.lan_addresses():
+        try:
+            s = socket.create_connection((ip, 9), timeout=0.01)
+            s.close()
+        except OSError:
+            pass
+        return ip
+    return None
+
+
+class Base(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = servidor.Server(("0.0.0.0", 0), servidor.Handler)
+        cls.port = cls.srv.server_address[1]
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.ip = ip_rede()
+
+    @classmethod
+    def tearDownClass(cls):
+        servidor.NET_ON = False
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        self.data = Path(tempfile.mkdtemp(prefix="dem-srv-"))
+        self._env = mock.patch.dict(os.environ, {"DEMANDAS_DATA": str(self.data)})
+        self._env.start()
+        for c in (servidor.SESSIONS, servidor.FAILS):
+            c.clear()
+        servidor._REV.update(key=None, rev=0)
+        servidor.NET_ON = False
+
+    def tearDown(self):
+        servidor.NET_ON = False
+        for c in (servidor.SESSIONS, servidor.FAILS):
+            c.clear()
+        self._env.stop()
+
+    def req(self, method, path, body=None, headers=None, rede=False):
+        """rede=True: pede pelo IP da máquina (conta como aparelho da rede)."""
+        host = self.ip if rede else "127.0.0.1"
+        c = http.client.HTTPConnection(host, self.port, timeout=30)
+        try:
+            c.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+            h = {"Host": "%s:%d" % (host, self.port)}
+            h.update(headers or {})
+            raw = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
+            if raw is not None:
+                h.setdefault("Content-Type", "application/json")
+                h["Content-Length"] = str(len(raw))
+            elif method == "POST":
+                h["Content-Length"] = "0"
+            for k, v in h.items():
+                c.putheader(k, v)
+            c.endheaders(raw)
+            r = c.getresponse()
+            return r.status, r.headers, r.read()
+        finally:
+            c.close()
+
+    def post(self, rest, obj, headers=None, rede=False):
+        return self.req("POST", "/api/local/demandas/" + rest, obj, headers, rede)
+
+    def ok(self, rest, obj, headers=None, rede=False):
+        st, h, raw = self.post(rest, obj, headers, rede)
+        self.assertEqual(st, 200, raw.decode("utf-8", "replace"))
+        return json.loads(raw)
+
+    def precisa_rede(self):
+        if not self.ip:
+            self.skipTest("sem IP de rede nesta máquina")
+        servidor.NET_ON = True
+
+    def login(self, pin):
+        form = {"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://%s:%d" % (self.ip, self.port)}
+        st, h, _ = self.req("POST", "/api/login", ("pin=" + pin).encode(), form, rede=True)
+        self.assertEqual(st, 303)
+        return {"Cookie": h["Set-Cookie"].split(";")[0]}
+
+
+class Arquivos(Base):
+    def test_so_a_pagina_a_casca_e_o_static_saem(self):
+        st, h, raw = self.req("GET", "/")
+        self.assertEqual(st, 200)
+        self.assertIn(b'<main data-view="demandas">', raw)
+        for path, tipo in (("/index.html", "text/html"), ("/app.js", "text/javascript"),
+                           ("/local/demandas/demandas.js", "text/javascript"), ("/local/demandas/demandas.css", "text/css"),
+                           ("/local/demandas/demandas-fontes.css", "text/css"),
+                           ("/local/demandas/bricolage-grotesque.woff2", "font/woff2"),
+                           ("/local/demandas/figtree.woff2", "font/woff2")):
+            st, h, raw = self.req("GET", path)
+            self.assertEqual(st, 200, path)
+            self.assertTrue(h["Content-Type"].startswith(tipo), (path, h["Content-Type"]))
+        self.assertEqual(self.req("HEAD", "/")[0], 200)
+        self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
+        for path in ("/servidor.py", "/store.py", "/local/demandas/api.py", "/local/demandas/CONTRATO.md",
+                     "/local/demandas/contrato.json", "/local/demandas/demandas_store.py", "/local/demandas/../servidor.py",
+                     "/local/demandas/..%2Fservidor.py", "/local/demandas/x.woff2", "/data/demandas.json", "/demandas.json",
+                     "/web/app.js", "/local/outro/demandas.js", "/local/demandas/"):
+            self.assertEqual(self.req("GET", path)[0], 404, path)
+
+    def test_cabecalhos_de_seguranca(self):
+        _, h, _ = self.req("GET", "/")
+        self.assertIn("default-src 'self'", h["Content-Security-Policy"])
+        self.assertEqual((h["X-Content-Type-Options"], h["X-Frame-Options"], h["Cache-Control"]), ("nosniff", "DENY", "no-store"))
+
+
+class Api(Base):
+    def test_maquina_e_adm(self):
+        self.assertEqual(json.loads(self.req("GET", "/api/eu")[2]), {"papel": "maquina"})
+        v = json.loads(self.req("GET", "/api/local/demandas")[2])
+        self.assertEqual((v["papel"], v["demandas"]), ("adm", []))
+
+    def test_erros_viram_texto(self):
+        st, h, raw = self.post("demanda/aceitar", {"id": "SOL-1"})
+        self.assertEqual((st, raw.decode()), (404, "Demanda não encontrada."))
+        self.assertTrue(h["Content-Type"].startswith("text/plain"))
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista", b"{x")[0], 400)
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista", b"[1]")[0], 400)
+        self.assertEqual(self.req("POST", "/api/nada", {})[0], 404)
+        self.assertEqual(self.req("GET", "/api/nada")[0], 404)
+
+    def test_erro_inesperado_nao_vaza(self):
+        with mock.patch.object(servidor.api_mod(), "handle", side_effect=RuntimeError("C:\\segredo\\caminho")):
+            st, _, raw = self.req("GET", "/api/local/demandas")
+        self.assertEqual((st, raw.decode()), (500, "Erro interno do servidor."))
+        with mock.patch.object(servidor.api_mod(), "handle", return_value=[1]):
+            self.assertEqual(self.req("GET", "/api/local/demandas")[0], 500)
+        with mock.patch.object(servidor.api_mod(), "handle", return_value={"x": float("nan")}):
+            self.assertEqual(self.req("GET", "/api/local/demandas")[0], 500)
+
+    def test_xss_volta_como_dado(self):
+        self.ok("setor/salvar", {"modo": "novo", "id": "CNC", "nome": XSS, "icone": "⚙️", "cor": "#3B82F6", "rev": 0})
+        raw = self.req("GET", "/api/local/demandas")[2]
+        self.assertIn(XSS, json.loads(raw)["setores"][0]["nome"])
+
+    def test_rev(self):
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0})
+        self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1})
+        (self.data / "demandas.json").write_text("{quebrado", encoding="utf-8")
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1})   # arquivo ruim: fica a última rev
+        (self.data / "demandas.json").write_text('{"rev": true}', encoding="utf-8")
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0})
+
+    def test_origem_e_host(self):
+        self.assertEqual(self.post("vista", {}, {"Origin": "http://evil.com"})[0], 403)
+        self.assertEqual(self.post("vista", {}, {"Origin": "http://127.0.0.1:%d" % self.port})[0], 200)   # a própria origem passa
+        self.assertEqual(self.req("GET", "/", headers={"Host": "evil.com"})[0], 421)
+        self.assertEqual(self.req("GET", "/", headers={"Host": "192.168.0.10:%d" % self.port})[0], 421)   # IP só com a rede ligada
+
+    def test_corpo(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        try:
+            c.putrequest("POST", "/api/local/demandas/vista", skip_host=True)
+            c.putheader("Host", "127.0.0.1:%d" % self.port)
+            c.endheaders()
+            r = c.getresponse()
+            self.assertEqual((r.status, r.read().decode()), (400, "Content-Length ausente ou inválido."))   # sem Content-Length
+        finally:
+            c.close()
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=30)
+        try:
+            c.putrequest("POST", "/api/local/demandas/vista", skip_host=True)
+            c.putheader("Host", "127.0.0.1:%d" % self.port)
+            c.putheader("Content-Length", str(servidor.MAX_BODY + 1))   # recusado antes de ler o corpo
+            c.endheaders()
+            self.assertEqual(c.getresponse().status, 413)
+        finally:
+            c.close()
+
+    def test_rede_so_no_computador_principal(self):
+        r = json.loads(self.req("GET", "/api/rede")[2])
+        self.assertEqual((r["on"], r["active"]), (False, False))
+        self.assertRegex(r["pin"], r"^[0-9]{6}$")
+        r2 = json.loads(self.req("POST", "/api/rede", {"on": True, "newpin_op": True})[2])
+        self.assertTrue(r2["on"])
+        self.assertEqual(r2["pin"], r["pin"])
+        self.assertNotEqual(r2["pin_op"], r["pin_op"])
+        self.assertEqual(self.req("POST", "/api/rede", b"[x")[0], 400)
+
+
+class Pins(Base):
+    def test_rede_json_antigo_ou_ruim(self):
+        (self.data / "rede.json").write_text(json.dumps({"on": True, "pin": "123456"}), encoding="utf-8")
+        cfg = servidor.net_config()
+        self.assertEqual((cfg["on"], cfg["pin"]), (True, "123456"))
+        self.assertRegex(cfg["pin_op"], r"^[0-9]{6}$")
+        self.assertNotEqual(cfg["pin_op"], "123456")
+        self.assertEqual(json.loads((self.data / "rede.json").read_text(encoding="utf-8"))["pin_op"], cfg["pin_op"])
+        self.assertEqual(servidor.net_config(), cfg)   # gravado: a segunda leitura não troca
+        (self.data / "rede.json").write_text(json.dumps({"on": True, "pin": "123456", "pin_op": "123456"}), encoding="utf-8")
+        self.assertNotEqual(servidor.net_config()["pin_op"], "123456")
+        (self.data / "rede.json").write_text("[1]", encoding="utf-8")
+        cfg = servidor.net_config()
+        self.assertEqual(cfg["on"], False)
+        self.assertNotEqual(cfg["pin"], cfg["pin_op"])
+
+    def test_pin_novo(self):
+        with mock.patch.object(servidor.secrets, "randbelow", side_effect=[111111, 111111, 222222]) as r:
+            self.assertEqual(servidor._pin_novo("111111"), "222222")
+        r.assert_called_with(10**6)
+        self.assertFalse(servidor._pin_ok("12345"))
+        self.assertFalse(servidor._pin_ok("12345a"))
+        self.assertFalse(servidor._pin_ok(123456))
+        self.assertTrue(servidor._pin_ok("123456"))
+
+    def test_cada_pin_cria_seu_perfil(self):
+        cfg = servidor.net_config()
+        tc, to = servidor.check_pin("10.0.0.1", cfg["pin"]), servidor.check_pin("10.0.0.1", cfg["pin_op"])
+        self.assertEqual(servidor.session_ok("%s=%s" % (servidor.COOKIE, tc)), "completo")
+        self.assertEqual(servidor.session_ok("%s=%s" % (servidor.COOKIE, to)), "operador")
+        self.assertIsNone(servidor.session_ok("%s=inventado" % servidor.COOKIE))
+        self.assertIsNone(servidor.session_ok("outro=%s" % tc))
+        self.assertIsNone(servidor.session_ok(None))
+        gravado = json.loads((self.data / "sessoes.json").read_text(encoding="utf-8"))
+        self.assertNotIn(tc, json.dumps(gravado))   # só o hash vai para o disco
+        self.assertIn(hashlib.sha256(tc.encode()).hexdigest(), gravado)
+
+    def test_pin_errado_bloqueia(self):
+        cfg = servidor.net_config()
+        for _ in range(4):
+            self.assertIsNone(servidor.check_pin("10.0.0.9", "999999", now=1000))
+        self.assertTrue(servidor.check_pin("10.0.0.9", cfg["pin"], now=1000))   # 4 erros ainda não bloqueiam; acerto zera
+        for _ in range(5):
+            self.assertIsNone(servidor.check_pin("10.0.0.9", "999999", now=1000))
+        self.assertIsNone(servidor.check_pin("10.0.0.9", cfg["pin"], now=1299))   # 5 erros: 5 minutos parado
+        self.assertTrue(servidor.check_pin("10.0.0.8", cfg["pin"], now=1299))     # outro IP segue
+        self.assertTrue(servidor.check_pin("10.0.0.9", cfg["pin"], now=1301))
+
+    def test_sessao_vence_e_tem_teto(self):
+        cfg = servidor.net_config()
+        t = servidor.check_pin("10.0.0.1", cfg["pin"], now=1000)
+        self.assertIsNone(servidor.session_ok("%s=%s" % (servidor.COOKIE, t)))   # venceu (1000 + 30 dias já passou)
+        servidor.SESSIONS.clear()
+        agora = time.time()
+        for i in range(200):
+            servidor.SESSIONS["%064x" % i] = {"exp": agora + 1000 + i, "papel": "completo"}
+        servidor.check_pin("10.0.0.1", cfg["pin"])
+        self.assertEqual(len(servidor.SESSIONS), 200)
+        self.assertNotIn("%064x" % 0, servidor.SESSIONS)   # a mais antiga saiu
+
+    def test_sessoes_sobrevivem_ao_reinicio(self):
+        exp = time.time() + 3600
+        h1, h2, h3, h4 = ("%064x" % i for i in range(1, 5))
+        raw = {h1: {"exp": exp, "papel": "completo"}, h2: {"exp": exp, "papel": "operador"}, h3: {"exp": exp, "papel": "admin"},
+               h4: {"exp": time.time() - 1, "papel": "completo"}, "curto": {"exp": exp, "papel": "completo"}, "%064x" % 9: exp}
+        (self.data / "sessoes.json").write_text(json.dumps(raw), encoding="utf-8")
+        servidor.sessions_load()
+        self.assertEqual(servidor.SESSIONS, {h1: {"exp": exp, "papel": "completo"}, h2: {"exp": exp, "papel": "operador"}})
+        servidor.SESSIONS.clear()
+        (self.data / "sessoes.json").write_text("[]", encoding="utf-8")
+        servidor.sessions_load()
+        (self.data / "sessoes.json").write_text("{x", encoding="utf-8")
+        servidor.sessions_load()
+        self.assertEqual(servidor.SESSIONS, {})
+
+    def test_pin_novo_derruba_sessoes(self):
+        cfg = servidor.net_config()
+        tc, to = servidor.check_pin("10.0.0.1", cfg["pin"]), servidor.check_pin("10.0.0.1", cfg["pin_op"])
+        novo = servidor.net_save(new_pin_op=True)
+        self.assertEqual(novo["pin"], cfg["pin"])
+        self.assertEqual(servidor.session_ok("%s=%s" % (servidor.COOKIE, tc)), "completo")
+        self.assertIsNone(servidor.session_ok("%s=%s" % (servidor.COOKIE, to)))
+        servidor.net_save(new_pin=True)
+        self.assertIsNone(servidor.session_ok("%s=%s" % (servidor.COOKIE, tc)))
+        cfg = servidor.net_config()
+        self.assertNotEqual(cfg["pin"], cfg["pin_op"])
+        self.assertIs(servidor.net_save(on=True)["on"], True)
+        self.assertIs(servidor.net_save()["on"], True)   # sem "on": fica como estava
+        self.assertIs(servidor.net_save(on=False)["on"], False)
+
+
+class PelaRede(Base):
+    def test_rede_desligada_recusa(self):
+        if not self.ip:
+            self.skipTest("sem IP de rede nesta máquina")
+        self.assertEqual(self.req("GET", "/", rede=True)[0], 421)   # Host com IP só vale com a rede ligada
+        servidor.NET_ON = True
+        servidor.NET_ON = False
+        st, _, raw = self.req("GET", "/", headers={"Host": "127.0.0.1:%d" % self.port}, rede=True)
+        self.assertEqual((st, raw.decode()), (403, "Acesso pela rede desligado."))
+
+    def test_sem_sessao_pede_pin(self):
+        self.precisa_rede()
+        st, _, raw = self.req("GET", "/", rede=True)
+        self.assertEqual(st, 200)
+        self.assertIn(b'name="pin"', raw)   # a página de PIN, não o app
+        self.assertEqual(self.req("GET", "/api/local/demandas", rede=True)[0], 401)
+        self.assertEqual(self.post("vista", {}, rede=True)[0], 401)
+        st, _, raw = self.req("POST", "/api/login", b"pin=000000x", {"Content-Type": "application/x-www-form-urlencoded"}, rede=True)
+        self.assertEqual(st, 200)
+        self.assertIn("PIN errado".encode(), raw)
+        st, _, raw = self.req("POST", "/api/login", b"pin=1", {"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual((st, raw.decode()), (403, "Acesso pela rede desligado."))   # do próprio PC não tem login
+        big = b"x" * (servidor.MAX_BODY_ANON + 1)
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista", big, rede=True)[0], 413)
+
+    def test_escritorio_tem_tudo_menos_a_rede(self):
+        self.precisa_rede()
+        h = self.login(servidor.net_config()["pin"])
+        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]), {"papel": "completo"})
+        self.assertEqual(json.loads(self.req("GET", "/api/local/demandas", headers=h, rede=True)[2])["papel"], "adm")
+        self.assertEqual(self.post("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️",
+                                                    "cor": "#6366F1", "rev": 0}, h, rede=True)[0], 200)
+        self.assertEqual(self.req("GET", "/api/rede", headers=h, rede=True)[0], 403)
+        self.assertEqual(self.req("POST", "/api/rede", {"on": False}, h, rede=True)[0], 403)
+        self.assertNotIn(b'name="pin"', self.req("GET", "/", headers=h, rede=True)[2])
+
+    def test_operador_so_alcanca_a_tela_de_operador(self):
+        self.precisa_rede()
+        self.ok("setor/salvar", {"modo": "novo", "id": "CNC", "nome": "Corte CNC", "icone": "⚙️", "cor": "#3B82F6", "rev": 0})
+        self.ok("pessoa/salvar", {"modo": "novo", "nome": "Carlos", "setor": "CNC", "codigo": "1234", "rev": 0})
+        h = self.login(servidor.net_config()["pin_op"])
+        for path in ("/", "/index.html", "/app.js", "/local/demandas/demandas.js", "/local/demandas/figtree.woff2", "/api/rev"):
+            self.assertEqual(self.req("GET", path, headers=h, rede=True)[0], 200, path)
+        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]), {"papel": "operador"})
+        pub = json.loads(self.req("GET", "/api/local/demandas", headers=h, rede=True)[2])
+        self.assertEqual(sorted(pub), ["pessoas", "setores"])   # só o necessário para o "quem é você?"
+        self.assertNotIn("sal", json.dumps(pub))
+        self.assertEqual(self.post("vista", {}, h, rede=True)[0], 403)   # sem tk: aqui não existe Escritório
+        tk = self.ok("entrar", {"pessoa": "p0", "codigo": "1234"}, h, rede=True)["tk"]
+        v = self.ok("demanda/criar", {"tk": tk, "titulo": "Afiar a fresa 6 mm", "tipo": "man", "motivo": "Outro",
+                                      "prio": "norm", "est": 30, "para": {"s": "CNC", "p": None}, "desc": ""}, h, rede=True)
+        self.assertEqual((v["papel"], len(v["demandas"])), ("pessoa", 1))
+        negadas = ["setor/salvar", "setor/ativar", "setor/apagar", "pessoa/salvar", "pessoa/ativar", "pessoa/apagar",
+                   "demanda/prioridade", "demanda/estender", "crono", "historico", "entrar/", "entrar/../setor/salvar",
+                   "demanda/criar/x", "demanda/"]
+        for rest in negadas:
+            st, _, raw = self.post(rest, {"tk": tk}, h, rede=True)
+            self.assertEqual((st, raw.decode()), (403, servidor.OPERADOR_MSG), rest)
+        for path in ("/api/rede", "/api/local/demandas/anexo/a0123456789abcdef", "/api/local/demandas/vista",
+                     "/local/demandas/../servidor.py", "/api/local/demandas/", "/API/EU", "/api/eu/"):
+            self.assertEqual(self.req("GET", path, headers=h, rede=True)[0], 403, path)
+        self.assertEqual(self.req("POST", "/api/rede", {"on": False}, h, rede=True)[0], 403)
+
+    def test_negado_para_no_403(self):
+        """Uma resposta só: uma checagem que mandasse o 403 e deixasse seguir escreveria outra."""
+        self.precisa_rede()
+        h = self.login(servidor.net_config()["pin_op"])
+        s = socket.create_connection((self.ip, self.port), timeout=30)
+        try:
+            lines = ["POST /api/local/demandas/setor/salvar HTTP/1.1", "Host: %s:%d" % (self.ip, self.port),
+                     "Cookie: " + h["Cookie"], "Content-Length: 2"]
+            s.sendall(("\r\n".join(lines) + "\r\n\r\n").encode() + b"{}")
+            raw = b""
+            while True:
+                part = s.recv(65536)
+                if not part:
+                    break
+                raw += part
+        finally:
+            s.close()
+        self.assertEqual(raw.count(b"HTTP/1."), 1)
+        self.assertIn(b" 403 ", raw.split(b"\r\n", 1)[0])
+
+    def test_pin_dos_operadores_novo_tira_o_aparelho(self):
+        self.precisa_rede()
+        h = self.login(servidor.net_config()["pin_op"])
+        self.assertEqual(self.req("POST", "/api/rede", {"newpin_op": True})[0], 200)
+        self.assertEqual(self.req("GET", "/api/eu", headers=h, rede=True)[0], 401)
+
+
+class Detalhes(Base):
+    """Os detalhes que o teste de mutação cobra: textos de erro, cabeçalhos, limites e uma resposta só por pedido."""
+
+    def raw(self, linhas, corpo=b"", rede=False):
+        """Pedido cru; devolve (quantas respostas HTTP vieram, a primeira linha)."""
+        host = self.ip if rede else "127.0.0.1"
+        s = socket.create_connection((host, self.port), timeout=30)
+        try:
+            s.sendall(("\r\n".join(linhas) + "\r\n\r\n").encode() + corpo)
+            raw = b""
+            while True:
+                part = s.recv(65536)
+                if not part:
+                    break
+                raw += part
+        finally:
+            s.close()
+        return raw.count(b"HTTP/1."), raw.split(b"\r\n", 1)[0].decode()
+
+    def texto(self, *args, **kw):
+        st, _, raw = self.req(*args, **kw)
+        return st, raw.decode("utf-8")
+
+    def test_textos_de_erro(self):
+        self.assertEqual(self.texto("GET", "/nada"), (404, "Não encontrado."))
+        self.assertEqual(self.texto("POST", "/nada", {}), (404, "Não encontrado."))
+        self.assertEqual(self.texto("GET", "/", headers={"Host": "evil.com"}), (421, "Host não aceito."))
+        self.assertEqual(self.texto("POST", "/api/local/demandas/vista", b"{x"), (400, "JSON inválido."))
+        self.assertEqual(self.texto("POST", "/api/local/demandas/vista", b"[1]"), (400, "Pedido inválido."))
+        self.assertEqual(self.texto("POST", "/api/local/demandas/vista", {}, {"Origin": "http://evil.com"}), (403, "Origem não aceita."))
+        self.assertEqual(self.texto("POST", "/api/rede", b"[x"), (400, "Falha ao gravar a configuração da rede."))
+        with mock.patch.object(servidor.api_mod(), "handle", return_value=[1]):
+            self.assertEqual(self.texto("GET", "/api/local/demandas"), (500, "Resposta do módulo inválida."))
+        with mock.patch.object(servidor, "MAX_BODY", 4):
+            self.assertEqual(self.texto("POST", "/api/local/demandas/vista", b"12345"), (413, "Arquivo grande demais."))
+        n, linha = self.raw(["POST /api/local/demandas/vista HTTP/1.1", "Host: 127.0.0.1:%d" % self.port, "Content-Length: x"])
+        self.assertEqual((n, linha.split(" ")[1]), (1, "400"))
+        n, linha = self.raw(["POST /api/local/demandas/vista HTTP/1.1", "Host: 127.0.0.1:%d" % self.port, "Content-Length: -1"])
+        self.assertEqual((n, linha.split(" ")[1]), (1, "400"))
+
+    def test_cabecalhos(self):
+        _, h, _ = self.req("GET", "/")
+        self.assertEqual(h["Referrer-Policy"], "same-origin")
+
+    def test_query_string_nao_muda_a_rota(self):
+        self.assertEqual(json.loads(self.req("GET", "/api/eu?x=1")[2]), {"papel": "maquina"})
+        self.assertEqual(self.req("GET", "/app.js?v=2")[0], 200)
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista?x=1", {})[0], 200)
+        self.assertEqual(self.req("GET", "/api/local/demandasX")[0], 404)
+
+    def test_corpo_vazio_e_limite_exato(self):
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista")[0], 200)   # Content-Length 0: corpo {}
+        with mock.patch.object(servidor, "MAX_BODY", 2):
+            self.assertEqual(self.req("POST", "/api/local/demandas/vista", b"{}")[0], 200)   # exatamente no limite passa
+
+    def test_x_tab_e_resto_chegam_ao_modulo(self):
+        visto = {}
+
+        def handle(method, rest, body, ctx):
+            visto.update(method=method, rest=rest, body=body, ctx=ctx)
+            return {"ok": True}
+        with mock.patch.object(servidor.api_mod(), "handle", side_effect=handle):
+            self.req("POST", "/api/local/demandas/demanda/criar", {"a": 1}, {"X-Tab": "aba-123"})
+        self.assertEqual(visto, {"method": "POST", "rest": "demanda/criar", "body": {"a": 1},
+                                 "ctx": {"papel": "maquina", "tab": "aba-123"}})
+        with mock.patch.object(servidor.api_mod(), "handle", side_effect=handle):
+            self.req("GET", "/api/local/demandas")
+        self.assertEqual((visto["method"], visto["rest"]), ("GET", ""))
+
+    def test_status_do_erro_do_modulo(self):
+        class Erro(Exception):
+            def __init__(self, status):
+                self.status = status
+                super().__init__("erro %d" % status)
+        for status, esperado in ((400, 400), (599, 599), (399, 500), (600, 500), ("403", 500)):
+            with mock.patch.object(servidor.api_mod(), "handle", side_effect=Erro(status) if isinstance(status, int) else Exception()):
+                st, txt = self.texto("GET", "/api/local/demandas")
+            self.assertEqual(st, esperado, status)
+            if esperado == 500:
+                self.assertEqual(txt, "Erro interno do servidor.")
+
+    def test_anexo_do_adm_pela_rota_do_modulo(self):
+        st, txt = self.texto("GET", "/api/local/demandas/anexo/a0123456789abcdef")
+        self.assertEqual(st, 404)   # chegou ao módulo (não existe), não ao 404 do servidor
+        self.assertNotEqual(txt, "Não encontrado.")
+
+    def test_static_so_nomes_validos(self):
+        with mock.patch.object(servidor.api_mod(), "STATIC", (1, "ok.js", "../x.js", "a.py", "b.css")):
+            self.assertEqual(servidor.static_files(), ("ok.js", "b.css"))
+
+    def test_rev_le_o_arquivo_do_modulo(self):
+        (self.data / "outro.json").write_text('{"rev": 7}', encoding="utf-8")
+        with mock.patch.object(servidor.api_mod(), "REV_FILE", "outro.json"):
+            self.assertEqual(servidor.rev(), 7)
+        servidor._REV.update(key=None, rev=0)
+        (self.data / "demandas.json").write_text('{"rev": 3}', encoding="utf-8")
+        with mock.patch.object(servidor, "api_mod", return_value=object()):   # módulo sem REV_FILE: demandas.json
+            self.assertEqual(servidor.rev(), 3)
+
+    def test_ip_host(self):
+        p = self.port
+        self.assertTrue(servidor.ip_host("192.168.0.10:%d" % p, p))
+        self.assertFalse(servidor.ip_host("192.168.0.10:1", p))
+        self.assertFalse(servidor.ip_host("evil.com:%d" % p, p))
+        self.assertFalse(servidor.ip_host("[::1]:%d" % p, p))
+        self.assertFalse(servidor.ip_host("sem-porta", p))
+
+    def test_cookie_e_sessao(self):
+        cfg = servidor.net_config()
+        t = servidor.check_pin("10.0.0.1", cfg["pin"], now=5000)
+        self.assertEqual(len(t), 43)   # 32 bytes aleatórios
+        self.assertEqual(servidor.SESSIONS[servidor._token_hash(t)]["exp"], 5000 + 30 * 86400)
+        agora = servidor.check_pin("10.0.0.1", cfg["pin"])
+        self.assertEqual(servidor.session_ok("a=1; %s=%s; b=2" % (servidor.COOKIE, agora)), "completo")
+        self.assertIsNone(servidor.session_ok("%s=" % servidor.COOKIE))
+        self.assertIsNone(servidor.session_ok(""))
+
+    def test_bloqueio_nos_instantes_exatos(self):
+        cfg = servidor.net_config()
+        self.assertTrue(servidor.check_pin("10.1.0.1", cfg["pin"], now=0.5))   # IP novo não começa bloqueado
+        self.assertIsNone(servidor.check_pin("10.1.0.2", "999999", now=0.5))
+        self.assertTrue(servidor.check_pin("10.1.0.2", cfg["pin"], now=0.5))   # um erro não bloqueia
+        servidor.FAILS["10.1.0.3"] = [0, 1000.0]
+        self.assertTrue(servidor.check_pin("10.1.0.3", cfg["pin"], now=1000))   # bloqueio acaba no instante marcado
+        for _ in range(5):
+            servidor.check_pin("10.1.0.4", "999999", now=2000)
+        self.assertIsNone(servidor.check_pin("10.1.0.4", cfg["pin"], now=2299.9))
+        for _ in range(4):   # depois do bloqueio a conta recomeça do zero: 4 erros ainda não bloqueiam
+            self.assertIsNone(servidor.check_pin("10.1.0.4", "999999", now=2300))
+        self.assertTrue(servidor.check_pin("10.1.0.4", cfg["pin"], now=2300))
+
+    def test_net_save_padroes(self):
+        cfg = servidor.net_config()
+        self.assertEqual(servidor.net_save(), cfg)   # sem nada pedido, nada muda
+        novo = servidor.net_save(new_pin=True)
+        self.assertRegex(novo["pin"], r"^[0-9]{6}$")
+        self.assertEqual(json.loads((self.data / "rede.json").read_text(encoding="utf-8"))["pin"], novo["pin"])
+        self.assertRegex(servidor.net_save(new_pin_op=True)["pin_op"], r"^[0-9]{6}$")
+        r = json.loads(self.req("POST", "/api/rede", b"")[2])
+        self.assertEqual((r["pin"], r["pin_op"]), (servidor.net_config()["pin"], servidor.net_config()["pin_op"]))
+        r2 = json.loads(self.req("POST", "/api/rede", {"newpin": False})[2])
+        self.assertEqual(r2["pin"], r["pin"])
+        r3 = json.loads(self.req("POST", "/api/rede", {"newpin": True})[2])
+        self.assertNotEqual(r3["pin"], r["pin"])
+
+    def test_origem_do_proprio_computador(self):
+        h = {"Origin": "http://localhost:%d" % self.port}
+        self.assertEqual(self.req("POST", "/api/local/demandas/vista", {}, h)[0], 200)
+
+    def test_recusas_mandam_uma_resposta_so(self):
+        n, linha = self.raw(["GET / HTTP/1.1", "Host: evil.com"])
+        self.assertEqual((n, linha.split(" ")[1]), (1, "421"))
+        n, linha = self.raw(["POST /api/local/demandas/vista HTTP/1.1", "Host: evil.com", "Content-Length: 2"], b"{}")
+        self.assertEqual((n, linha.split(" ")[1]), (1, "421"))
+
+    def test_pela_rede_textos_login_e_cookie(self):
+        if not self.ip:
+            self.skipTest("sem IP de rede nesta máquina")
+        rede_host = "%s:%d" % (self.ip, self.port)
+        n, linha = self.raw(["GET /api/eu HTTP/1.1", "Host: 127.0.0.1:%d" % self.port], rede=True)
+        self.assertEqual((n, linha.split(" ")[1]), (1, "403"))   # rede desligada: uma resposta só
+        self.assertEqual(self.texto("GET", "/api/eu", headers={"Host": "127.0.0.1:%d" % self.port}, rede=True),
+                         (403, "Acesso pela rede desligado."))
+        servidor.NET_ON = True
+        n, linha = self.raw(["GET /api/eu HTTP/1.1", "Host: " + rede_host], rede=True)
+        self.assertEqual((n, linha.split(" ")[1]), (1, "401"))
+        self.assertEqual(self.texto("GET", "/api/eu", rede=True), (401, "Entre com o PIN."))
+        for path in ("/?x=1", "/index.html"):
+            self.assertIn(b'name="pin"', self.req("GET", path, rede=True)[2], path)
+        self.assertEqual(self.req("HEAD", "/", rede=True)[0], 200)   # HEAD também recebe a página de PIN
+        self.assertEqual(self.texto("GET", "/api/rede", headers=self.login(servidor.net_config()["pin"]), rede=True),
+                         (403, "Só no computador principal."))
+        with mock.patch.object(servidor, "MAX_BODY_ANON", 4):
+            self.assertEqual(self.texto("POST", "/api/login", b"pin=1", {"Content-Type": "application/x-www-form-urlencoded"},
+                                        rede=True), (413, "Entre com o PIN antes de enviar arquivos."))
+            self.assertEqual(self.req("POST", "/api/login", b"pin=", {"Content-Type": "application/x-www-form-urlencoded"},
+                                      rede=True)[0], 200)   # exatamente no limite ainda é lido
+        form = {"Content-Type": "application/x-www-form-urlencoded"}
+        st, txt = self.texto("POST", "/api/login", b"pin=0", form, rede=True)
+        self.assertIn('<p class="e">PIN errado. Depois de 5 erros, espere 5 minutos.</p>', txt)
+        self.assertIn(self.ip, servidor.FAILS)   # o erro conta para o IP de quem tentou (o login certo abaixo zera)
+        self.assertEqual(self.texto("POST", "/api/rede", {"on": False}, self.login(servidor.net_config()["pin"]), rede=True),
+                         (403, "Só no computador principal."))
+        sessao = self.login(servidor.net_config()["pin"])
+        with mock.patch.object(servidor, "MAX_BODY_ANON", 4):   # com sessão, o teto de quem não entrou não vale
+            self.assertEqual(self.req("POST", "/api/local/demandas/vista", b"{    }", sessao, rede=True)[0], 200)
+        self.assertIn(b'name="pin"', self.req("POST", "/api/login", b"outro=1", form, rede=True)[2])   # sem o campo
+        st, h, raw = self.req("POST", "/api/login", ("pin=+%s+" % servidor.net_config()["pin_op"]).encode(), form, rede=True)
+        self.assertEqual((st, h["Location"], h["Content-Length"], raw), (303, "/", "0", b""))   # espaços em volta saem
+        self.assertRegex(h["Set-Cookie"], r"^demandas_s=[A-Za-z0-9_-]{43}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000$")
+        op = {"Cookie": h["Set-Cookie"].split(";")[0]}
+        self.assertEqual(self.req("HEAD", "/app.js", headers=op, rede=True)[0], 200)   # HEAD vale como GET na lista
+        self.assertEqual(self.texto("GET", "/api/rede", headers=op, rede=True), (403, servidor.OPERADOR_MSG))
+
+
+if __name__ == "__main__":
+    unittest.main()

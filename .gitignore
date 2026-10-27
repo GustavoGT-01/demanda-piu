@@ -1,0 +1,10 @@
+data/
+__pycache__/
+*.pyc
+tests/node_modules/
+tests/package*.json
+.qa/
+.coverage*
+!.coveragerc
+.mutmut-cache
+.claude/
