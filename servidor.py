@@ -17,9 +17,11 @@ import os
 import re
 import secrets
 import socket
+import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -31,6 +33,10 @@ MOD = ROOT / "demandas"
 WEB = ROOT / "web"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DEMANDAS_PORT") or 8090)   # DEMANDAS_PORT troca a porta
+VERSAO = "1.0.0"
+INICIO_MS = int(time.time() * 1000)   # vai no /api/rev: mudou = o servidor reiniciou
+LOG_MAX = 500                         # linhas guardadas em data/servidor.log
+SAIDA_MAX = 1024 * 1024               # data/servidor-saida.log passa disto: vira .1 ao religar
 MAX_BODY = 16 * 1024 * 1024   # anexo de 5 MB em base64 cabe com folga
 MAX_BODY_ANON = 64 * 1024     # da rede sem sessão (só o PIN entra)
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
@@ -460,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/eu":
             return self._json({"papel": self.papel})
         if path == "/api/rev":
-            return self._json({"rev": rev()})
+            return self._json({"rev": rev(), "inicio": INICIO_MS})
         if path == "/api/rede":
             if not pode(self.papel, "configurar"):
                 return self._fail(403, "Só no computador principal.")
@@ -536,7 +542,68 @@ class Server(ThreadingHTTPServer):
         super().server_bind()
 
 
-def main() -> None:
+# ---------- ligar sozinho (tarefa agendada) ----------
+def registra(texto: str, agora: float | None = None) -> None:
+    """Uma linha em data/servidor.log (a seção Servidor mostra as últimas); guarda só as LOG_MAX mais novas."""
+    p = store.data_dir() / "servidor.log"
+    agora = time.time() if agora is None else agora
+    try:
+        antigas = p.read_text(encoding="utf-8").splitlines()
+    except (OSError, ValueError):
+        antigas = []
+    linha = time.strftime("%d/%m %H:%M", time.localtime(agora)) + "  " + texto
+    p.write_text("\n".join((antigas + [linha])[-LOG_MAX:]) + "\n", encoding="utf-8")
+
+
+def _roda_filho(cmd) -> int:
+    """O servidor num processo filho; o que ele imprime vai para data/servidor-saida.log (sem janela na tarefa)."""
+    saida = store.data_dir() / "servidor-saida.log"
+    try:
+        if saida.stat().st_size > SAIDA_MAX:
+            os.replace(saida, saida.with_name(saida.name + ".1"))
+    except OSError:
+        pass
+    with open(saida, "ab") as fh:
+        return subprocess.call(cmd, stdout=fh, stderr=subprocess.STDOUT)
+
+
+def sempre(cmd, rodar=_roda_filho, relogio=time.monotonic, dormir=time.sleep, limite: int = 10, janela: float = 120,
+           espera: float = 5) -> int:
+    """Laço da tarefa agendada: roda o servidor; se ele parar, anota e religa em `espera` s. Parou `limite` vezes em
+    `janela` s (erro que se repete, como a porta ocupada por outro servidor): anota e desiste, devolvendo 1."""
+    quedas: list = []
+    registra("ligado com o Windows (tarefa agendada)")
+    while True:
+        cod = rodar(cmd)
+        if isinstance(cod, int) and cod >= 2 ** 31:   # o Windows devolve o código sem sinal (encerrado = 4294967295)
+            cod -= 2 ** 32
+        t = relogio()
+        quedas = [q for q in quedas if t - q < janela] + [t]
+        if len(quedas) >= limite:
+            registra("parou %d vezes em %d s (último código %s): desisti. Veja data/servidor-saida.log"
+                     % (limite, janela, cod))
+            return 1
+        registra("parou (código %s) · religado em %d s" % (cod, espera))
+        dormir(espera)
+
+
+def ligado(porta: int = PORT, timeout: float = 2) -> bool:
+    """Já tem uma Central respondendo nesta porta? (o iniciar.bat só abre o navegador). Sem proxy do sistema."""
+    abre = urllib.request.build_opener(urllib.request.ProxyHandler({})).open
+    try:
+        with abre("http://127.0.0.1:%d/api/rev" % porta, timeout=timeout) as r:
+            return isinstance(json.loads(r.read()).get("rev"), int)
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def main(argv=None) -> None:
+    """Sem argumento: liga o servidor. --ligado: sai com 0 se já tem um respondendo. --sempre: laço de reinício."""
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--ligado"]:
+        sys.exit(0 if ligado() else 1)
+    if argv[:1] == ["--sempre"]:
+        sys.exit(sempre([sys.executable, str(ROOT / "servidor.py")]))
     global NET_ON
     NET_ON = net_config()["on"]
     sessions_load()

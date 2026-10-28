@@ -17,8 +17,19 @@ if errorlevel 1 (
   exit /b 1
 )
 
+set "PORTA=%DEMANDAS_PORT%"
+if not defined PORTA set "PORTA=8090"
 
-start "" http://127.0.0.1:8090
+rem Ja ligada (pela tarefa "iniciar com o Windows" ou outra janela): so abre o navegador.
+"%PY%" %PYARG% servidor.py --ligado
+if not errorlevel 1 (
+  echo A Central ja esta ligada. Abrindo no navegador...
+  start "" http://127.0.0.1:%PORTA%
+  timeout /t 3 >nul
+  exit /b 0
+)
+
+start "" http://127.0.0.1:%PORTA%
 "%PY%" %PYARG% servidor.py
 echo.
 echo O servidor parou. Veja a mensagem acima.

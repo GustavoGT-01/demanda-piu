@@ -161,6 +161,11 @@ estudo correspondente inteiro**. Ele tem os detalhes, formatos JSON, rotas e a l
 - BitLocker: **só avisar na tela** que o zip tem nomes, matrículas e códigos, recomendando BitLocker To Go.
 - Restaurar: **as pessoas se identificam de novo** (limpar `_TK`).
 
+**Etapa 2 (robustez local)**: respondidas pelo dono em 28/10/2026
+- Início com o Windows: **tarefa agendada "ao iniciar o sistema"** (antes do login), criada uma vez por
+  `instalar-inicio.bat` como administrador. Sem atalho em Inicializar.
+- Conta da tarefa: **a do usuário atual** (o instalador pede a senha uma vez). Nem SYSTEM nem conta própria.
+
 **Etapa 3 (e-mail)**
 - Qual conta de envio (SMTP da empresa, Microsoft 365, Google Workspace ou Brevo/SES)?
 - Quais eventos além de "criada" mandam e-mail? O solicitante recebe cópia?

@@ -23,6 +23,16 @@ viraria administrador. Para outros aparelhos, use só o acesso pela rede com PIN
 
 Feche a janela preta do servidor para desligar.
 
+### Ligar sozinho com o Windows (recomendado no PC da central)
+1. Botão direito em `instalar-inicio.bat` → **Executar como administrador**. Ele pede a senha da sua conta uma vez
+   e cria a tarefa agendada "Central de demandas": a Central liga quando o Windows liga, antes de alguém entrar, sem
+   janela preta, e religa em 5 s se parar (10 quedas em 2 minutos: desiste e anota o motivo). Tudo fica anotado em
+   `data/servidor.log`. Trocou a senha da conta? Rode o instalador de novo. Para desfazer: `remover-inicio.bat`.
+2. Com a tarefa instalada, o `iniciar.bat` só abre o navegador.
+3. No PC: **suspensão e hibernação desligadas** (Opções de energia), na BIOS **ligar ao voltar a energia**
+   ("Restore on AC power loss = Power On"), **IP fixo** reservado no roteador e **no-break no PC e no roteador**.
+   Um PC que "dorme", ou um roteador sem energia, deixa todos os aparelhos sem a Central.
+
 ## Dados
 Ficam em `data/` (fora do Git):
 

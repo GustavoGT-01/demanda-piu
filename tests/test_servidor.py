@@ -166,13 +166,13 @@ class Api(Base):
         self.assertIn(XSS, json.loads(raw)["setores"][0]["nome"])
 
     def test_rev(self):
-        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0})
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0, "inicio": servidor.INICIO_MS})
         self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
-        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1})
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1, "inicio": servidor.INICIO_MS})
         (self.data / "demandas.json").write_text("{quebrado", encoding="utf-8")
-        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1})   # arquivo ruim: fica a última rev
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 1, "inicio": servidor.INICIO_MS})   # arquivo ruim: fica a última rev
         (self.data / "demandas.json").write_text('{"rev": true}', encoding="utf-8")
-        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0})
+        self.assertEqual(json.loads(self.req("GET", "/api/rev")[2]), {"rev": 0, "inicio": servidor.INICIO_MS})
 
     def test_origem_e_host(self):
         self.assertEqual(self.post("vista", {}, {"Origin": "http://evil.com"})[0], 403)
@@ -699,6 +699,148 @@ class Backup(Base):
         self.assertEqual(self.json("POST", "/api/backup/agora", {}, {"Origin": "http://mal.example"}),
                          (403, "Origem não aceita."))
         self.assertEqual(self.req("GET", "/api/backup", headers={"Host": "mal.example:%d" % self.port})[0], 421)
+
+
+class Sempre(unittest.TestCase):
+    """Laço de reinício da tarefa agendada (--sempre), servidor.log e a checagem --ligado do iniciar.bat."""
+
+    def setUp(self):
+        self.data = Path(tempfile.mkdtemp(prefix="dem-sempre-"))
+        self._env = mock.patch.dict(os.environ, {"DEMANDAS_DATA": str(self.data)})
+        self._env.start()
+
+    def tearDown(self):
+        self._env.stop()
+
+    def log(self):
+        return (self.data / "servidor.log").read_text(encoding="utf-8").splitlines()
+
+    def test_registra(self):
+        t = time.mktime((2026, 10, 27, 8, 2, 0, 0, 0, -1))
+        servidor.registra("ligado", t)
+        servidor.registra("parou", t + 60)
+        self.assertEqual(self.log(), ["27/10 08:02  ligado", "27/10 08:03  parou"])
+        antes = time.strftime("%d/%m %H:%M")
+        servidor.registra("agora")
+        self.assertIn(self.log()[-1], (antes + "  agora", time.strftime("%d/%m %H:%M") + "  agora"))
+        (self.data / "servidor.log").write_bytes(b"\xff\xfe ruim")
+        servidor.registra("depois do arquivo ruim", t)
+        self.assertEqual(self.log(), ["27/10 08:02  depois do arquivo ruim"])
+
+    def test_registra_guarda_as_ultimas(self):
+        with mock.patch.object(servidor, "LOG_MAX", 3):
+            for i in range(5):
+                servidor.registra("linha %d" % i, 0)
+        self.assertEqual([ln.split("  ")[1] for ln in self.log()], ["linha 2", "linha 3", "linha 4"])
+
+    def test_religa_e_desiste_com_quedas_seguidas(self):
+        rodadas, esperas = [], []
+        relogio = iter(range(0, 1000, 10)).__next__   # cada queda 10 s depois da outra: 10 em 100 s < 120 s
+
+        def rodar(cmd):
+            rodadas.append(cmd)
+            return 3
+
+        self.assertEqual(servidor.sempre(["py", "servidor.py"], rodar=rodar, relogio=relogio, dormir=esperas.append), 1)
+        self.assertEqual(len(rodadas), 10)
+        self.assertEqual(rodadas[0], ["py", "servidor.py"])
+        self.assertEqual(esperas, [5] * 9)
+        log = self.log()
+        self.assertTrue(log[0].endswith("  ligado com o Windows (tarefa agendada)"))
+        self.assertTrue(log[1].endswith("  parou (código 3) · religado em 5 s"))
+        self.assertTrue(log[-1].endswith("  parou 10 vezes em 120 s (último código 3): desisti. Veja data/servidor-saida.log"))
+        self.assertEqual(len(log), 11)
+
+    def test_quedas_espacadas_nao_desistem(self):
+        rodadas = []
+        relogio = iter(range(0, 10 ** 6, 13)).__next__   # 10 quedas ocupam 117 s... a 11ª já tirou a 1ª da janela
+
+        def rodar(cmd):
+            rodadas.append(1)
+            if len(rodadas) == 30:
+                raise KeyboardInterrupt
+            return 1
+
+        with self.assertRaises(KeyboardInterrupt):
+            servidor.sempre(["x"], rodar=rodar, relogio=relogio, dormir=lambda s: None, janela=117)
+        self.assertEqual(len(rodadas), 30)
+
+    def test_codigo_do_windows_com_sinal(self):
+        codigos = iter([4294967295, 2 ** 31, 2 ** 31 - 1])
+        servidor.sempre(["x"], rodar=lambda c: next(codigos), relogio=iter([0, 1, 2]).__next__, dormir=lambda s: None,
+                        limite=3)
+        log = self.log()
+        self.assertTrue(log[1].endswith("parou (código -1) · religado em 5 s"))
+        self.assertTrue(log[2].endswith("parou (código -2147483648) · religado em 5 s"))
+        self.assertIn("(último código 2147483647)", log[3])
+
+    def test_limite_exato(self):
+        rodadas = []
+        relogio = iter([0, 1, 2]).__next__
+        servidor.sempre(["x"], rodar=lambda c: rodadas.append(c) or 0, relogio=relogio, dormir=lambda s: None, limite=3)
+        self.assertEqual(len(rodadas), 3)
+
+    def test_roda_filho_grava_a_saida(self):
+        cod = servidor._roda_filho([sys.executable, "-c", "print('oi'); import sys; sys.exit(7)"])
+        self.assertEqual(cod, 7)
+        self.assertIn(b"oi", (self.data / "servidor-saida.log").read_bytes())
+        tam = (self.data / "servidor-saida.log").stat().st_size
+        with mock.patch.object(servidor, "SAIDA_MAX", tam):   # exatamente no limite: ainda não troca
+            servidor._roda_filho([sys.executable, "-c", "print('mesmo')"])
+        self.assertFalse((self.data / "servidor-saida.log.1").exists())
+        with mock.patch.object(servidor, "SAIDA_MAX", 1):
+            servidor._roda_filho([sys.executable, "-c", "print('segunda')"])
+        self.assertIn(b"mesmo", (self.data / "servidor-saida.log.1").read_bytes())
+        self.assertEqual((self.data / "servidor-saida.log").read_bytes().strip(), b"segunda")
+
+    def test_ligado(self):
+        srv = servidor.Server(("127.0.0.1", 0), servidor.Handler)
+        porta = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            self.assertTrue(servidor.ligado(porta))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertFalse(servidor.ligado(porta, timeout=0.5))
+        resp = mock.MagicMock()
+        resp.__enter__.return_value.read.return_value = b'{"rev": 3}'
+        with mock.patch.object(servidor.urllib.request.OpenerDirector, "open", return_value=resp) as abre:
+            self.assertTrue(servidor.ligado(4321))
+        abre.assert_called_once_with("http://127.0.0.1:4321/api/rev", timeout=2)
+        resp.__enter__.return_value.read.return_value = b'{"rev": "1"}'
+        with mock.patch.object(servidor.urllib.request.OpenerDirector, "open", return_value=resp):
+            self.assertFalse(servidor.ligado(porta), "outro programa na porta")
+        resp.__enter__.return_value.read.return_value = b'[1]'
+        with mock.patch.object(servidor.urllib.request.OpenerDirector, "open", return_value=resp):
+            self.assertFalse(servidor.ligado(porta))
+        resp.__enter__.return_value.read.return_value = b'<html>'
+        with mock.patch.object(servidor.urllib.request.OpenerDirector, "open", return_value=resp):
+            self.assertFalse(servidor.ligado(porta))
+
+    def test_main_ligado_e_sempre(self):
+        with mock.patch.object(servidor, "ligado", return_value=True), self.assertRaises(SystemExit) as cm:
+            servidor.main(["--ligado"])
+        self.assertEqual(cm.exception.code, 0)
+        with mock.patch.object(servidor, "ligado", return_value=False), self.assertRaises(SystemExit) as cm:
+            servidor.main(["--ligado"])
+        self.assertEqual(cm.exception.code, 1)
+        with mock.patch.object(servidor, "ligado", return_value=True), self.assertRaises(SystemExit) as cm:
+            servidor.main(["--ligado", "a mais"])
+        self.assertEqual(cm.exception.code, 0)
+        with mock.patch.object(servidor, "sempre", return_value=4), self.assertRaises(SystemExit) as cm:
+            servidor.main(["--sempre", "a mais"])
+        self.assertEqual(cm.exception.code, 4)
+        with mock.patch.object(servidor, "sempre", return_value=1) as s, self.assertRaises(SystemExit) as cm:
+            servidor.main(["--sempre"])
+        self.assertEqual(cm.exception.code, 1)
+        s.assert_called_once_with([sys.executable, str(servidor.ROOT / "servidor.py")])
+        with mock.patch.object(sys, "argv", ["servidor.py", "--ligado"]), \
+                mock.patch.object(servidor, "ligado", return_value=True), \
+                mock.patch.object(servidor, "net_config", side_effect=AssertionError("não devia ligar o servidor")), \
+                self.assertRaises(SystemExit) as cm:
+            servidor.main()
+        self.assertEqual(cm.exception.code, 0)
 
 
 class Fundo(unittest.TestCase):
