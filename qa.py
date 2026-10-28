@@ -37,11 +37,12 @@ CRITICO = {
     "servidor.py": (["tests/test_servidor.py"],
                     ["_pin_ok", "_pin_novo", "net_config", "net_save", "sessions_load", "check_pin", "session_ok", "ip_host",
                      "rev", "static_files", "_host_ok", "_remote", "_auth_ok", "_operador_ok", "end_headers", "_static", "_api",
-                     "do_GET", "do_POST"]),
+                     "do_GET", "do_POST", "backup_mod", "fundo", "iniciar_fundo"]),
     "store.py": (["tests/test_store.py", "tests/test_demandas_store.py"], None),
     "demandas/demandas_store.py": (["tests/test_demandas_store.py"], None),
     "demandas/demandas_calc.py": (["tests/test_demandas_calc.py"], None),
     "demandas/api.py": (["tests/test_demandas_api.py", "tests/test_servidor.py"], None),
+    "demandas/demandas_backup.py": (["tests/test_demandas_backup.py"], None),
 }
 # o que não entra na cópia usada pela mutação (pesado ou fora do código)
 NAO_COPIA = {".git", ".qa", "data", "node_modules", "docs", "__pycache__", ".mutmut-cache", ".claude"}

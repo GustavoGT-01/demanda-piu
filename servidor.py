@@ -83,6 +83,36 @@ def api_mod():
     return _API[0]
 
 
+def backup_mod():
+    """demandas/demandas_backup.py; mesmo demandas_store (e o mesmo LOCK) que o api.py usa."""
+    api_mod()
+    import demandas_backup
+    return demandas_backup
+
+
+# ---------- thread de fundo ----------
+def fundo(tarefas, parar: threading.Event, intervalo: float = 60, relogio=None) -> None:
+    """Roda cada tarefa(agora em ms) logo ao ligar e depois a cada intervalo, até parar. A falha de uma tarefa não
+    derruba as outras nem a thread."""
+    relogio = relogio or (lambda: int(time.time() * 1000))
+    while True:
+        agora = relogio()
+        for t in tarefas:
+            try:
+                t(agora)
+            except Exception as exc:
+                print("[fundo] %s: %r" % (getattr(t, "__name__", t), exc), file=sys.stderr)
+        if parar.wait(intervalo):
+            return
+
+
+def iniciar_fundo(tarefas, intervalo: float = 60, relogio=None) -> threading.Event:
+    """Uma só thread daemon para as tarefas periódicas (backup; depois atraso e e-mail). Devolve o Event que a para."""
+    parar = threading.Event()
+    threading.Thread(target=fundo, args=(list(tarefas), parar, intervalo, relogio), name="fundo", daemon=True).start()
+    return parar
+
+
 def static_files() -> tuple:
     return tuple(f for f in getattr(api_mod(), "STATIC", ()) if isinstance(f, str) and FILE_RE.match(f))
 
@@ -466,6 +496,7 @@ def main() -> None:
     except OSError:
         print(f"Já existe um servidor na porta {PORT}: use a janela aberta ou feche-a")
         sys.exit(1)
+    iniciar_fundo([backup_mod().tarefa])   # só depois de abrir a porta: um segundo servidor não faz backup
     print(f"Central de demandas aberta em http://{HOST}:{PORT}")
     if NET_ON:
         print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))

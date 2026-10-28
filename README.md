@@ -34,7 +34,15 @@ Ficam em `data/` (fora do Git):
 | `rede.json`, `sessoes.json` | configuração do acesso pela rede e sessões dos aparelhos (só o hash) |
 
 Toda gravação é atômica e guarda o arquivo anterior como `.bak`: se o principal corromper, a leitura volta ao
-`.bak`. **Backup:** copie a pasta `data/` inteira com o programa fechado.
+`.bak`.
+
+**Backup automático:** com o programa aberto, todo dia às 03:00 (e ao ligar, se a última cópia tem mais de 20 h) ele grava
+`backup/central-demandas_AAAAMMDD-HHMM_<tipo>.zip` ao lado de `data/`. Cada zip é conferido depois de gravado
+(`manifesto.json` com o SHA-256 de cada arquivo) e guarda `demandas.json`, `demandas-arquivo.json` e os anexos
+citados; **não** leva `rede.json` nem `sessoes.json`. Ficam 7 diárias, 4 semanais e 12 mensais, até 5 GB.
+Configuração em `data/backup.json` e resultado em `data/backup-estado.json`. O zip tem nomes, matrículas e os códigos
+das pessoas (protegidos, mas quebráveis): guarde-o num lugar seguro e, em pen drive, use BitLocker To Go. Para
+restaurar à mão, feche o programa e descompacte o zip dentro de `data/`.
 
 Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.json` e `demandas-anexos/` para esta
 `data/` com o programa fechado. O formato é o mesmo do módulo Demandas do CutFlow, de onde este programa saiu.
@@ -44,7 +52,7 @@ Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.jso
 |---|---|
 | `servidor.py` | servidor HTTP: página, arquivos do módulo, API, PIN, sessões e defesas (Host, Origin, CSP) |
 | `store.py` | gravação segura dos JSON |
-| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
+| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
 | `web/` | a página (`index.html`) e a casca (`app.js`: `api()`, avisos, atualização e painel ⚙ Rede) |
 | `tests/` | testes Python e o teste de tela em jsdom |
 

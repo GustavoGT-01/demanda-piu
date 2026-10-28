@@ -6,6 +6,7 @@ com ele pelo IP da máquina (sem IP de rede, esses testes são pulados). Dados n
 
 import hashlib
 import http.client
+import io
 import json
 import os
 import socket
@@ -584,6 +585,71 @@ class Detalhes(Base):
         op = {"Cookie": h["Set-Cookie"].split(";")[0]}
         self.assertEqual(self.req("HEAD", "/app.js", headers=op, rede=True)[0], 200)   # HEAD vale como GET na lista
         self.assertEqual(self.texto("GET", "/api/rede", headers=op, rede=True), (403, servidor.OPERADOR_MSG))
+
+
+class Fundo(unittest.TestCase):
+    """Thread de fundo comum: roda ao ligar e a cada intervalo, com o relógio injetado; uma tarefa que falha não
+    derruba as outras."""
+
+    def test_roda_ao_ligar_e_a_cada_intervalo_ate_parar(self):
+        visto, parar = [], threading.Event()
+        relogio = iter(range(1000, 100000, 1000)).__next__
+
+        def tarefa(agora):
+            visto.append(agora)
+            if len(visto) == 3:
+                parar.set()
+
+        servidor.fundo([tarefa], parar, intervalo=0.001, relogio=relogio)   # volta quando parar
+        self.assertEqual(visto, [1000, 2000, 3000])
+
+    def test_falha_de_uma_tarefa_nao_derruba_as_outras(self):
+        visto, parar = [], threading.Event()
+
+        def ruim(agora):
+            raise RuntimeError("quebrou")
+
+        def boa(agora):
+            visto.append(agora)
+            parar.set()
+
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            servidor.fundo([ruim, boa], parar, intervalo=0.001, relogio=lambda: 7)
+        self.assertEqual(visto, [7])
+        self.assertEqual(err.getvalue(), "[fundo] ruim: RuntimeError('quebrou')\n")
+
+    def test_intervalo_padrao_de_60_s(self):
+        parar = mock.Mock()
+        parar.wait.return_value = True
+        servidor.fundo([], parar, relogio=lambda: 0)
+        parar.wait.assert_called_once_with(60)
+        with mock.patch.object(servidor.threading, "Thread") as th:
+            servidor.iniciar_fundo([])
+        self.assertEqual(th.call_args.kwargs["args"][2], 60)
+
+    def test_relogio_padrao_em_ms(self):
+        visto, parar = [], threading.Event()
+        parar.set()
+        antes = int(time.time() * 1000)
+        servidor.fundo([visto.append], parar, intervalo=0)
+        self.assertEqual(len(visto), 1)
+        self.assertTrue(antes <= visto[0] <= int(time.time() * 1000))
+
+    def test_iniciar_fundo_e_daemon_e_para(self):
+        rodou = threading.Event()
+        parar = servidor.iniciar_fundo([lambda agora: rodou.set()], intervalo=0.01)
+        self.assertTrue(rodou.wait(5))
+        t = next(t for t in threading.enumerate() if t.name == "fundo")
+        self.assertTrue(t.daemon)
+        parar.set()
+        t.join(5)
+        self.assertFalse(t.is_alive())
+
+    def test_backup_mod_usa_o_mesmo_banco_do_api(self):
+        bk = servidor.backup_mod()
+        self.assertIs(bk.ds, sys.modules["demandas_store"])
+        self.assertIs(bk.ds.LOCK, servidor.api_mod().ds.LOCK)
+        self.assertTrue(callable(bk.tarefa))
 
 
 if __name__ == "__main__":
