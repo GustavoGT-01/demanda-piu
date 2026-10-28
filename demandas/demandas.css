@@ -502,6 +502,13 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-cfgtipo{justify-self:start;white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;background:var(--dm-surface2);border:1px solid var(--dm-line);color:var(--dm-muted)}
 #dmboard .dm-cfgtipo[data-t=manual]{color:var(--dm-s-new);border-color:color-mix(in srgb,var(--dm-s-new) 40%,var(--dm-line))}
 #dmboard .dm-cfgtipo[data-t=antes-restaurar]{color:var(--dm-s-pause);border-color:color-mix(in srgb,var(--dm-s-pause) 40%,var(--dm-line))}
+/* seção E-mail */
+#dmboard .dm-mlgrid{display:grid;grid-template-columns:2fr 1fr 1.4fr;gap:4px 10px}
+#dmboard .dm-mlgrid .dm-fld:nth-child(5){grid-column:2/-1}
+#dmboard .dm-mlgrid .dm-fld:nth-child(6){grid-column:1/-1}
+#dmboard .dm-mlev{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:4px 0 8px}
+#dmboard .dm-cfgsec>.dm-inl{display:flex;margin:4px 0}
+
 /* seção Servidor */
 #dmboard .dm-svok{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;border:1px solid var(--dm-s-prog);background:color-mix(in srgb,var(--dm-s-prog) 12%,transparent);font-size:13px;margin-bottom:12px}
 #dmboard .dm-svok i{width:10px;height:10px;border-radius:50%;background:var(--dm-s-prog);flex:0 0 auto;box-shadow:0 0 0 4px color-mix(in srgb,var(--dm-s-prog) 25%,transparent)}
@@ -569,6 +576,8 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
   #dmboard .dm-cfgnav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}
   #dmboard .dm-cfgbody{max-height:none}
   #dmboard .dm-cfgpins,#dmboard .dm-cfgret,#dmboard .dm-cfgult,#dmboard .dm-svgrid{grid-template-columns:1fr 1fr}
+  #dmboard .dm-mlgrid,#dmboard .dm-mlev{grid-template-columns:1fr}
+  #dmboard .dm-mlgrid .dm-fld:nth-child(5){grid-column:auto}
   #dmboard .dm-cfgcp{grid-template-columns:minmax(0,1fr) auto auto}
   #dmboard .dm-cfgcp>:nth-child(2){display:none}
   #dmboard .dm-rscmp{grid-template-columns:1fr}

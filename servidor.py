@@ -459,6 +459,39 @@ class Handler(BaseHTTPRequestHandler):
             print("[backup] %s %s: %r" % (method, path, exc), file=sys.stderr)
             return self._fail(500, "Falha no backup: veja a janela do servidor.")
 
+    def _email(self, method: str, path: str, raw: bytes) -> None:
+        """/api/email (GET: configuração sem a senha e estado da fila; POST: salva), /api/email/teste {para, ...}
+        (envia na hora) e /api/email/fila {acao}. Só o computador principal: a conta de envio é da empresa."""
+        if not pode(self.papel, "configurar"):
+            return self._fail(403, "Só no computador principal.")
+        mail = email_mod()
+        acao = path[len("/api/email"):]
+        if (method, acao) not in (("GET", ""), ("POST", ""), ("POST", "/teste"), ("POST", "/fila")):
+            return self._fail(404, "Não encontrado.")
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeError, ValueError):
+            return self._fail(400, "JSON inválido.")
+        if not isinstance(body, dict):
+            return self._fail(400, "Pedido inválido.")
+        porta = self.server.server_address[1]
+        try:
+            extra = {}
+            if acao == "" and method == "POST":
+                mail.salvar_config(body)
+            elif acao == "/teste":
+                extra = {"teste": mail.teste(body)}
+            elif acao == "/fila":
+                extra = {"mexeu": mail.fila_acao(body.get("acao"))}
+            return self._json({"cfg": mail.config(), "estado": mail.estado(), **extra,
+                               "sugestao_link": ("http://%s:%d" % (lan_addresses()[0], porta)) if NET_ON and lan_addresses()
+                               else "http://127.0.0.1:%d" % porta})
+        except mail.EmailErro as exc:
+            return self._fail(exc.status, str(exc))
+        except OSError as exc:
+            print("[e-mail] %s %s: %r" % (method, path, exc), file=sys.stderr)
+            return self._fail(500, "Falha ao gravar a configuração do e-mail: veja a janela do servidor.")
+
     def _rede(self) -> dict:
         cfg = net_config()
         port = self.server.server_address[1]
@@ -482,6 +515,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._rede())
         if path == "/api/backup" or path.startswith("/api/backup/"):
             return self._backup("GET", path, b"")
+        if path == "/api/email" or path.startswith("/api/email/"):
+            return self._email("GET", path, b"")
         if path == "/api/servidor":
             if not pode(self.papel, "configurar"):
                 return self._fail(403, "Só no computador principal.")
@@ -538,6 +573,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._rede())
         if path == "/api/backup" or path.startswith("/api/backup/"):
             return self._backup("POST", path, data)
+        if path == "/api/email" or path.startswith("/api/email/"):
+            return self._email("POST", path, data)
         if path.startswith("/api/local/demandas/"):
             return self._api("POST", path, data)
         self._fail(404, "Não encontrado.")

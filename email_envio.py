@@ -350,8 +350,11 @@ def _registra(itens: list) -> None:
 
 
 def _linha_log(item: dict, status: str, t: int, erro: str = "") -> dict:
-    return {"t": t, "dem": item["dem"], "ev": item["ev"], "para": item["para"] + item["cc"], "status": status,
-            "tent": item["tent"], "erro": erro}
+    linha = {"t": t, "dem": item["dem"], "ev": item["ev"], "para": item["para"] + item["cc"], "status": status,
+             "tent": item["tent"], "erro": erro}
+    if status == "falhou":   # guarda o item: "Reenviar as falhas" põe de volta na fila
+        linha["item"] = item
+    return linha
 
 
 def enfileirar(envios: list, agora: int | None = None) -> int:
@@ -425,18 +428,97 @@ def tarefa(agora: int, enviar=enviar_um) -> None:
             _registra([_linha_log(atual, "ok" if tipo == "ok" else "falhou", agora, erro)])
 
 
+def _falha_aberta(i: dict) -> bool:
+    """Falha que ainda conta: nem reenviada nem limpa pela tela."""
+    return i.get("status") == "falhou" and not i.get("reenviado") and not i.get("limpa")
+
+
+def _dia(ms) -> str:
+    return time.strftime("%Y-%m-%d", time.localtime(ms / 1000))
+
+
 def estado(agora: int | None = None) -> dict:
-    """Para a seção E-mail: fila, falhas, pausa e os últimos do registro."""
+    """Para a seção E-mail: fila, falhas, pausa, enviados hoje e os últimos do registro (sem o item guardado)."""
     agora = _agora() if agora is None else agora
     with FILA_LOCK:
         f = _le_fila()
         raw = _le(_log_path())
     log = [i for i in raw.get("itens") if isinstance(i, dict)] if isinstance(raw.get("itens"), list) else []
+    com_t = [i for i in log if isinstance(i.get("t"), int)]
     return {"pendentes": len(f["itens"]), "tentando": sum(1 for i in f["itens"] if i.get("tent")),
             "proxima": min((i["prox"] for i in f["itens"] if isinstance(i.get("prox"), (int, float))), default=None),
-            "pausada": f["pausada"], "falhas_24h": sum(1 for i in log if i.get("status") == "falhou"
-                                                      and isinstance(i.get("t"), int) and agora - i["t"] < 86400000),
-            "ultima_rodada": _RODADA["t"], "log": log[-20:][::-1]}
+            "pausada": f["pausada"], "falhas_24h": sum(1 for i in com_t if _falha_aberta(i) and agora - i["t"] < 86400000),
+            "enviados_hoje": sum(1 for i in com_t if i.get("status") == "ok" and _dia(i["t"]) == _dia(agora)),
+            "ultima_rodada": _RODADA["t"], "log": [{k: v for k, v in i.items() if k != "item"} for i in log[-20:][::-1]]}
+
+
+def fila_acao(acao, agora: int | None = None) -> int:
+    """Botões da seção E-mail. "retomar": tira a pausa (depois de corrigir a senha) e manda tudo na próxima rodada;
+    "reenviar_falhas": as falhas guardadas voltam para a fila do zero; "limpar_falhas": deixam de contar como falha.
+    Devolve quantos itens a ação mexeu."""
+    agora = _agora() if agora is None else agora
+    if acao not in ("retomar", "reenviar_falhas", "limpar_falhas"):
+        raise EmailErro(400, "Ação da fila inválida.")
+    with FILA_LOCK:
+        f = _le_fila()
+        if acao == "retomar":
+            f["pausada"] = None
+            for i in f["itens"]:
+                i["prox"] = agora
+            _grava_fila(f)
+            return len(f["itens"])
+        raw = _le(_log_path())
+        log = [i for i in raw.get("itens") if isinstance(i, dict)] if isinstance(raw.get("itens"), list) else []
+        abertas = [i for i in log if _falha_aberta(i)]
+        for i in abertas:
+            if acao == "limpar_falhas":
+                i["limpa"] = True
+            elif isinstance(i.get("item"), dict):
+                f["itens"].append(dict(i["item"], id=secrets.token_hex(4), tent=0, prox=agora, erro=""))
+                i["reenviado"] = True
+        if acao == "reenviar_falhas":
+            del f["itens"][:-FILA_MAX]
+            _grava_fila(f)
+        store.atomic_write(_log_path(), json.dumps({"v": 1, "itens": log}, ensure_ascii=False))
+        return len(abertas)
+
+
+def _traduz(tipo: str, txt: str) -> str:
+    if tipo == "auth":
+        return "Conectou, mas o usuário ou a senha foram recusados (%s)." % txt
+    if tipo == "perm":
+        return "O servidor de e-mail recusou: %s." % txt
+    return "Não deu para enviar (%s). Confira o servidor, a porta e a segurança." % txt
+
+
+def teste(body: dict, enviar=enviar_um, relogio=time.monotonic) -> dict:
+    """"Enviar teste" na hora, com os dados do formulário (mesmo sem salvar). A senha digitada vale só para o
+    teste; sem ela, usa a guardada. {"ok": True, "msg"} ou {"ok": False, "erro"} já em português."""
+    if not isinstance(body, dict):
+        raise EmailErro(400, "Pedido inválido.")
+    para = body.get("para").strip().lower() if isinstance(body.get("para"), str) else ""
+    if len(para) > 254 or not EMAIL_RE.fullmatch(para):
+        raise EmailErro(400, "E-mail do teste inválido.")
+    atual = _bruta()
+    cfg = _campos(body, atual, estrito=True)   # só lê os campos conhecidos: "para" e "senha" ficam de fora
+    if not cfg["host"] or not cfg["remetente"]:
+        raise EmailErro(400, "Para testar, preencha o servidor e o remetente.")
+    senha = body["senha"] if isinstance(body.get("senha"), str) and body["senha"] else _desprotege(atual["senha"])
+    msg = EmailMessage()
+    msg["Subject"] = "Teste da Central de demandas"
+    msg["From"] = cfg["remetente"]
+    msg["To"] = para
+    msg["Date"] = formatdate(localtime=True)
+    msg["Auto-Submitted"] = "auto-generated"
+    msg.set_content("Se você recebeu este e-mail, a Central de demandas consegue mandar avisos por esta conta.\n")
+    t0 = relogio()
+    try:
+        enviar(msg, cfg, senha)
+    except Exception as exc:
+        return {"ok": False, "erro": _traduz(*classifica(exc))}
+    modo = {"starttls": "com STARTTLS", "ssl": "com SSL/TLS", "nenhuma": "sem criptografia"}[cfg["seguranca"]]
+    return {"ok": True, "msg": "Enviado para %s · conectou em %s:%d %s em %s s. Confira a caixa de entrada (e o spam)."
+            % (para, cfg["host"], cfg["porta"], modo, ("%.1f" % (relogio() - t0)).replace(".", ","))}
 
 
 def do_log(dems) -> dict:

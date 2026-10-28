@@ -654,6 +654,164 @@ class FilaDetalhes(Base):
         self.assertEqual(list(mail.do_log(["SOL-1"])), ["SOL-1"])
 
 
+class Teste(Base):
+    """"Enviar teste": na hora, com o que está no formulário; erro já em português."""
+
+    def setUp(self):
+        super().setUp()
+        self.grava_cfg(senha={"texto": "guardada"})
+        self.vistos = []
+
+    def enviar(self, msg, cfg, senha):
+        self.vistos.append((msg, cfg, senha))
+
+    def test_envia_com_o_formulario_e_a_senha_certa(self):
+        relogio = iter([10.0, 11.234]).__next__
+        r = mail.teste({"para": " Ana@X.com ", "host": "smtp.outro.com", "porta": 465, "seguranca": "ssl"},
+                       enviar=self.enviar, relogio=relogio)
+        self.assertEqual(r, {"ok": True, "msg": "Enviado para ana@x.com · conectou em smtp.outro.com:465 com SSL/TLS em 1,2 s. "
+                                                 "Confira a caixa de entrada (e o spam)."})
+        msg, cfg, senha = self.vistos[0]
+        self.assertEqual((msg["To"], msg["Subject"], msg["From"], msg["Auto-Submitted"]),
+                         ("ana@x.com", "Teste da Central de demandas", CFG_OK["remetente"], "auto-generated"))
+        from email.utils import parsedate_to_datetime
+        import datetime
+        self.assertEqual(parsedate_to_datetime(msg["Date"]).utcoffset(), datetime.datetime.now().astimezone().utcoffset())
+        self.assertEqual(msg.get_content(), "Se você recebeu este e-mail, a Central de demandas consegue mandar avisos por "
+                                            "esta conta.\n")
+        self.assertEqual((cfg["host"], senha), ("smtp.outro.com", "guardada"))
+        self.assertEqual(mail.config()["host"], "smtp.empresa.com.br", "o teste não salva nada")
+        mail.teste({"para": "a@x.com", "senha": "digitada"}, enviar=self.enviar)
+        self.assertEqual(self.vistos[1][2], "digitada")
+        mail.teste({"para": "a@x.com", "senha": ""}, enviar=self.enviar)
+        self.assertEqual(self.vistos[2][2], "guardada")
+        for seg, txt in (("starttls", ":587 com STARTTLS em"), ("nenhuma", ":587 sem criptografia em")):
+            self.assertIn(txt, mail.teste({"para": "a@x.com", "seguranca": seg}, enviar=self.enviar)["msg"])
+        self.assertTrue(mail.teste({"para": "a" * 64 + "@" + "b" * 185 + ".com"}, enviar=self.enviar)["ok"], "254 vale")
+
+    def test_erros_traduzidos(self):
+        casos = [(smtplib.SMTPAuthenticationError(535, b"5.7.3 bad"), "Conectou, mas o usuário ou a senha foram recusados (535 5.7.3 bad)."),
+                 (smtplib.SMTPRecipientsRefused({"a@x.com": (550, b"no")}), "O servidor de e-mail recusou: a@x.com: 550 no."),
+                 (ConnectionRefusedError(), "Não deu para enviar (ConnectionRefusedError). Confira o servidor, a porta e a segurança.")]
+        for exc, txt in casos:
+            def falha(msg, cfg, senha, exc=exc):
+                raise exc
+            self.assertEqual(mail.teste({"para": "a@x.com"}, enviar=falha), {"ok": False, "erro": txt})
+
+    def test_recusa(self):
+        for para in ("", "sem-arroba", None, 5, "a@x.com\nb", "a" * 250 + "@x.com", "a" * 64 + "@" + "b" * 186 + ".com"):
+            self.assertEqual(self.erro(mail.teste, {"para": para}, enviar=self.enviar), "E-mail do teste inválido.")
+        self.assertEqual(self.erro(mail.teste, {"para": "a@x.com", "porta": 0}, enviar=self.enviar), "Porta inválida: de 1 a 65535.")
+        self.assertEqual(self.erro(mail.teste, {"para": "a@x.com", "host": ""}, enviar=self.enviar),
+                         "Para testar, preencha o servidor e o remetente.")
+        self.assertEqual(self.erro(mail.teste, {"para": "a@x.com", "remetente": ""}, enviar=self.enviar),
+                         "Para testar, preencha o servidor e o remetente.")
+        self.assertEqual(self.erro(mail.teste, [1], enviar=self.enviar), "Pedido inválido.")
+        self.assertEqual(self.vistos, [])
+
+    def test_envio_e_relogio_padrao(self):
+        with mock.patch.object(mail.smtplib, "SMTP") as smtp:
+            r = mail.teste({"para": "a@x.com"})
+        self.assertTrue(r["ok"])
+        self.assertRegex(r["msg"], r"com STARTTLS em \d+,\d s\.")
+        smtp.assert_called_once_with("smtp.empresa.com.br", 587, timeout=20)
+        smtp.return_value.login.assert_called_once_with("demandas@empresa.com.br", "guardada")
+
+
+class AcoesDaFila(Base):
+    def setUp(self):
+        super().setUp()
+        self.grava_cfg(senha={"texto": "x"})
+
+    def falha_tudo(self, n=2):
+        mail.enfileirar([envio(dem="SOL-%d" % i) for i in range(n)], T0)
+
+        def perm(msg, cfg, senha):
+            raise smtplib.SMTPDataError(554, "spam")
+
+        mail.tarefa(T0, enviar=perm)
+
+    def test_reenviar_as_falhas(self):
+        self.falha_tudo()
+        self.assertEqual(mail.estado(T0)["falhas_24h"], 2)
+        self.assertEqual(mail.fila_acao("reenviar_falhas", T0 + 5), 2)
+        itens = self.fila()["itens"]
+        self.assertEqual([(i["dem"], i["tent"], i["prox"], i["erro"]) for i in itens], [("SOL-0", 0, T0 + 5, ""), ("SOL-1", 0, T0 + 5, "")])
+        self.assertEqual(itens[0]["dados"]["titulo"], "Corrigir solda")
+        self.assertEqual(mail.estado(T0)["falhas_24h"], 0, "reenviada não conta mais")
+        self.assertEqual(mail.fila_acao("reenviar_falhas", T0), 0, "não reenvia duas vezes")
+        self.assertEqual(len(self.fila()["itens"]), 2)
+        self.assertNotIn("item", json.dumps(mail.estado(T0)["log"]), "o item guardado não vai para a tela")
+
+    def test_reenviar_respeita_o_teto(self):
+        self.falha_tudo(3)
+        with mock.patch.object(mail, "FILA_MAX", 2):
+            mail.fila_acao("reenviar_falhas", T0)
+        self.assertEqual([i["dem"] for i in self.fila()["itens"]], ["SOL-1", "SOL-2"])
+
+    def test_limpar_falhas(self):
+        self.falha_tudo()
+        self.assertEqual(mail.fila_acao("limpar_falhas", T0), 2)
+        self.assertEqual(mail.estado(T0)["falhas_24h"], 0)
+        self.assertEqual(self.fila()["itens"], [], "limpar não reenvia")
+        self.assertEqual(mail.fila_acao("reenviar_falhas", T0), 0, "limpas não voltam")
+        self.assertTrue(all(i["limpa"] for i in self.log()))
+
+    def test_reenviado_ganha_id_novo_e_zera_o_erro(self):
+        item = dict(envio(dem="SOL-7"), id="velho001", criado=T0, tent=6, prox=T0, erro="TimeoutError")
+        (self.dir / "email-log.json").write_text(json.dumps({"v": 1, "itens": [{"t": T0, "dem": "SOL-7", "status": "falhou",
+                                                                                  "item": item}]}), encoding="utf-8")
+        mail.fila_acao("reenviar_falhas", T0 + 1)
+        novo = self.fila()["itens"][0]
+        self.assertRegex(novo["id"], r"^[0-9a-f]{8}$")
+        self.assertNotEqual(novo["id"], "velho001")
+        self.assertEqual((novo["erro"], novo["tent"], novo["prox"], novo["criado"]), ("", 0, T0 + 1, T0))
+        self.assertEqual(json.loads((self.dir / "email-log.json").read_text(encoding="utf-8"))["v"], 1)
+
+    def test_descartado_nao_guarda_o_item(self):
+        with mock.patch.object(mail, "FILA_MAX", 1):
+            mail.enfileirar([envio(dem="SOL-1"), envio(dem="SOL-2")], T0)
+        self.assertNotIn("item", self.log()[0])
+
+    def test_falha_antiga_sem_item_nao_volta(self):
+        (self.dir / "email-log.json").write_text(json.dumps({"itens": [{"t": T0, "dem": "SOL-9", "status": "falhou"}]}), encoding="utf-8")
+        self.assertEqual(mail.fila_acao("reenviar_falhas", T0), 1)
+        self.assertEqual(mail._le_fila()["itens"], [])
+
+    def test_retomar(self):
+        mail.enfileirar([envio(dem="SOL-1"), envio(dem="SOL-2")], T0)
+
+        def auth(msg, cfg, senha):
+            raise smtplib.SMTPAuthenticationError(535, b"x")
+
+        mail.tarefa(T0, enviar=auth)
+        f = self.fila()
+        f["itens"][1]["prox"] = T0 + 99 * MIN
+        (self.dir / "email-fila.json").write_text(json.dumps(f), encoding="utf-8")
+        self.assertEqual(mail.fila_acao("retomar", T0 + MIN), 2)
+        f = self.fila()
+        self.assertIsNone(f["pausada"])
+        self.assertEqual([i["prox"] for i in f["itens"]], [T0 + MIN] * 2)
+        enviados = []
+        mail.tarefa(T0 + MIN, enviar=lambda m, c, s: enviados.append(m["X-Central-Demanda"]))
+        self.assertEqual(enviados, ["SOL-1", "SOL-2"])
+
+    def test_acao_invalida_e_relogio(self):
+        for a in ("apagar", None, 5):
+            self.assertEqual(self.erro(mail.fila_acao, a), "Ação da fila inválida.")
+        mail.enfileirar([envio()], T0)
+        antes = int(__import__("time").time() * 1000)
+        mail.fila_acao("retomar")
+        self.assertGreaterEqual(self.fila()["itens"][0]["prox"], antes)
+
+    def test_enviados_hoje(self):
+        mail.enfileirar([envio(dem="SOL-1"), envio(dem="SOL-2")], T0)
+        mail.tarefa(T0, enviar=lambda m, c, s: None)
+        self.assertEqual(mail.estado(T0)["enviados_hoje"], 2)
+        self.assertEqual(mail.estado(T0 + 86400000)["enviados_hoje"], 0, "outro dia")
+        self.assertEqual(mail._dia(T0), __import__("time").strftime("%Y-%m-%d", __import__("time").localtime(T0 / 1000)))
+
+
 # ---------- servidor SMTP falso de verdade ----------
 
 class Atende(socketserver.StreamRequestHandler):

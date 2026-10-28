@@ -17,6 +17,14 @@ function startServer(){return new Promise((res,rej)=>{
   p.on('exit',c=>rej(new Error('servidor saiu com código '+c)));
   setTimeout(()=>rej(new Error('servidor não subiu em 15 s')),15000).unref();
 })}
+// servidor SMTP falso (o mínimo do protocolo), numa porta livre: o "Enviar teste" da tela manda para ele
+const smtpLinhas=[];
+const smtp=require('net').createServer(s=>{let dados=false,buf='';s.write('220 falso\r\n');s.on('data',d=>{buf+=d.toString('utf8');let i;
+  while((i=buf.indexOf('\r\n'))>=0){const l=buf.slice(0,i);buf=buf.slice(i+2);
+    if(dados){if(l==='.'){dados=false;s.write('250 ok\r\n')}else smtpLinhas.push(l);continue}
+    const c=l.slice(0,4).toUpperCase();
+    if(c==='EHLO'||c==='HELO')s.write('250 falso\r\n');else if(['MAIL','RCPT','RSET','NOOP'].includes(c))s.write('250 OK\r\n');
+    else if(c==='DATA'){dados=true;s.write('354 manda\r\n')}else if(c==='QUIT')s.end('221 tchau\r\n');else s.write('502 x\r\n')}})});
 function killTree(p){if(!p||p.exitCode!==null)return;if(process.platform==='win32')spawnSync('taskkill',['/T','/F','/PID',String(p.pid)]);else p.kill('SIGKILL')}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
@@ -97,6 +105,7 @@ async function restaurarPelaTela(){
   w.close();outra.close();
 }
 (async()=>{
+  await new Promise(r=>smtp.listen(0,'127.0.0.1',r));smtp.unref();
   const srv=await startServer();
   try{
     const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
@@ -148,6 +157,23 @@ async function restaurarPelaTela(){
     ok(/1\.0\.0/.test($('.dm-cfgbody').textContent)&&/Último backup/.test($('.dm-cfgbody').textContent)&&/1 cópias guardadas/.test($('.dm-cfgbody').textContent),'versão e último backup na saúde');
     ok(/Instalado|Não instalado|Não deu para verificar/.test($('#dm-sv-tarefa').textContent)&&/instalar-inicio\.bat|remover-inicio\.bat/.test($('.dm-cfgbody').textContent),'iniciar com o Windows: estado e o que fazer: '+$('#dm-sv-tarefa').textContent);
     ok(/http:\/\/127\.0\.0\.1:\d+/.test($('.dm-svaddr').textContent)&&/acesso pela rede desligado/.test($('.dm-svaddr').textContent),'endereços: este PC e rede desligada');
+    // seção E-mail: conta de envio, teste de verdade (servidor SMTP falso), salvar
+    click('[data-act=cfg-sec][data-v=email]');
+    ok(await until(()=>$('#dm-ml-host')&&!$('#dm-ml-on').checked&&$('#dm-ml-ev-created').checked&&!$('#dm-ml-ev-done').checked),'seção E-mail: desligado, só "criada" marcado');
+    ok(/^http:\/\/127\.0\.0\.1:\d+$/.test($('#dm-ml-link').placeholder),'sugere o endereço do link: '+$('#dm-ml-link').placeholder);
+    type('#dm-ml-host','127.0.0.1');type('#dm-ml-porta',String(smtp.address().port));type('#dm-ml-seg','nenhuma','change');
+    type('#dm-ml-usu','');type('#dm-ml-rem','Central <central@empresa.com>');type('#dm-ml-para','ana@empresa.com');
+    click('[data-act=ml-teste]');
+    ok(await until(()=>$('#dm-ml-res')&&/^✔ Enviado para ana@empresa\.com/.test($('#dm-ml-res').textContent),10000),'Enviar teste: '+(($('#dm-ml-res')||{}).textContent||toast()));
+    ok(smtpLinhas.some(l=>l==='Subject: Teste da Central de demandas'),'o servidor de e-mail recebeu o teste');
+    type('#dm-ml-senha','senha-secreta-1');click('#dm-ml-on');click('[data-act=ml-salvar]');
+    ok(await until(()=>/e-mail salva/.test(toast())&&$('#dm-ml-on').checked&&$('#dm-ml-host').value==='127.0.0.1'),'salvar liga o e-mail '+toast());
+    ok($('#dm-ml-senha').value===''&&/digite para trocar/.test($('#dm-ml-senha').placeholder)&&!/senha-secreta-1/.test(d.documentElement.innerHTML),'a senha não volta para a tela');
+    ok($('#dm-ml-num')&&/Pendentes0/.test($('#dm-ml-num').textContent.replace(/\s/g,'')),'fila vazia');
+    $('#dm-ml-num').dataset.velho='1';   // some quando a tela redesenha com a resposta do servidor
+    click('#dm-ml-ev-done');click('[data-act=ml-salvar]');
+    ok(await until(()=>$('#dm-ml-num')&&!$('#dm-ml-num').dataset.velho&&$('#dm-ml-ev-done').checked&&!$('#dm-ml-ev-started').checked&&$('#dm-ml-ev-created').checked&&/digite para trocar/.test($('#dm-ml-senha').placeholder)),'salvar de novo sem digitar a senha: os eventos mudam e a senha guardada fica');
+    click('#dm-ml-ev-done');click('[data-act=ml-salvar]');await until(()=>!$('#dm-ml-ev-done').checked);
     click('[data-act=mclose]');
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')&&$('.dm-kpis')&&!$('#dm-bkav')),'fecha e o aviso do Painel some');
     // setores
@@ -194,6 +220,8 @@ async function restaurarPelaTela(){
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')),'demanda criada '+toast());
     const cids=JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).cids||[];
     ok(typeof cidEnviado==='string'&&cids.length===1&&cids[0][0]===cidEnviado,'o pedido levou a mesma chave do rascunho: reenviar não duplica');
+    const filaMail=JSON.parse(fs.readFileSync(path.join(data,'email-fila.json'),'utf8')).itens;
+    ok(filaMail.length===1&&filaMail[0].ev==='created'&&filaMail[0].para.join()==='corte@empresa.com','a demanda nova entrou na fila de e-mail para o e-mail do setor');
     ok(w.localStorage.getItem('dm-rascunho:adm')===null,'enviada com sucesso: o rascunho sai do aparelho');
     click('[data-act=tab][data-v=sol]');
     ok(await until(()=>$$('.dm-card').some(c=>c.querySelector('.dm-nm').textContent===XSS)),'título aparece como texto');

@@ -1063,14 +1063,19 @@ function renderCfg(){
     c.srvPedido = true;
     sys('/api/servidor').then(s => {if(D.cfg === c){c.srv = s || {erro: true}; renderCfg()}});
   }
-  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot], ['servidor', '🖥️ Servidor', '']].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
+  if(c.sec === 'email' && !c.mail && !c.mailPedido){
+    c.mailPedido = true;
+    sys('/api/email').then(m => {if(D.cfg === c){c.mail = m || {erro: true}; renderCfg()}});
+  }
+  const mdot = c.mail && c.mail.estado && (c.mail.estado.pausada || c.mail.estado.falhas_24h) ? '<span class="dm-cfgdot"></span>' : '';
+  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot], ['email', '✉️ E-mail', mdot], ['servidor', '🖥️ Servidor', '']].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
   const tela = c.sec + (c.rest ? ':restaurar' : '');
   const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === tela ? corpo.scrollTop : 0;   // mesma tela: não pula para o topo
   box.setAttribute('aria-labelledby', 'dm-cfg-t');
   box.dataset.sec = tela;
   box.innerHTML = `<div class="dm-cfg"><div class="dm-cfghead"><h2 id="dm-cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-sm" data-act="mclose" aria-label="Fechar">✕</button></div>
    <nav class="dm-cfgnav" aria-label="Seções das configurações">${nav}</nav>
-   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.sec === 'servidor' ? cfgServidor(c.srv) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
+   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.sec === 'servidor' ? cfgServidor(c.srv) : c.sec === 'email' ? cfgEmail(c.mail) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
   box.querySelector('.dm-cfgbody').scrollTop = topo;
 }
 function cfgRede(n){
@@ -1110,6 +1115,82 @@ function cfgBackup(p){
    ${falhou ? `<p class="dm-cfgerr" id="dm-bk-falha">Última tentativa (${fQuando(falha.t)}) falhou: ${esc(falha.erro)}.</p>` : ''}</section>
   <section class="dm-cfgsec"><h3>Cópias guardadas</h3>${p.copias.length ? `<div class="dm-cfglista"><div class="dm-cfgcp dm-cfgth"><span>Cópia</span><span>Tipo</span><span>Tamanho</span><span></span></div>${p.copias.map(x => `<div class="dm-cfgcp"><span><b>${x.t ? fQuando(x.t) : ''}</b><small>${esc(x.nome)}</small></span><span class="dm-cfgtipo" data-t="${esc(x.tipo)}">${esc(BK_TIPO[x.tipo] || x.tipo)}</span><span>${gBytes(x.bytes)}</span><button type="button" class="dm-btn dm-sm" data-act="bk-rest" data-v="${esc(x.nome)}">Restaurar</button></div>`).join('')}</div>` : '<p class="dm-note">Nenhuma cópia nesta pasta.</p>'}</section>
   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="bk-salvar">Salvar</button></div>`;
+}
+/* seção E-mail (mockup 04-configuracoes-email): conta de envio, quando enviar, teste e a fila */
+const MAIL_EV = [['created', '📥 Demanda criada', 'quem vai fazer'], ['started', '▶ Aceita', 'quem pediu'], ['done', '✅ Concluída', 'quem pediu'],
+  ['nudge', '🔔 Cobrada', 'quem vai fazer'], ['late', '⏰ Atrasada', 'quem vai fazer'], ['comment', '💬 Comentário', 'o outro lado'], ['canc', '✕ Cancelada', 'quem ia fazer']];
+const MAIL_ST = {ok: ['prog', 'Enviado'], falhou: ['late', 'Falhou'], sem_destinatario: ['canc', 'Sem destinatário'], descartado: ['pause', 'Descartado']};
+const MAIL_EVN = {created: 'criada', started: 'aceita', done: 'concluída', nudge: 'cobrada', late: 'atrasada', comment: 'comentário', canc: 'cancelada'};
+function cfgEmail(m){
+  if(!m) return '<section class="dm-cfgsec"><p class="dm-note">Lendo a configuração do e-mail…</p></section>';
+  if(m.erro) return '<section class="dm-cfgsec"><p class="dm-cfgerr">Não foi possível ler a configuração do e-mail.</p></section>';
+  const f = m.cfg, e = m.estado, t = m.teste, sel = (v, l) => `<option value="${v}"${f.seguranca === v ? ' selected' : ''}>${l}</option>`;
+  const fila = [['setor_ou_pessoas', 'E-mail do setor; sem ele, as pessoas do setor que têm e-mail'], ['so_setor', 'Só o e-mail do setor'], ['pessoas', 'Sempre as pessoas do setor que têm e-mail']];
+  const rodada = e.ultima_rodada ? 'última rodada há ' + dur(Math.max(0, Math.floor((Date.now() - num(e.ultima_rodada)) / MIN))) : 'a fila é conferida a cada minuto';
+  const senhaAviso = f.tem_senha && !f.senha_abre ? '<p class="dm-cfgerr">A senha guardada não abre neste computador (outro usuário do Windows): digite de novo.</p>'
+    : f.senha_texto ? '<p class="dm-cfgmsg">A senha está guardada sem a proteção do Windows.</p>' : '';
+  return `<section class="dm-cfgsec"><h3>Enviar e-mails da Central<span class="dm-spacer"></span><label class="dm-cfgsw"><input type="checkbox" id="dm-ml-on"${f.ligado ? ' checked' : ''}><i aria-hidden="true"></i><b id="dm-ml-ontx">${f.ligado ? 'Ligado' : 'Desligado'}</b></label></h3>
+   <p class="dm-note">A tela nunca espera o envio: os e-mails entram numa fila e saem em segundo plano, em até um minuto.</p></section>
+  <section class="dm-cfgsec"><h3>Conta de envio<span class="dm-spacer"></span><small class="dm-note">peça ao TI os dados do servidor de e-mail da empresa</small></h3>
+   <div class="dm-mlgrid">
+    <div class="dm-fld"><label for="dm-ml-host">Servidor SMTP</label><input id="dm-ml-host" value="${esc(f.host)}" placeholder="smtp.empresa.com.br" autocomplete="off" spellcheck="false"></div>
+    <div class="dm-fld"><label for="dm-ml-porta">Porta</label><input id="dm-ml-porta" type="number" min="1" max="65535" value="${num(f.porta)}"></div>
+    <div class="dm-fld"><label for="dm-ml-seg">Segurança</label><select id="dm-ml-seg">${sel('starttls', 'STARTTLS (587)')}${sel('ssl', 'SSL/TLS (465)')}${sel('nenhuma', 'Nenhuma (só rede interna)')}</select></div>
+    <div class="dm-fld"><label for="dm-ml-usu">Usuário</label><input id="dm-ml-usu" value="${esc(f.usuario)}" autocomplete="off" spellcheck="false"></div>
+    <div class="dm-fld"><label for="dm-ml-senha">Senha${f.tem_senha ? ' · guardada e protegida pelo Windows' : ''}</label><input id="dm-ml-senha" type="password" autocomplete="new-password" placeholder="${f.tem_senha ? '•••••••• (digite para trocar)' : 'senha da conta'}">${f.tem_senha ? '<button type="button" class="dm-btn dm-sm" data-act="ml-semsenha">Apagar a senha guardada</button>' : ''}</div>
+    <div class="dm-fld"><label for="dm-ml-rem">Remetente (como aparece para quem recebe)</label><input id="dm-ml-rem" value="${esc(f.remetente)}" placeholder="Central de demandas &lt;demandas@empresa.com.br&gt;" autocomplete="off" spellcheck="false"></div>
+   </div>
+   ${senhaAviso}
+   <div class="dm-fld"><label for="dm-ml-link">Endereço do link "Abrir a demanda"</label><input id="dm-ml-link" value="${esc(f.link_base)}" placeholder="${esc(m.sugestao_link || '')}" autocomplete="off" spellcheck="false"><span class="dm-note" style="margin:3px 0 0">Só abre dentro da rede da fábrica enquanto o sistema não estiver hospedado.</span></div>
+   <p class="dm-note">Gmail e Google Workspace: use uma <b>senha de app</b>, não a senha normal. Microsoft 365: a senha simples deixa de funcionar por padrão no fim de 2026; o TI pode precisar liberar o "SMTP AUTH".</p></section>
+  <section class="dm-cfgsec"><h3>Quando enviar</h3><p class="dm-note" style="margin-top:0">Todos os e-mails de uma demanda ficam no mesmo fio: <b>[SOL-1043] título</b>.</p>
+   <div class="dm-mlev">${MAIL_EV.map(([k, l, q]) => `<label class="dm-inl"><input type="checkbox" id="dm-ml-ev-${k}"${f.eventos[k] ? ' checked' : ''}> ${l} → ${q}</label>`).join('')}</div>
+   <label class="dm-inl"><input type="checkbox" id="dm-ml-copia"${f.copia_solicitante ? ' checked' : ''}> Cópia para quem pediu (se tiver e-mail)</label>
+   <label class="dm-inl"><input type="checkbox" id="dm-ml-desc"${f.descricao ? ' checked' : ''}> Incluir a descrição (até 400 caracteres)</label>
+   <div class="dm-secx">Demanda para a fila do setor (sem pessoa)</div>
+   <div class="dm-mlev">${fila.map(([k, l]) => `<label class="dm-inl"><input type="radio" name="dm-ml-fila" value="${k}"${f.fila_setor === k ? ' checked' : ''}> ${l}</label>`).join('')}</div></section>
+  <section class="dm-cfgsec"><h3>Enviar teste</h3>
+   <div class="dm-cfglinha"><input id="dm-ml-para" type="email" placeholder="seu.email@empresa.com.br" autocomplete="off" style="flex:1;min-width:200px"><button type="button" class="dm-btn dm-sm" data-act="ml-teste">✉ Enviar teste</button></div>
+   <div id="dm-ml-resw">${mlRes(t)}</div>
+   <p class="dm-note">O teste usa o que está no formulário, mesmo antes de salvar.</p></section>
+  <section class="dm-cfgsec"><h3>Fila de envio<span class="dm-spacer"></span><small class="dm-note">${rodada}</small></h3>
+   ${e.pausada ? `<div class="dm-rsperde" id="dm-ml-pausa"><b>Fila parada:</b> o servidor recusou o usuário ou a senha (${esc(e.pausada.erro)}). Corrija e clique em Retomar. <button type="button" class="dm-btn dm-sm" data-act="ml-fila" data-v="retomar">Retomar</button></div>` : ''}
+   <div class="dm-cfgult" id="dm-ml-num"><div>Pendentes<b>${num(e.pendentes)}</b></div><div>Falhas (24 h)<b${e.falhas_24h ? ' class="dm-badc"' : ''}>${num(e.falhas_24h)}</b></div><div>Enviados hoje<b>${num(e.enviados_hoje)}</b></div><div>Tentando de novo<b>${num(e.tentando)}</b></div></div>
+   <div class="dm-acts"><button type="button" class="dm-btn dm-sm" data-act="ml-fila" data-v="reenviar_falhas"${e.falhas_24h ? '' : ' disabled'}>↻ Reenviar as falhas</button><button type="button" class="dm-btn dm-sm" data-act="ml-fila" data-v="limpar_falhas"${e.falhas_24h ? '' : ' disabled'}>Limpar falhas</button></div>
+   ${(e.log || []).length ? `<div class="dm-cfglista" style="margin-top:8px"><div class="dm-cfgcp dm-cfgth"><span>Quando · Demanda</span><span>Para</span><span>Status</span><span></span></div>${e.log.map(i => {
+     const st = MAIL_ST[i.status] || ['canc', i.status];
+     return `<div class="dm-cfgcp"><span><b>${i.t ? fQuando(num(i.t)) : ''}</b><small>${esc(i.dem)} · ${esc(MAIL_EVN[i.ev] || i.ev)}</small></span><span style="overflow-wrap:anywhere">${esc((i.para || []).join(', ') || '—')}</span><span><span class="dm-pill" data-st="${st[0]}">${st[1]}</span>${i.erro ? `<small>${esc(i.erro)}</small>` : ''}</span><span></span></div>`;
+   }).join('')}</div>` : '<p class="dm-note">Nenhum envio ainda.</p>'}
+   <p class="dm-note">Guarda os últimos 2.000 envios. A senha nunca aparece aqui nem volta para a tela.</p></section>
+  <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="ml-salvar">Salvar</button></div>`;
+}
+const mlRes = t => t ? `<p class="${t.ok ? 'dm-good' : 'dm-cfgerr'}" id="dm-ml-res">${t.ok ? '✔ ' + esc(t.msg) : '✕ ' + esc(t.erro)}</p>` : '';
+async function mlTeste(el){   // só a linha do resultado muda: o que foi digitado (e ainda não salvo) fica no formulário
+  el.disabled = true;
+  const r = await sys('/api/email/teste', Object.assign(mlForm(), {para: $('dm-ml-para').value.trim()}));
+  if(el.isConnected) el.disabled = false;
+  const w = $('dm-ml-resw');
+  if(r && D.cfg && D.cfg.mail && w){D.cfg.mail.teste = r.teste; w.innerHTML = mlRes(r.teste)}
+}
+function mlForm(){   // o que está no formulário da seção E-mail (a senha só vai se foi digitada)
+  const v = id => $('dm-ml-' + id), body = {ligado: v('on').checked, host: v('host').value.trim(), porta: num(v('porta').value, -1), seguranca: v('seg').value,
+    usuario: v('usu').value.trim(), remetente: v('rem').value.trim(), link_base: v('link').value.trim(), copia_solicitante: v('copia').checked,
+    descricao: v('desc').checked, eventos: {}};
+  for(const [k] of MAIL_EV) body.eventos[k] = v('ev-' + k).checked;
+  const fila = root.querySelector('input[name=dm-ml-fila]:checked');
+  if(fila) body.fila_setor = fila.value;
+  if(v('senha').value) body.senha = v('senha').value;
+  return body;
+}
+async function mlPost(el, path, body, ok){
+  if(el) el.disabled = true;
+  const r = await sys(path, body);
+  if(el && el.isConnected) el.disabled = false;
+  if(!r || !D.cfg) return null;
+  D.cfg.mail = r;
+  renderCfg();
+  if(ok) toast(ok);
+  return r;
 }
 /* seção Servidor (mockup 03-configuracoes-servidor): saúde, iniciar com o Windows, PC reserva e endereços */
 function cfgServidor(s){
@@ -1361,6 +1442,10 @@ function act(a, d, el, ev){
     case 'bk-agora': bkAgora(el); break;
     case 'bk-abrir': bkPost(el, '/api/backup/abrir', {}); break;
     case 'bk-salvar': bkSalvar(el); break;
+    case 'ml-salvar': mlPost(el, '/api/email', mlForm(), 'Configuração do e-mail salva'); break;
+    case 'ml-semsenha': mlPost(el, '/api/email', {senha: ''}, 'Senha apagada'); break;
+    case 'ml-teste': mlTeste(el); break;
+    case 'ml-fila': mlPost(el, '/api/email/fila', {acao: d.v}, d.v === 'retomar' ? 'Fila retomada' : d.v === 'limpar_falhas' ? 'Falhas limpas' : 'Falhas de volta na fila'); break;
     case 'm-type': D.form.tipo = d.v; renderForm(); break;
     case 'm-reason': D.form.motivo = d.v; D.form.err.motivo = 0; renderForm(); break;
     case 'm-prio': D.form.prio = d.v; renderForm(); break;
@@ -1484,6 +1569,7 @@ function onChange(e){
   else if(id === 'dm-uf-sec' && D.uform){D.uform.setor = v; D.uform.err.setor = 0; renderUF()}
   else if(id === 'dm-cfg-on') cfgRedeOn(e.target);
   else if(id === 'dm-bk-on') $('dm-bk-ontx').textContent = e.target.checked ? 'Ligada' : 'Desligada';
+  else if(id === 'dm-ml-on') $('dm-ml-ontx').textContent = e.target.checked ? 'Ligado' : 'Desligado';
 }
 function onSubmit(e){if(e.target && e.target.id === 'dm-lgform'){e.preventDefault(); doLogin()}}
 function onKey(e){

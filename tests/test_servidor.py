@@ -701,6 +701,70 @@ class Backup(Base):
         self.assertEqual(self.req("GET", "/api/backup", headers={"Host": "mal.example:%d" % self.port})[0], 421)
 
 
+class Email(Base):
+    """Rotas /api/email*: só o computador principal; a senha nunca volta."""
+
+    def json(self, method, path, body=None, headers=None, rede=False):
+        st, _, raw = self.req(method, path, body, headers, rede)
+        return st, (json.loads(raw) if st == 200 else raw.decode("utf-8"))
+
+    def test_ler_salvar_testar_e_fila(self):
+        st, r = self.json("GET", "/api/email")
+        self.assertEqual(st, 200)
+        self.assertEqual((r["cfg"]["ligado"], r["estado"]["pendentes"], r["sugestao_link"]),
+                         (False, 0, "http://127.0.0.1:%d" % self.port))
+        st, r = self.json("POST", "/api/email", {"ligado": True, "host": "smtp.x.com", "remetente": "c@x.com", "senha": "segredo-123"})
+        self.assertEqual((st, r["cfg"]["ligado"], r["cfg"]["tem_senha"]), (200, True, True))
+        self.assertNotIn("segredo-123", json.dumps(r))
+        self.assertNotIn("segredo-123", self.req("GET", "/api/email")[2].decode("utf-8"))
+        self.assertEqual(self.json("POST", "/api/email", {"porta": 0}), (400, "Porta inválida: de 1 a 65535."))
+        self.assertEqual(self.json("POST", "/api/email", b"{x"), (400, "JSON inválido."))
+        self.assertEqual(self.json("POST", "/api/email", [1]), (400, "Pedido inválido."))
+        mail, eu = servidor.email_mod(), mock.Mock()
+        original = mail.teste
+        with mock.patch.object(mail, "teste", side_effect=lambda body: original(body, enviar=eu)):
+            st, r = self.json("POST", "/api/email/teste", {"para": "ana@x.com"})
+        self.assertEqual((st, r["teste"]["ok"]), (200, True))
+        self.assertEqual(eu.call_args.args[2], "segredo-123")
+        self.assertEqual(self.json("POST", "/api/email/teste", {"para": "x"}), (400, "E-mail do teste inválido."))
+        st, r = self.json("POST", "/api/email/fila", {"acao": "retomar"})
+        self.assertEqual((st, r["mexeu"]), (200, 0))
+        self.assertEqual(self.json("POST", "/api/email/fila", {"acao": "x"}), (400, "Ação da fila inválida."))
+
+    def test_sugestao_com_rede(self):
+        servidor.NET_ON = True
+        with mock.patch.object(servidor, "lan_addresses", return_value=["10.0.0.7"]):
+            self.assertEqual(self.json("GET", "/api/email")[1]["sugestao_link"], "http://10.0.0.7:%d" % self.port)
+        with mock.patch.object(servidor, "lan_addresses", return_value=[]):
+            self.assertEqual(self.json("GET", "/api/email")[1]["sugestao_link"], "http://127.0.0.1:%d" % self.port)
+
+    def test_rotas_desconhecidas_e_disco(self):
+        for method, path in (("GET", "/api/email/teste"), ("GET", "/api/email/fila"), ("POST", "/api/email/x"), ("GET", "/api/email/")):
+            self.assertEqual(self.json(method, path, {} if method == "POST" else None), (404, "Não encontrado."), path)
+        with mock.patch.object(servidor.email_mod().store, "atomic_write", side_effect=PermissionError("travado")), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(self.json("POST", "/api/email", {"host": "smtp.x.com"}),
+                             (500, "Falha ao gravar a configuração do e-mail: veja a janela do servidor."))
+        self.assertEqual(err.getvalue(), "[e-mail] POST /api/email: PermissionError('travado')\n")
+
+    def test_pela_rede_nunca(self):
+        self.precisa_rede()
+        adm = self.login(servidor.net_config()["pin"])
+        for method, path in (("GET", "/api/email"), ("POST", "/api/email"), ("POST", "/api/email/teste"),
+                             ("POST", "/api/email/fila"), ("GET", "/api/email/teste")):
+            body = {} if method == "POST" else None
+            self.assertEqual(self.json(method, path, body, adm, rede=True), (403, "Só no computador principal."), path)
+        st, h, _ = self.req("POST", "/api/login", ("pin=" + servidor.net_config()["pin_op"]).encode(),
+                            {"Content-Type": "application/x-www-form-urlencoded"}, rede=True)
+        self.assertEqual(self.json("GET", "/api/email", None, {"Cookie": h["Set-Cookie"].split(";")[0]}, rede=True),
+                         (403, servidor.OPERADOR_MSG))
+
+    def test_email_mod(self):
+        m = servidor.email_mod()
+        self.assertIs(m, sys.modules["email_envio"])
+        self.assertIs(servidor.api_mod().mail, m, "o api.py usa o mesmo módulo (a mesma fila)")
+
+
 class Saude(Base):
     """/api/servidor (seção Servidor das Configurações): só o computador principal; números da pasta de dados."""
 
