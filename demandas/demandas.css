@@ -477,7 +477,7 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-cfgult div{background:var(--dm-surface2);border-radius:10px;padding:7px 9px;font-size:11.5px;color:var(--dm-muted)}
 #dmboard .dm-cfgult b{display:block;color:var(--dm-ink);font-size:13px}
 #dmboard .dm-cfglista{border:1px solid var(--dm-line);border-radius:12px;overflow:hidden}
-#dmboard .dm-cfgcp{display:grid;grid-template-columns:minmax(0,1fr) 130px 84px;gap:8px;align-items:center;padding:7px 10px;border-top:1px solid var(--dm-line);font-size:12.5px}
+#dmboard .dm-cfgcp{display:grid;grid-template-columns:minmax(0,1fr) 130px 84px auto;gap:8px;align-items:center;padding:7px 10px;border-top:1px solid var(--dm-line);font-size:12.5px}
 #dmboard .dm-cfgcp:first-child{border-top:0}
 #dmboard .dm-cfgcp.dm-cfgth{background:var(--dm-surface2);font-size:11.5px;font-weight:700;color:var(--dm-muted)}
 #dmboard .dm-cfgcp b{font-weight:600}
@@ -485,6 +485,15 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-cfgtipo{justify-self:start;white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;background:var(--dm-surface2);border:1px solid var(--dm-line);color:var(--dm-muted)}
 #dmboard .dm-cfgtipo[data-t=manual]{color:var(--dm-s-new);border-color:color-mix(in srgb,var(--dm-s-new) 40%,var(--dm-line))}
 #dmboard .dm-cfgtipo[data-t=antes-restaurar]{color:var(--dm-s-pause);border-color:color-mix(in srgb,var(--dm-s-pause) 40%,var(--dm-line))}
+/* confirmação de restauração (mockup 01, cena 2) */
+#dmboard .dm-rscmp{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin:12px 0}
+#dmboard .dm-rscmp>div{background:var(--dm-surface2);border-radius:12px;padding:9px 11px;font-size:12px;color:var(--dm-muted)}
+#dmboard .dm-rscmp b{display:block;color:var(--dm-ink);font-size:13.5px}
+#dmboard .dm-rsseta{font-size:20px;color:var(--dm-muted)}
+#dmboard .dm-rsperde{border:1px solid var(--dm-s-late);border-left:5px solid var(--dm-s-late);background:color-mix(in srgb,var(--dm-s-late) 8%,var(--dm-surface));border-radius:12px;padding:9px 11px;font-size:13px;margin:10px 0}
+#dmboard .dm-rsperde b{color:var(--dm-s-late)}
+#dmboard .dm-rspassos{margin:8px 0;padding-left:20px;font-size:13px;display:grid;gap:5px}
+#dmboard .dm-rsconf input{font:700 15px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase}
 /* aviso de backup no topo do Painel do ADM (mesmo desenho do "Atenção agora") */
 #dmboard .dm-bkav{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:11px 13px;box-shadow:var(--dm-shadow)}
 #dmboard .dm-bkico{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;flex:none;background:color-mix(in srgb,var(--dm-tc) 14%,var(--dm-surface))}
@@ -527,8 +536,10 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
   #dmboard .dm-cfgnav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}
   #dmboard .dm-cfgbody{max-height:none}
   #dmboard .dm-cfgpins,#dmboard .dm-cfgret,#dmboard .dm-cfgult{grid-template-columns:1fr 1fr}
-  #dmboard .dm-cfgcp{grid-template-columns:minmax(0,1fr) auto}
+  #dmboard .dm-cfgcp{grid-template-columns:minmax(0,1fr) auto auto}
   #dmboard .dm-cfgcp>:nth-child(2){display:none}
+  #dmboard .dm-rscmp{grid-template-columns:1fr}
+  #dmboard .dm-rsseta{transform:rotate(90deg);justify-self:center}
   #dmboard .dm-cfgdest{grid-template-columns:auto minmax(0,1fr)}
   #dmboard .dm-cfgdest .dm-acts{grid-column:2}
   #dmboard .dm-two{grid-template-columns:1fr}

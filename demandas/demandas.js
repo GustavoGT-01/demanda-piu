@@ -185,6 +185,7 @@ function apply(v){
   notesCheck(firstLoad);
   renderBell();
   bkAlert();
+  restCheck();
 }
 async function loadPub(){
   try{
@@ -1022,12 +1023,13 @@ function renderCfg(){
   if(!c || !box) return;
   const r = c.bk.resumo, dot = r && r.alerta ? `<span class="dm-cfgdot" title="${esc(r.texto)}"></span>` : '';
   const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot]].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
-  const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === c.sec ? corpo.scrollTop : 0;   // mesma seção: não pula para o topo
+  const tela = c.sec + (c.rest ? ':restaurar' : '');
+  const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === tela ? corpo.scrollTop : 0;   // mesma tela: não pula para o topo
   box.setAttribute('aria-labelledby', 'dm-cfg-t');
-  box.dataset.sec = c.sec;
+  box.dataset.sec = tela;
   box.innerHTML = `<div class="dm-cfg"><div class="dm-cfghead"><h2 id="dm-cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-sm" data-act="mclose" aria-label="Fechar">✕</button></div>
    <nav class="dm-cfgnav" aria-label="Seções das configurações">${nav}</nav>
-   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : cfgBackup(c.bk)}</div></div>`;
+   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
   box.querySelector('.dm-cfgbody').scrollTop = topo;
 }
 function cfgRede(n){
@@ -1065,8 +1067,52 @@ function cfgBackup(p){
    ${ok ? `<div class="dm-cfgult" id="dm-bk-ult"><div>Quando<b>${fQuando(ok.t)}</b></div><div>Tamanho<b>${gBytes(ok.bytes)}</b></div><div>Tipo<b>${esc(BK_TIPO[ok.tipo] || ok.tipo)}</b></div><div>Integridade<b class="dm-good">Verificado ✓</b></div></div>` : '<p class="dm-note" id="dm-bk-ult">Nenhum backup feito ainda.</p>'}
    ${ok && ok.faltando ? `<p class="dm-note">${num(ok.faltando)} anexo(s) apagado(s) durante a cópia ficaram de fora.</p>` : ''}
    ${falhou ? `<p class="dm-cfgerr" id="dm-bk-falha">Última tentativa (${fQuando(falha.t)}) falhou: ${esc(falha.erro)}.</p>` : ''}</section>
-  <section class="dm-cfgsec"><h3>Cópias guardadas</h3>${p.copias.length ? `<div class="dm-cfglista"><div class="dm-cfgcp dm-cfgth"><span>Cópia</span><span>Tipo</span><span>Tamanho</span></div>${p.copias.map(x => `<div class="dm-cfgcp"><span><b>${x.t ? fQuando(x.t) : ''}</b><small>${esc(x.nome)}</small></span><span class="dm-cfgtipo" data-t="${esc(x.tipo)}">${esc(BK_TIPO[x.tipo] || x.tipo)}</span><span>${gBytes(x.bytes)}</span></div>`).join('')}</div>` : '<p class="dm-note">Nenhuma cópia nesta pasta.</p>'}</section>
+  <section class="dm-cfgsec"><h3>Cópias guardadas</h3>${p.copias.length ? `<div class="dm-cfglista"><div class="dm-cfgcp dm-cfgth"><span>Cópia</span><span>Tipo</span><span>Tamanho</span><span></span></div>${p.copias.map(x => `<div class="dm-cfgcp"><span><b>${x.t ? fQuando(x.t) : ''}</b><small>${esc(x.nome)}</small></span><span class="dm-cfgtipo" data-t="${esc(x.tipo)}">${esc(BK_TIPO[x.tipo] || x.tipo)}</span><span>${gBytes(x.bytes)}</span><button type="button" class="dm-btn dm-sm" data-act="bk-rest" data-v="${esc(x.nome)}">Restaurar</button></div>`).join('')}</div>` : '<p class="dm-note">Nenhuma cópia nesta pasta.</p>'}</section>
   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="bk-salvar">Salvar</button></div>`;
+}
+/* confirmação antes de restaurar (mockup 01, cena 2): compara agora com a cópia e pede RESTAURAR digitado */
+function cfgRest(r){
+  const a = r.agora.contagem || {}, k = r.copia.contagem || {}, quando = r.copia.t ? fQuando(num(r.copia.t)) : r.nome;
+  const dem = x => num(x.demandas) + num(x.arquivo), mais = dem(a) - dem(k), grav = num(r.agora.rev) - num(r.copia.rev);
+  const lado = (t, x) => `<div>${esc(t)}<b>${dem(x)} demandas</b>${num(x.anexos)} anexos · ${num(x.pessoas)} pessoas · ${num(x.setores)} setores</div>`;
+  return `<section class="dm-cfgsec"><h3>Restaurar a cópia de ${esc(quando)}?</h3>
+   <p class="dm-note">Os dados da Central de demandas voltam a ser exatamente os desta cópia.</p>
+   <div class="dm-rscmp">${lado('Agora', a)}<span class="dm-rsseta" aria-hidden="true">→</span>${lado('Cópia de ' + quando, k)}</div>
+   <div class="dm-rsperde" id="dm-rs-perde"><b>Vai se perder:</b> tudo o que foi feito depois de ${esc(quando)}${grav > 0 ? ': ' + grav + (grav === 1 ? ' alteração gravada' : ' alterações gravadas') : ''}${mais > 0 ? ' (' + mais + (mais === 1 ? ' solicitação' : ' solicitações') + ' a mais agora)' : ''}.</div>
+   <div class="dm-secx">O que vai acontecer</div>
+   <ol class="dm-rspassos">
+    <li>A cópia escolhida é conferida (hash ✓). Se tiver defeito, nada muda.</li>
+    <li>Antes de trocar, é feita uma <b>cópia de segurança do estado atual</b> ("antes de restaurar"). Dá para desfazer por ela.</li>
+    <li>Os dados são trocados. Os números continuam do maior já usado: o próximo é o <b id="dm-rs-prox">${esc(r.proximo)}</b>. Nenhum número se repete.</li>
+    <li>As pessoas nos celulares e tablets voltam para "Quem é você?" e digitam o código de novo. Os aparelhos <b>não</b> precisam do PIN de novo.</li>
+    <li>As telas abertas se atualizam sozinhas em até 3 segundos e mostram o aviso "Dados restaurados".</li></ol>
+   <div class="dm-fld dm-rsconf"><label for="dm-rs-c">Para confirmar, digite RESTAURAR</label><input id="dm-rs-c" autocomplete="off" spellcheck="false" placeholder="RESTAURAR"></div>
+   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="bk-rest-x">Cancelar</button><button type="button" class="dm-btn dm-danger" data-act="bk-rest-ok" id="dm-rs-ok" disabled>Restaurar esta cópia</button></div></section>`;
+}
+async function bkRestPrevia(el, nome){
+  if(el) el.disabled = true;
+  const r = await sys('/api/backup/previa', {nome});
+  if(el && el.isConnected) el.disabled = false;
+  if(r && D.cfg){D.cfg.rest = r; renderCfg(); const f = $('dm-rs-c'); if(f) f.focus()}
+}
+async function bkRestaurar(el){
+  const c = D.cfg, inp = $('dm-rs-c');
+  if(!c || !c.rest || !inp || inp.value.trim().toUpperCase() !== 'RESTAURAR') return;
+  const quando = c.rest.copia.t ? fQuando(num(c.rest.copia.t)) : c.rest.nome;
+  el.disabled = true;
+  const p = await sys('/api/backup/restaurar', {nome: c.rest.nome, confirmo: 'RESTAURAR'});
+  if(el.isConnected) el.disabled = false;
+  if(!p || !D.cfg) return;
+  D.cfg.rest = null; D.cfg.bk = p;
+  if(p.estado.restaurado) D.restT = num(p.estado.restaurado.t);   // esta tela já avisa aqui
+  renderCfg();
+  toast('♻️ Dados restaurados para ' + quando);
+  refresh();
+}
+function restCheck(){   // a primeira vista da página só anota; uma restauração nova depois dela vira aviso
+  const r = D.v.backup && D.v.backup.restaurado, t = r ? num(r.t) : 0;
+  if(D.restT === undefined){D.restT = t; return}
+  if(t && t !== D.restT){D.restT = t; dtoast('♻️ Dados restaurados para ' + fQuando(num(r.copia_t)))}
 }
 async function cfgRedeOn(inp){
   const n = await sys('/api/rede', {on: inp.checked});
@@ -1197,7 +1243,10 @@ function act(a, d, el, ev){
     }
     case 'cf-ok': if(D.mod && D.mod.run) D.mod.run(el); break;
     case 'cfg-open': {const al = el.closest('.dm-alert'); if(al) al.remove(); openCfg(d.v); break}
-    case 'cfg-sec': if(D.cfg){D.cfg.sec = d.v; renderCfg()} break;
+    case 'cfg-sec': if(D.cfg){D.cfg.sec = d.v; D.cfg.rest = null; renderCfg()} break;
+    case 'bk-rest': bkRestPrevia(el, d.v); break;
+    case 'bk-rest-x': if(D.cfg){D.cfg.rest = null; renderCfg()} break;
+    case 'bk-rest-ok': bkRestaurar(el); break;
     case 'cfg-pin': cfgPin(d.v); break;
     case 'bk-agora': bkAgora(el); break;
     case 'bk-abrir': bkPost(el, '/api/backup/abrir', {}); break;
@@ -1293,6 +1342,7 @@ function onInput(e){
   else if(id === 'dm-sf-name' && D.sform){const f = D.sform; f.name = v; if(f.mode === 'new' && !f.idTouched){f.id = suggestId(v); $('dm-sf-id').value = f.id} f.err.name = 0; e.target.closest('.dm-fld').classList.remove('dm-err'); updateSFPrev()}
   else if(id === 'dm-sf-id' && D.sform){const f = D.sform; f.id = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); e.target.value = f.id; f.idTouched = true; updateSFPrev()}
   else if(id === 'dm-uf-name' && D.uform) D.uform.name = v;
+  else if(id === 'dm-rs-c'){const b = $('dm-rs-ok'); if(b) b.disabled = v.trim().toUpperCase() !== 'RESTAURAR'}
   else if(id === 'dm-uf-code' && D.uform){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.uform.code = c}
 }
 function onChange(e){

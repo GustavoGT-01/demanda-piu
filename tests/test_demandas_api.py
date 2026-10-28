@@ -184,6 +184,15 @@ class Contrato(Base):
 
 
 class Identidade(Base):
+    def test_esquecer_pessoas_depois_de_restaurar(self):
+        self.pes(self.tk_c, "vista")
+        self.pes(self.tk_h, "vista")
+        api.esquecer_pessoas()
+        self.assertEqual(len(api._TK), 0)
+        self.assertEqual(self.erro(self.pes, self.tk_c, "vista"), 401)
+        self.assertEqual(self.msg(self.pes, self.tk_h, "vista"), "Identifique-se de novo.")
+        self.assertEqual(self.adm("vista")["papel"], "adm", "o ADM não depende de token")
+
     def test_entrar(self):
         out = api.handle("POST", "entrar", {"pessoa": self.carlos, "codigo": "2222"}, OP)
         self.assertEqual(out["eu"], {"id": self.carlos, "nome": "Carlos", "setor": "CNC", "mat": "M101"})
@@ -1026,9 +1035,13 @@ class Leituras(Base):
     def test_vista_do_adm_traz_o_aviso_do_backup_sem_caminho(self):
         for papel in ("maquina", "completo"):
             v = self.get(ctx={"papel": papel})
-            self.assertEqual(v["backup"], {"alerta": "grave", "texto": "Nenhum backup feito ainda.", "ultimo_ok_t": None})
-        (self.dir / "backup-estado.json").write_text(json.dumps({"ultimo_ok": {"t": self.t - 3600000}}), encoding="utf-8")
-        self.assertEqual(self.get()["backup"], {"alerta": None, "texto": "", "ultimo_ok_t": self.t - 3600000})
+            self.assertEqual(v["backup"], {"alerta": "grave", "texto": "Nenhum backup feito ainda.", "ultimo_ok_t": None,
+                                           "restaurado": None})
+        (self.dir / "backup-estado.json").write_text(json.dumps({"ultimo_ok": {"t": self.t - 3600000},
+                                                                 "restaurado": {"t": 5, "copia_t": 4, "nome": "x"}}),
+                                                     encoding="utf-8")
+        self.assertEqual(self.get()["backup"], {"alerta": None, "texto": "", "ultimo_ok_t": self.t - 3600000,
+                                                "restaurado": {"t": 5, "copia_t": 4}})
         self.assertEqual(self.adm("vista")["backup"]["ultimo_ok_t"], self.t - 3600000)
         self.assertNotIn(str(self.dir), json.dumps(self.get()["backup"]))
 

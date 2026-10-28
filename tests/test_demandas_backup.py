@@ -218,14 +218,15 @@ class Resumo(Base):
                 "falhas_seguidas": 0}
 
     def test_estado_padrao_e_arquivo_ruim(self):
-        vazio = {"v": 1, "ultimo_ok": None, "ultima_falha": None, "falhas_seguidas": 0}
+        vazio = {"v": 1, "ultimo_ok": None, "ultima_falha": None, "falhas_seguidas": 0, "restaurado": None}
         self.assertEqual(bk.estado(), vazio)
         self.grava("{x", "backup-estado.json")
         self.assertEqual(bk.estado(), vazio)
         self.grava({"ultimo_ok": {"t": "1"}, "ultima_falha": [], "falhas_seguidas": -1}, "backup-estado.json")
         self.assertEqual(bk.estado(), vazio)
         self.grava({"ultimo_ok": {"t": 5}, "ultima_falha": {"t": 6}, "falhas_seguidas": 2}, "backup-estado.json")
-        self.assertEqual(bk.estado(), {"v": 1, "ultimo_ok": {"t": 5}, "ultima_falha": {"t": 6}, "falhas_seguidas": 2})
+        self.assertEqual(bk.estado(), {"v": 1, "ultimo_ok": {"t": 5}, "ultima_falha": {"t": 6}, "falhas_seguidas": 2,
+                                       "restaurado": None})
         for n, esperado in ((10 ** 9, 10 ** 9), (10 ** 9 + 1, 0), (91, 91)):
             self.grava({"falhas_seguidas": n}, "backup-estado.json")
             self.assertEqual(bk.estado()["falhas_seguidas"], esperado)
@@ -237,16 +238,18 @@ class Resumo(Base):
     def test_desligado_e_aviso(self):
         cfg = {**bk.PADRAO, "on": False}
         self.assertEqual(bk.resumo(self.AGORA, cfg, self.est(ok_h=1)),
-                         {"alerta": "aviso", "texto": "Backup automático desligado.", "ultimo_ok_t": self.AGORA - H})
+                         {"alerta": "aviso", "texto": "Backup automático desligado.", "ultimo_ok_t": self.AGORA - H,
+                          "restaurado": None})
 
     def test_em_dia_sem_aviso_ate_26h(self):
         for h in (0, 25, 26):
             self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est(ok_h=h, falha_h=0.5)),
-                             {"alerta": None, "texto": "", "ultimo_ok_t": self.AGORA - h * H})
+                             {"alerta": None, "texto": "", "ultimo_ok_t": self.AGORA - h * H, "restaurado": None})
 
     def test_velho_e_grave(self):
         r = bk.resumo(self.AGORA, bk.PADRAO, self.est(ok_h=27))
-        self.assertEqual(r, {"alerta": "grave", "texto": "Último backup há 27 h.", "ultimo_ok_t": self.AGORA - 27 * H})
+        self.assertEqual(r, {"alerta": "grave", "texto": "Último backup há 27 h.", "ultimo_ok_t": self.AGORA - 27 * H,
+                             "restaurado": None})
         self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est(ok_h=47))["texto"], "Último backup há 47 h.")
         self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est(ok_h=48))["texto"], "Último backup há 2 dias.")
         self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est(ok_h=80, falha_h=1))["texto"],
@@ -259,7 +262,7 @@ class Resumo(Base):
 
     def test_nunca_feito(self):
         self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est()),
-                         {"alerta": "grave", "texto": "Nenhum backup feito ainda.", "ultimo_ok_t": None})
+                         {"alerta": "grave", "texto": "Nenhum backup feito ainda.", "ultimo_ok_t": None, "restaurado": None})
         self.assertEqual(bk.resumo(self.AGORA, bk.PADRAO, self.est(falha_h=1))["texto"],
                          "Nenhum backup feito ainda: Sem espaço no disco para o backup")
 
@@ -863,6 +866,249 @@ class Painel(Base):
             self.assertIsNone(bk.painel(self.AGORA)["livre"])
         bk.salvar_config({"on": False})
         self.assertEqual(bk.painel()["resumo"]["alerta"], "aviso")
+
+
+class Restaurar(Base):
+    T1, T2 = ms(2026, 10, 27, 12), ms(2026, 10, 28, 9)
+
+    def setUp(self):
+        super().setUp()
+        self.grava({"v": 1, "rev": 7, "seq": {"pessoa": 1, "demanda": 1002, "nota": 4}, "pessoas": [{"id": "p1"}],
+                    "setores": [{"id": "PCP"}], "demandas": [dem(1001, "new", [A1]), dem(1002)]})
+        self.grava({"v": 1, "demandas": [dem(900, "done", [A3])]}, "demandas-arquivo.json")
+        self.anexo(A1)
+        self.anexo(A3)
+        self.copia = bk.fazer("manual", self.T1)["nome"]
+        self.backup_principal = json.loads((self.dir / "demandas.json").read_text(encoding="utf-8"))
+        # depois do backup: demanda nova com anexo novo, rev e seq andam
+        self.grava({"v": 1, "rev": 12, "seq": {"pessoa": 3, "demanda": 1003, "nota": 2, "extra": 9},
+                    "pessoas": [{"id": "p1"}, {"id": "p2"}], "setores": [{"id": "PCP"}],
+                    "demandas": [dem(1001, "new", [A1]), dem(1002), dem(1003, "new", [A2])]})
+        self.anexo(A2, PNG, "png")
+        velho = time.time() - 60
+        for f in ds.anexos_dir().iterdir():
+            os.utime(f, (velho, velho))
+
+    def disco(self, nome="demandas.json"):
+        return json.loads((self.dir / nome).read_text(encoding="utf-8"))
+
+    def foto(self):
+        return {str(p.relative_to(self.dir)): p.read_bytes() for p in sorted(self.dir.rglob("*")) if p.is_file()}
+
+    def test_dados_voltam_com_rev_e_seq_sem_voltar(self):
+        feito = bk.restaurar(self.copia, self.T2)
+        doc = self.disco()
+        self.assertEqual([d["id"] for d in doc["demandas"]], ["SOL-1001", "SOL-1002"])
+        self.assertEqual(doc["rev"], 13, "máximo entre 12 (agora) e 7 (cópia) + 1")
+        self.assertEqual(doc["seq"], {"pessoa": 3, "demanda": 1003, "nota": 4, "extra": 9})
+        self.assertEqual(doc["pessoas"], [{"id": "p1"}])
+        self.assertEqual([d["id"] for d in self.disco("demandas-arquivo.json")["demandas"]], ["SOL-900"])
+        self.assertEqual({k: v for k, v in doc.items() if k not in ("rev", "seq")},
+                         {k: v for k, v in self.backup_principal.items() if k not in ("rev", "seq")})
+        self.assertEqual(sorted(p.name for p in ds.anexos_dir().iterdir()), ["%s.jpg" % A1, "%s.jpg" % A3],
+                         "o anexo que a cópia não cita sai (está no zip antes-restaurar)")
+        self.assertEqual([d["id"] for d in ds.load()["demandas"]], ["SOL-1001", "SOL-1002"], "cache limpo")
+        self.assertEqual([d["id"] for d in ds.load_arquivo()], ["SOL-900"])
+        antes = nome(2026, 10, 28, 9, 0, "antes-restaurar")
+        self.assertEqual(feito, {"t": self.T2, "nome": self.copia, "copia_t": self.T1, "rev": 13, "antes": antes})
+        with zipfile.ZipFile(self.pasta() / antes) as z:
+            self.assertEqual(json.loads(z.read("demandas.json"))["rev"], 12, "a cópia de antes tem o estado de agora")
+            self.assertIn("demandas-anexos/%s.png" % A2, z.namelist())
+        bk.verificar(self.pasta() / antes)
+        self.assertEqual(bk.estado()["restaurado"], feito)
+        self.assertEqual(bk.resumo(self.T2)["restaurado"], {"t": self.T2, "copia_t": self.T1})
+        self.assertFalse((self.dir / ".restaurar-tmp").exists())
+
+    def test_extrai_em_data_restaurar_tmp_antes_da_copia_de_antes(self):
+        uma = bk._uma_copia
+        vistos = []
+
+        def confere(tipo, agora):
+            tmp = self.dir / ".restaurar-tmp"
+            vistos.append(((tmp / "demandas.json").is_file(), (tmp / "demandas-anexos" / ("%s.jpg" % A1)).is_file()))
+            return uma(tipo, agora)
+
+        with mock.patch.object(bk, "_uma_copia", side_effect=confere):
+            bk.restaurar(self.copia, self.T2)
+        self.assertEqual(vistos, [(True, True)])
+        self.assertFalse((self.dir / ".restaurar-tmp").exists())
+
+    def test_sem_rev_em_nenhum_dos_dois(self):
+        self.pasta().mkdir(exist_ok=True)
+        n = nome(2026, 1, 1, 10, 0, "manual")
+        zip_feito(self.pasta() / n, {"demandas.json": b'{"v": 1}'})
+        self.grava({"v": 1})
+        bk.restaurar(n, self.T2)
+        self.assertEqual(self.disco()["rev"], 1)
+
+    def test_anexo_do_mesmo_instante_da_restauracao_fica(self):
+        marco = time.time() + 30
+        os.utime(ds.anexos_dir() / ("%s.png" % A2), (marco, marco))
+        with mock.patch.object(bk.time, "time", return_value=marco):
+            bk.restaurar(self.copia, self.T2)
+        self.assertTrue((ds.anexos_dir() / ("%s.png" % A2)).exists(), "pode ter chegado durante a restauração")
+
+    def test_rev_da_copia_maior(self):
+        doc = self.disco()
+        doc["rev"] = 3
+        self.grava(doc)
+        bk.restaurar(self.copia, self.T2)
+        self.assertEqual(self.disco()["rev"], 8)
+
+    def test_seq_estranho(self):
+        doc = self.disco()
+        doc["seq"] = {"demanda": True, "nota": "9", "pessoa": 0}
+        self.grava(doc)
+        bk.restaurar(self.copia, self.T2)
+        self.assertEqual(self.disco()["seq"], {"pessoa": 1, "demanda": 1002, "nota": 4})
+        doc = self.disco()
+        doc["seq"] = []
+        self.grava(doc)
+        bk.fazer("manual", self.T2 + 60000)
+        sem_seq = dict(self.backup_principal)
+        del sem_seq["seq"]
+        self.grava(sem_seq)
+        copia = bk.fazer("manual", self.T2 + 120000)["nome"]
+        self.grava({"v": 1, "rev": 1, "seq": {"demanda": 1500}})
+        bk.restaurar(copia, self.T2 + 180000)
+        self.assertEqual(self.disco()["seq"], {"demanda": 1500})
+
+    def test_anexo_que_sumiu_volta_e_o_enviado_agora_fica(self):
+        (ds.anexos_dir() / ("%s.jpg" % A1)).unlink()
+        novo = "a" + "4" * 16
+        self.anexo(novo)   # mtime de agora: enviado durante a restauração
+        futuro = time.time() + 60
+        os.utime(ds.anexos_dir() / ("%s.jpg" % novo), (futuro, futuro))
+        bk.restaurar(self.copia, self.T2)
+        self.assertEqual((ds.anexos_dir() / ("%s.jpg" % A1)).read_bytes(), JPG)
+        self.assertTrue((ds.anexos_dir() / ("%s.jpg" % novo)).exists())
+        self.assertFalse((ds.anexos_dir() / ("%s.png" % A2)).exists())
+
+    def test_anexo_que_chega_no_meio_da_copia(self):
+        (ds.anexos_dir() / ("%s.jpg" % A1)).unlink()
+        with mock.patch.object(ds, "_publica", side_effect=FileExistsError):
+            bk.restaurar(self.copia, self.T2)
+        self.assertEqual(self.disco()["rev"], 13)
+
+    def test_anexo_some_durante_a_limpeza(self):
+        real = os.scandir
+
+        def falso(p):
+            if Path(p) != ds.anexos_dir():
+                return real(p)
+            e = mock.Mock()
+            e.name, e.path = "%s.png" % A2, str(ds.anexos_dir() / ("%s.png" % A2))
+            e.stat.side_effect = FileNotFoundError("sumiu")
+            return [e]
+
+        with mock.patch.object(bk.os, "scandir", side_effect=falso):
+            bk.restaurar(self.copia, self.T2)
+        self.assertTrue((ds.anexos_dir() / ("%s.png" % A2)).exists())
+
+    def test_copia_sem_arquivo_morto_esvazia_o_atual(self):
+        (self.dir / "demandas-arquivo.json").unlink()
+        sem = bk.fazer("manual", self.T2 - 60000)["nome"]
+        self.grava({"v": 1, "demandas": [dem(901)]}, "demandas-arquivo.json")
+        bk.restaurar(sem, self.T2)
+        self.assertEqual(self.disco("demandas-arquivo.json"), {"v": 1, "demandas": []})
+
+    def test_atual_ilegivel_tambem_restaura(self):
+        self.grava("{quebrado")
+        (self.dir / "demandas.json.bak").write_text("{ruim", encoding="utf-8")
+        feito = bk.restaurar(self.copia, self.T2)
+        self.assertEqual(self.disco()["rev"], 8)
+        self.assertEqual(self.disco()["seq"]["demanda"], 1002)
+        self.assertIsNone(feito["antes"])
+        self.assertEqual((self.dir / ("demandas.json.ilegivel-%d" % self.T2)).read_text(encoding="utf-8"), "{quebrado")
+        self.assertEqual((self.dir / ("demandas.json.bak.ilegivel-%d" % self.T2)).read_text(encoding="utf-8"), "{ruim")
+        self.assertTrue((self.dir / ("demandas-arquivo.json.ilegivel-%d" % self.T2)).exists())
+        self.assertFalse((self.dir / ("demandas-arquivo.json.bak.ilegivel-%d" % self.T2)).exists())
+
+    def test_copia_com_defeito_nao_muda_nada(self):
+        antes = self.foto()
+        raw = bytearray((self.pasta() / self.copia).read_bytes())
+        raw[raw.index(JPG) + 5] ^= 0xFF
+        (self.pasta() / self.copia).write_bytes(bytes(raw))
+        self.assertEqual(self.erro(400, bk.restaurar, self.copia, self.T2), "Cópia com defeito: arquivo corrompido.")
+        self.assertEqual(self.foto(), antes, "data/ intacto, byte a byte")
+
+    def test_sem_espaco_para_a_copia_de_antes_nao_muda_nada(self):
+        antes = self.foto()
+        with mock.patch.object(bk.shutil, "disk_usage", return_value=mock.Mock(free=0)):
+            self.erro(507, bk.restaurar, self.copia, self.T2)
+        depois = self.foto()
+        for f in ("backup-estado.json", "backup-estado.json.bak"):   # só o registro da falha muda
+            depois.pop(f, None)
+            antes.pop(f, None)
+        self.assertEqual(depois, antes)
+        self.assertEqual(bk.estado()["ultima_falha"]["erro"], "Sem espaço no disco para o backup")
+        self.assertIsNone(bk.estado()["restaurado"])
+
+    def test_zip_mudou_entre_conferir_e_ler(self):
+        verificar = bk.verificar
+
+        def mexe(p):
+            man = verificar(p)
+            man["arquivos"]["demandas.json"]["sha256"] = "0" * 64
+            return man
+
+        antes = self.foto()
+        with mock.patch.object(bk, "verificar", side_effect=mexe):
+            self.assertEqual(self.erro(400, bk.restaurar, self.copia, self.T2),
+                             "Cópia com defeito: conteúdo diferente do manifesto.")
+        self.assertEqual(self.foto(), antes)
+        self.assertFalse((self.dir / ".restaurar-tmp").exists())
+
+    def test_so_copias_da_pasta(self):
+        for n in ("..\\demandas.json", "../x.zip", str(self.pasta() / self.copia), nome(2020, 1, 1), "", None, 5, ["x"]):
+            self.assertEqual(self.erro(404, bk.restaurar, n, self.T2), "Cópia não encontrada.")
+            self.assertEqual(self.erro(404, bk.previa, n), "Cópia não encontrada.")
+
+    def test_uma_de_cada_vez(self):
+        with bk._BACKUP:
+            self.assertEqual(self.erro(409, bk.restaurar, self.copia, self.T2), "Já tem um backup em andamento.")
+        self.assertEqual(self.disco()["rev"], 12)
+
+    def test_relogio_padrao_e_estado_guardado_depois_de_outra_copia(self):
+        antes = int(time.time() * 1000)
+        feito = bk.restaurar(self.copia)
+        self.assertTrue(antes <= feito["t"] <= int(time.time() * 1000))
+        bk.fazer("manual", feito["t"] + 120000)
+        self.assertEqual(bk.estado()["restaurado"], feito, "uma cópia nova não apaga o registro da restauração")
+
+    def test_previa(self):
+        p = bk.previa(self.copia)
+        self.assertEqual(p, {"nome": self.copia,
+                             "copia": {"t": self.T1, "tipo": "manual", "rev": 7,
+                                       "contagem": {"demandas": 2, "arquivo": 1, "pessoas": 1, "setores": 1, "anexos": 2}},
+                             "agora": {"rev": 12, "contagem": {"demandas": 3, "arquivo": 1, "pessoas": 2, "setores": 1,
+                                                               "anexos": 3}},
+                             "proximo": "SOL-1004"})
+        doc = self.disco()
+        doc["seq"] = {"demanda": 900}
+        self.grava(doc)
+        self.assertEqual(bk.previa(self.copia)["proximo"], "SOL-1003")
+        doc["seq"] = {}
+        self.grava(doc)
+        self.assertEqual(bk.previa(self.copia)["proximo"], "SOL-1003")
+        self.assertEqual(self.disco()["rev"], 12, "a prévia não muda nada")
+
+    def test_previa_de_zip_feito_a_mao(self):
+        self.pasta().mkdir(exist_ok=True)
+        n = nome(2026, 1, 1, 10, 0, "manual")
+        zip_feito(self.pasta() / n, {"demandas.json": b'{"v": 1}'})
+        p = bk.previa(n)
+        self.assertEqual((p["copia"]["contagem"], p["copia"]["t"], p["proximo"]), ({}, 0, "SOL-1004"))
+        zip_feito(self.pasta() / n, {"demandas.json": b'{"v": 1, "seq": {"demanda": 5000}}'},
+                  mexe=lambda m: m.update(contagem=[]))
+        self.assertEqual((bk.previa(n)["copia"]["contagem"], bk.previa(n)["proximo"]), ({}, "SOL-5001"))
+        (self.pasta() / n).write_bytes(b"x")
+        self.erro(400, bk.previa, n)
+
+    def test_seq_demanda(self):
+        self.assertEqual(bk._seq_demanda({"seq": {"demanda": 7}}), 7)
+        for doc in ({}, [], None, {"seq": []}, {"seq": {"demanda": True}}, {"seq": {"demanda": "7"}}):
+            self.assertEqual(bk._seq_demanda(doc), 1000)
 
 
 class Tarefa(Base):

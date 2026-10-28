@@ -53,6 +53,38 @@ async function aparelhoOperador(){
   ok(await until(()=>$('#dm-login').hidden&&/Olá, Carlos/.test($('#dmboard').textContent)),'Carlos entra com o código dele');
   w.close();
 }
+// Restaurar pela tela a cópia feita no começo (antes dos setores): confirmação, RESTAURAR digitado, dados voltam.
+async function restaurarPelaTela(){
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  const outra=await boot(),o=s=>outra.document.querySelector(s);   // outra tela de ADM aberta durante a restauração
+  await until(()=>o('[data-act=lgk][data-v=adm]'));o('[data-act=lgk][data-v=adm]').click();o('.dm-lgbtn').click();
+  await until(()=>o('.dm-tab[data-v=painel]'));
+  const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  const toast=()=>($('#dm-toast')||{}).textContent||'';
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  await until(()=>$('.dm-tab[data-v=painel]'));
+  w.NestLocal.views.demandas.config('backup');
+  ok(await until(()=>$$('[data-act=bk-rest]').length===1),'a cópia aparece com o botão Restaurar');
+  $('[data-act=bk-rest]').click();
+  ok(await until(()=>$('#dm-rs-c')&&/Vai se perder/.test($('#dm-rs-perde').textContent)),'confirmação mostra o que vai se perder');
+  ok(/^SOL-100[1-9]$/.test($('#dm-rs-prox').textContent)&&$('#dm-rs-prox').textContent!=='SOL-1001','próximo número continua do maior já usado: '+$('#dm-rs-prox').textContent);
+  ok($('#dm-rs-ok').disabled,'"Restaurar" começa desligado');
+  const c=$('#dm-rs-c');c.value='restaura';c.dispatchEvent(new w.Event('input',{bubbles:true}));
+  ok($('#dm-rs-ok').disabled,'texto incompleto não liga o botão');
+  c.value=' restaurar ';c.dispatchEvent(new w.Event('input',{bubbles:true}));
+  ok(!$('#dm-rs-ok').disabled,'RESTAURAR digitado liga o botão');
+  $('[data-act=bk-rest-x]').click();
+  ok(await until(()=>$$('[data-act=bk-rest]').length===1&&!$('#dm-rs-c')),'Cancelar volta para a lista sem mudar nada');
+  $('[data-act=bk-rest]').click();await until(()=>$('#dm-rs-c'));
+  $('#dm-rs-c').value='RESTAURAR';$('#dm-rs-c').dispatchEvent(new w.Event('input',{bubbles:true}));$('#dm-rs-ok').click();
+  ok(await until(()=>/Dados restaurados/.test(toast())&&$$('.dm-cfgtipo[data-t=antes-restaurar]').length===1,10000),'restaura e guarda a cópia "antes de restaurar" '+toast());
+  $('[data-act=mclose]').click();
+  ok(await until(()=>$('.dm-mapsum')&&/^0 setores/.test($('.dm-mapsum').textContent.trim())),'os setores criados depois da cópia sumiram');
+  const pub=await fetch('http://127.0.0.1:'+PORT+'/api/local/demandas').then(r=>r.json());
+  ok(pub.setores.length===0&&pub.demandas.length===0,'servidor confirma: dados da cópia');
+  ok(await until(()=>/Dados restaurados para/.test((o('#dm-toast')||{}).textContent||''),10000),'a outra tela aberta avisa sozinha: '+((o('#dm-toast')||{}).textContent||''));
+  w.close();outra.close();
+}
 (async()=>{
   const srv=await startServer();
   try{
@@ -166,6 +198,7 @@ async function aparelhoOperador(){
     ok(await until(()=>$$('.dm-ocard h3').some(h=>h.textContent==='Pedido feito em outro aparelho'),8000),'mudança de outro aparelho aparece sozinha');
     w.close();
     await aparelhoOperador();
+    await restaurarPelaTela();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso
     try{fs.rmSync(base,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch(e){console.log('aviso: pasta temporária ficou em '+base)}}
   console.log(process.exitCode?'houve falhas':'tudo certo');

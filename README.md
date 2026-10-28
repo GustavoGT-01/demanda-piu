@@ -43,8 +43,12 @@ citados; **não** leva `rede.json` nem `sessoes.json`. Ficam 7 diárias, 4 seman
 Horário, pasta, quantas cópias guardar e "Fazer backup agora" ficam em **⚙ Configurações → Backup** (só no computador
 principal); se o backup falhar ou passar de 26 h, o Painel do ADM avisa. Configuração em `data/backup.json` e resultado
 em `data/backup-estado.json`. O zip tem nomes, matrículas e os códigos
-das pessoas (protegidos, mas quebráveis): guarde-o num lugar seguro e, em pen drive, use BitLocker To Go. Para
-restaurar à mão, feche o programa e descompacte o zip dentro de `data/`.
+das pessoas (protegidos, mas quebráveis): guarde-o num lugar seguro e, em pen drive, use BitLocker To Go.
+
+**Restaurar:** em **⚙ Configurações → Backup**, botão **Restaurar** na cópia e confirmação digitando RESTAURAR. Antes de
+trocar, o programa faz uma cópia "antes de restaurar" do estado atual (dá para desfazer por ela); os números SOL-n não
+se repetem e as pessoas nos aparelhos digitam o código de novo. Sem o programa: feche-o e descompacte o zip dentro de
+`data/`.
 
 Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.json` e `demandas-anexos/` para esta
 `data/` com o programa fechado. O formato é o mesmo do módulo Demandas do CutFlow, de onde este programa saiu.

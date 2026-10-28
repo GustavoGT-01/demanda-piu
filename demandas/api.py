@@ -169,6 +169,13 @@ def _tk_pessoa(tk):
         return hit[0]
 
 
+def esquecer_pessoas() -> None:
+    """Depois de restaurar um backup: todo mundo se identifica de novo (a pessoa pode não existir na cópia, ou ter
+    outro código)."""
+    with _TK_LOCK:
+        _TK.clear()
+
+
 def _tk_revoga(pid: str) -> None:
     with _TK_LOCK:
         for k in [k for k, v in _TK.items() if v[0] == pid]:

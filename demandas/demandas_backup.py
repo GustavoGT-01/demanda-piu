@@ -181,11 +181,12 @@ def pasta_local(cfg: dict) -> Path:
 
 def estado() -> dict:
     raw = _ler_json(_estado_path())
-    ok, falha = raw.get("ultimo_ok"), raw.get("ultima_falha")
-    return {"v": 1,
-            "ultimo_ok": ok if isinstance(ok, dict) and isinstance(ok.get("t"), int) else None,
-            "ultima_falha": falha if isinstance(falha, dict) and isinstance(falha.get("t"), int) else None,
-            "falhas_seguidas": _inteiro(raw.get("falhas_seguidas"), 0, 10**9) or 0}
+    def com_t(v):
+        return v if isinstance(v, dict) and isinstance(v.get("t"), int) else None
+
+    return {"v": 1, "ultimo_ok": com_t(raw.get("ultimo_ok")), "ultima_falha": com_t(raw.get("ultima_falha")),
+            "falhas_seguidas": _inteiro(raw.get("falhas_seguidas"), 0, 10**9) or 0,
+            "restaurado": com_t(raw.get("restaurado"))}
 
 
 def _grava_estado(est: dict) -> None:
@@ -201,9 +202,10 @@ def resumo(agora: int, cfg: dict | None = None, est: dict | None = None) -> dict
     """{"alerta": None | "aviso" | "grave", "texto", "ultimo_ok_t"} para o Painel do ADM. Sem caminho de pasta."""
     cfg = config() if cfg is None else cfg
     est = estado() if est is None else est
-    ok, falha = est["ultimo_ok"], est["ultima_falha"]
+    ok, falha, rest = est["ultimo_ok"], est["ultima_falha"], est.get("restaurado")
     t_ok = ok["t"] if ok else None
-    out = {"alerta": None, "texto": "", "ultimo_ok_t": t_ok}
+    out = {"alerta": None, "texto": "", "ultimo_ok_t": t_ok,
+           "restaurado": {"t": rest["t"], "copia_t": rest.get("copia_t")} if rest else None}   # a tela avisa "dados restaurados"
     if not cfg["on"]:
         return {**out, "alerta": "aviso", "texto": "Backup automático desligado."}
     if t_ok is not None and agora - t_ok <= VELHO_ALERTA:
@@ -312,8 +314,12 @@ def _bytes_de(p: Path):
         if isinstance(doc, dict):
             return raw, doc
     if p.exists() or bak.exists():
-        raise ds.StoreError(500, "Arquivo de dados ilegível: %s." % p.name)
+        raise Ilegivel(500, "Arquivo de dados ilegível: %s." % p.name)
     return None, None
+
+
+class Ilegivel(ds.StoreError):
+    """Os dados de agora não abrem: não há o que copiar antes de restaurar (é justamente quando restaurar ajuda)."""
 
 
 def _demandas_de(doc) -> list:
@@ -486,6 +492,34 @@ def painel(agora: int | None = None) -> dict:
             "usado": sum(c["bytes"] for c in copias), "rodando": _BACKUP.locked()}
 
 
+def _uma_copia(tipo: str, agora: int) -> dict:
+    """fazer() sem a trava: quem chama segura _BACKUP (fazer e restaurar)."""
+    cfg = config()
+    pasta = pasta_local(cfg)
+    try:
+        if not pasta.parent.is_dir():
+            raise ds.StoreError(500, "Pasta do backup não encontrada.")
+        pasta.mkdir(exist_ok=True)
+        for e in os.scandir(pasta):   # .part de uma cópia que caiu no meio
+            if e.name.endswith(".part") and NOME_RE.fullmatch(e.name[:-5]):
+                store._remove(Path(e.path))
+        info = gravar_zip(instantaneo(), pasta, tipo, agora)
+    except Exception as exc:
+        est = estado()
+        curto = str(exc) if isinstance(exc, ds.StoreError) else "falha ao gravar a cópia (%s)" % type(exc).__name__
+        est["ultima_falha"] = {"t": agora, "destino": "local", "erro": curto.rstrip("."), "detalhe": str(exc)[:300]}
+        est["falhas_seguidas"] += 1
+        _grava_estado(est)
+        raise
+    for nome in reter(listar(pasta), cfg["ret"], cfg["limite_mb"] * 1024 * 1024):
+        store._remove(pasta / nome)
+    est = estado()
+    est["ultimo_ok"] = info
+    est["falhas_seguidas"] = 0
+    _grava_estado(est)
+    return info
+
+
 def fazer(tipo: str, agora: int | None = None) -> dict:
     """Uma cópia agora na pasta local, verificada, e a retenção. Registra o resultado em backup-estado.json.
     409 se já tem uma cópia em andamento."""
@@ -494,32 +528,122 @@ def fazer(tipo: str, agora: int | None = None) -> dict:
     if not _BACKUP.acquire(blocking=False):
         raise ds.StoreError(409, "Já tem um backup em andamento.")
     try:
-        agora = _agora() if agora is None else agora
-        cfg = config()
-        pasta = pasta_local(cfg)
-        try:
-            if not pasta.parent.is_dir():
-                raise ds.StoreError(500, "Pasta do backup não encontrada.")
-            pasta.mkdir(exist_ok=True)
-            for e in os.scandir(pasta):   # .part de uma cópia que caiu no meio
-                if e.name.endswith(".part") and NOME_RE.fullmatch(e.name[:-5]):
-                    store._remove(Path(e.path))
-            info = gravar_zip(instantaneo(), pasta, tipo, agora)
-        except Exception as exc:
-            est = estado()
-            curto = str(exc) if isinstance(exc, ds.StoreError) else "falha ao gravar a cópia (%s)" % type(exc).__name__
-            est["ultima_falha"] = {"t": agora, "destino": "local", "erro": curto.rstrip("."), "detalhe": str(exc)[:300]}
-            est["falhas_seguidas"] += 1
-            _grava_estado(est)
-            raise
-        for nome in reter(listar(pasta), cfg["ret"], cfg["limite_mb"] * 1024 * 1024):
-            store._remove(pasta / nome)
-        est = estado()
-        est["ultimo_ok"] = info
-        est["falhas_seguidas"] = 0
-        _grava_estado(est)
-        return info
+        return _uma_copia(tipo, _agora() if agora is None else agora)
     finally:
+        _BACKUP.release()
+
+
+# ---------- restaurar ----------
+
+def _copia_da_pasta(nome) -> Path:
+    """Caminho de uma cópia que está na pasta configurada; o pedido só escolhe o nome, nunca o caminho."""
+    pasta = pasta_local(config())
+    if not isinstance(nome, str) or nome not in dict(listar(pasta)):
+        raise ds.StoreError(404, "Cópia não encontrada.")
+    return pasta / nome
+
+
+def _seq_demanda(doc) -> int:
+    seq = doc.get("seq") if isinstance(doc, dict) else None
+    n = seq.get("demanda") if isinstance(seq, dict) else None
+    return n if isinstance(n, int) and not isinstance(n, bool) else ds.empty()["seq"]["demanda"]
+
+
+def previa(nome) -> dict:
+    """O que o modal de confirmação mostra: a cópia escolhida (conferida) contra os dados de agora."""
+    zp = _copia_da_pasta(nome)
+    man = verificar(zp)
+    with zipfile.ZipFile(zp) as z:
+        copia = json.loads(z.read("demandas.json").decode("utf-8"))
+    inst = instantaneo()
+    agora_doc = json.loads(inst["jsons"]["demandas.json"].decode("utf-8"))
+    cont = man.get("contagem") if isinstance(man.get("contagem"), dict) else {}
+    return {"nome": nome, "copia": {"t": man.get("criado"), "tipo": man.get("tipo"), "rev": man.get("rev"), "contagem": cont},
+            "agora": {"rev": inst["rev"], "contagem": {**inst["contagem"], "anexos": len(inst["anexos"])}},
+            "proximo": "SOL-%d" % (max(_seq_demanda(agora_doc), _seq_demanda(copia)) + 1)}
+
+
+def _citados(*docs) -> set:
+    return {a.get("id") for doc in docs for d in _demandas_de(doc)
+            for a in (d.get("anexos") if isinstance(d.get("anexos"), list) else []) if isinstance(a, dict)}
+
+
+def restaurar(nome, agora: int | None = None) -> dict:
+    """Troca os dados pelos da cópia escolhida. Ordem que não perde nada:
+    1. confere o zip e extrai para data/.restaurar-tmp (só os nomes da lista, hash de cada um); defeito = nada muda;
+    2. cópia "antes-restaurar" do estado atual, verificada; falhou = nada muda (dados de agora ilegíveis: os arquivos
+       ruins ficam ao lado como *.ilegivel-<t> e a restauração segue);
+    3. anexos que faltam entram em demandas-anexos/ (nome único, nunca sobrescreve);
+    4. sob ds.LOCK: arquivo morto e depois o principal, com rev = máximo + 1 (o _rv das telas abertas nunca bate com
+       um velho) e seq nunca menor que o atual (um SOL-n já usado não volta);
+    5. anexos que a cópia não cita saem (estão no zip antes-restaurar), menos os enviados durante a restauração.
+    Quem chama limpa as pessoas identificadas (api.esquecer_pessoas)."""
+    zp = _copia_da_pasta(nome)
+    if not _BACKUP.acquire(blocking=False):
+        raise ds.StoreError(409, "Já tem um backup em andamento.")
+    tmp = store.data_dir() / ".restaurar-tmp"
+    try:
+        agora = _agora() if agora is None else agora
+        man = verificar(zp)
+        shutil.rmtree(tmp, ignore_errors=True)
+        (tmp / "demandas-anexos").mkdir(parents=True)
+        with zipfile.ZipFile(zp) as z:
+            for membro, info in man["arquivos"].items():   # nomes já conferidos contra a lista por verificar
+                raw = z.read(membro)
+                if _sha(raw) != info["sha256"]:   # o arquivo mudou entre a verificação e a leitura
+                    raise _defeito("conteúdo diferente do manifesto.")
+                (tmp / membro).write_bytes(raw)
+        principal = json.loads((tmp / "demandas.json").read_text(encoding="utf-8"))
+        arq_tmp = tmp / "demandas-arquivo.json"
+        arquivo = json.loads(arq_tmp.read_text(encoding="utf-8")) if arq_tmp.exists() else {"v": ds.V, "demandas": []}
+        try:
+            antes = _uma_copia("antes-restaurar", agora)["nome"]
+        except Ilegivel:   # sem zip possível: os arquivos ruins ficam guardados ao lado, nada se apaga
+            antes = None
+            for p in (ds.path(), ds.arquivo_path()):
+                for f in (p, p.with_name(p.name + ".bak")):
+                    if f.exists():
+                        shutil.copy2(f, f.with_name("%s.ilegivel-%d" % (f.name, agora)))
+        inicio = time.time()
+        ds.anexos_dir().mkdir(exist_ok=True)
+        for f in (tmp / "demandas-anexos").iterdir():
+            if not (ds.anexos_dir() / f.name).exists():   # anexo é imutável: o que já existe é igual
+                try:
+                    ds._publica(f, ds.anexos_dir() / f.name)
+                except FileExistsError:   # chegou agora mesmo
+                    pass
+        with ds.LOCK:
+            try:
+                _, atual = _bytes_de(ds.path())
+            except ds.StoreError:   # restaurar é justamente a saída quando o atual está ilegível
+                atual = None
+            atual = atual or {}
+            principal["rev"] = max(ds._int(atual.get("rev"), 0), ds._int(principal.get("rev"), 0)) + 1
+            seq = principal.get("seq") if isinstance(principal.get("seq"), dict) else {}
+            seq_atual = atual.get("seq") if isinstance(atual.get("seq"), dict) else {}
+            for k, v in seq_atual.items():
+                if ds._int(v, None) is not None:
+                    seq[k] = max(v, ds._int(seq.get(k), v))
+            principal["seq"] = seq
+            store.atomic_write(ds.arquivo_path(), json.dumps(arquivo, ensure_ascii=False))   # antes do principal
+            store.atomic_write(ds.path(), json.dumps(principal, ensure_ascii=False))
+            ds._CACHE.update(key=None, texto=None)
+            ds._ARQ.update(key=None, demandas=[])
+        citados = _citados(principal, arquivo)
+        for e in list(os.scandir(ds.anexos_dir())):
+            aid = e.name.split(".")[0]
+            try:
+                if ds.AID_RE.fullmatch(aid) and aid not in citados and e.stat().st_mtime < inicio:
+                    store._remove(Path(e.path))
+            except OSError:   # sumiu no meio
+                pass
+        feito = {"t": agora, "nome": nome, "copia_t": man.get("criado"), "rev": principal["rev"], "antes": antes}
+        est = estado()
+        est["restaurado"] = feito
+        _grava_estado(est)
+        return feito
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
         _BACKUP.release()
 
 

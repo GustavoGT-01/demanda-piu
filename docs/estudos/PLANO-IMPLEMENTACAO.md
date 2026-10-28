@@ -15,9 +15,9 @@
 | Este plano | `docs/estudos/PLANO-IMPLEMENTACAO.md` |
 
 Estado em 28/10/2026 (fim do dia):
-- Feito: Etapa 0 (`0d2b8e8`), Etapa 1 fase 1 — backup e thread de fundo (`8672d44`) — e fase 2 — ⚙ Configurações com
-  Rede e Backup, aviso no Painel (`4dd25e6`).
-- Próximo: Etapa 1 fase 4 (restaurar pela tela). A fase 3 (destino extra) fica para quando houver destino (o dono
+- Feito: Etapa 0 (`0d2b8e8`), Etapa 1 fase 1 — backup e thread de fundo (`8672d44`) —, fase 2 — ⚙ Configurações com
+  Rede e Backup, aviso no Painel (`4dd25e6`) — e fase 4 — restaurar pela tela (commit seguinte).
+- Próximo: Etapa 2 (robustez local). A fase 3 da Etapa 1 (destino extra) fica para quando houver destino (o dono
   respondeu "nenhum por enquanto").
 - O diálogo ⚙ Configurações é do módulo (`openCfg`/`renderCfg` em `demandas/demandas.js`, classes `.dm-cfg*`); a
   casca só tem o botão `#cx-cfg`. Seções novas (E-mail, Avisos, Servidor) entram ali.

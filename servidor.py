@@ -405,17 +405,21 @@ class Handler(BaseHTTPRequestHandler):
         self._json(out)
 
     def _backup(self, method: str, path: str, raw: bytes) -> None:
-        """/api/backup (GET: painel; POST: salva a configuração), /api/backup/agora e /api/backup/abrir."""
+        """/api/backup (GET: painel; POST: salva a configuração), /api/backup/agora, /api/backup/abrir,
+        /api/backup/previa {nome} e /api/backup/restaurar {nome, confirmo: "RESTAURAR"}."""
         if not pode(self.papel, "configurar"):
             return self._fail(403, "Só no computador principal.")
         bk = backup_mod()
         acao = path[len("/api/backup"):]
-        if (method, acao) not in (("GET", ""), ("POST", ""), ("POST", "/agora"), ("POST", "/abrir")):
+        if (method, acao) not in (("GET", ""), ("POST", ""), ("POST", "/agora"), ("POST", "/abrir"), ("POST", "/previa"),
+                                  ("POST", "/restaurar")):
             return self._fail(404, "Não encontrado.")
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
         except (UnicodeError, ValueError):
             return self._fail(400, "JSON inválido.")
+        if not isinstance(body, dict):
+            return self._fail(400, "Pedido inválido.")
         try:
             if acao == "" and method == "POST":
                 bk.salvar_config(body)
@@ -426,6 +430,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not pasta.is_dir():
                     return self._fail(404, "A pasta do backup ainda não existe: faça um backup primeiro.")
                 os.startfile(pasta)   # só a pasta configurada, nunca um caminho vindo do pedido
+            elif acao == "/previa":
+                return self._json(bk.previa(body.get("nome")))
+            elif acao == "/restaurar":
+                if body.get("confirmo") != "RESTAURAR":
+                    return self._fail(400, "Para restaurar, digite RESTAURAR.")
+                bk.restaurar(body.get("nome"))
+                api_mod().esquecer_pessoas()   # todo mundo se identifica de novo
             return self._json(bk.painel())
         except bk.ds.StoreError as exc:
             return self._fail(exc.status, str(exc))

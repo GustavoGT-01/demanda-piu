@@ -629,6 +629,32 @@ class Backup(Base):
         st, p = self.json("POST", "/api/backup/agora")   # corpo vazio também vale
         self.assertEqual(st, 200)
 
+    def test_previa_e_restaurar(self):
+        api = servidor.api_mod()
+        self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
+        nome = self.json("POST", "/api/backup/agora", {})[1]["copias"][0]["nome"]
+        self.ok("setor/salvar", {"modo": "novo", "id": "CNC", "nome": "Corte CNC", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
+        st, p = self.json("POST", "/api/backup/previa", {"nome": nome})
+        self.assertEqual(st, 200)
+        self.assertEqual((p["nome"], p["copia"]["contagem"]["setores"], p["agora"]["contagem"]["setores"]), (nome, 1, 2))
+        self.assertEqual(self.json("POST", "/api/backup/previa", {"nome": "x.zip"}), (404, "Cópia não encontrada."))
+        for corpo in ({"nome": nome}, {"nome": nome, "confirmo": "restaurar"}, {"nome": nome, "confirmo": True}):
+            self.assertEqual(self.json("POST", "/api/backup/restaurar", corpo), (400, "Para restaurar, digite RESTAURAR."))
+        self.assertEqual(self.json("POST", "/api/backup/restaurar", [nome]), (400, "Pedido inválido."))
+        api._TK["tk-de-alguem"] = ("p1", time.monotonic() + 999)
+        rev = json.loads(self.req("GET", "/api/rev")[2])["rev"]
+        st, p = self.json("POST", "/api/backup/restaurar", {"nome": nome, "confirmo": "RESTAURAR"})
+        self.assertEqual(st, 200)
+        self.assertEqual(p["estado"]["restaurado"]["nome"], nome)
+        self.assertEqual({c["tipo"] for c in p["copias"]}, {"manual", "antes-restaurar"})
+        self.assertEqual(len(api._TK), 0, "todo mundo se identifica de novo")
+        v = json.loads(self.req("GET", "/api/local/demandas")[2])
+        self.assertEqual([s["id"] for s in v["setores"]], ["PCP"])
+        self.assertGreater(v["rev"], rev)
+        self.assertGreater(json.loads(self.req("GET", "/api/rev")[2])["rev"], rev)
+        self.assertEqual(self.json("POST", "/api/backup/restaurar", {"nome": "nada.zip", "confirmo": "RESTAURAR"}),
+                         (404, "Cópia não encontrada."))
+
     def test_uma_de_cada_vez(self):
         bk = servidor.backup_mod()
         with bk._BACKUP:
@@ -650,7 +676,7 @@ class Backup(Base):
 
     def test_rotas_desconhecidas(self):
         for method, path in (("GET", "/api/backup/agora"), ("GET", "/api/backup/abrir"), ("POST", "/api/backup/x"),
-                             ("GET", "/api/backup/"), ("POST", "/api/backup/restaurar")):
+                             ("GET", "/api/backup/"), ("GET", "/api/backup/restaurar"), ("GET", "/api/backup/previa")):
             self.assertEqual(self.json(method, path, {} if method == "POST" else None), (404, "Não encontrado."), path)
         self.assertEqual(self.req("GET", "/api/backupx")[0], 404)
 
@@ -658,7 +684,8 @@ class Backup(Base):
         self.precisa_rede()
         adm = self.login(servidor.net_config()["pin"])
         for method, path in (("GET", "/api/backup"), ("POST", "/api/backup"), ("POST", "/api/backup/agora"),
-                             ("POST", "/api/backup/abrir"), ("GET", "/api/backup/agora")):
+                             ("POST", "/api/backup/abrir"), ("GET", "/api/backup/agora"), ("POST", "/api/backup/previa"),
+                             ("POST", "/api/backup/restaurar")):
             body = {} if method == "POST" else None
             self.assertEqual(self.json(method, path, body, adm, rede=True), (403, "Só no computador principal."), path)
             self.assertEqual(self.json(method, path, body, rede=True)[0], 401, path)
