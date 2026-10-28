@@ -1,0 +1,156 @@
+<!doctype html>
+<!-- Mockup estático (estudo 02 · Avisos). Não é o programa: só HTML e CSS para o dono aprovar. Abre direto no navegador.
+     Os filtros usam um pouco de JS só para alternar; sem JS a tela aparece no filtro "Todos". -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Central de avisos</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:var(--dm-bg,#ECEFF6)}
+#dmboard{min-height:100vh;overflow:visible}
+.pp-faixa{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.pp-faixa b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px;color:#3DDBA9}
+.pp-stage{position:relative;height:860px;overflow:hidden}
+.pp-stage .dm-drawer{width:min(460px,100%)}
+.pp-stage .dm-scrim,.pp-stage .dm-drawer{position:absolute!important;bottom:0!important}
+.nc-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.nc-bar .dm-spacer{min-width:4px}
+.nc-per{font:700 11.5px var(--dm-fb);letter-spacing:.08em;text-transform:uppercase;color:var(--dm-muted);margin:16px 0 2px}
+.nc-g{border:1px solid var(--dm-line);border-left:5px solid var(--dm-tc,var(--dm-s-new));border-radius:12px;margin-top:8px;background:var(--dm-surface2)}
+.nc-g.dm-new{background:color-mix(in srgb,var(--dm-tc,var(--dm-s-new)) 7%,var(--dm-surface))}
+.nc-g[data-k=urg],.nc-g[data-k=late]{--dm-tc:var(--dm-s-late)}.nc-g[data-k=pause],.nc-g[data-k=nudge]{--dm-tc:var(--dm-s-pause)}
+.nc-g[data-k=done]{--dm-tc:var(--dm-s-done)}.nc-g[data-k=comment]{--dm-tc:var(--dm-s-canc)}.nc-g[data-k=accepted]{--dm-tc:var(--dm-s-prog)}
+.nc-top{padding:9px 11px 8px}
+.nc-h{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.nc-h b{font-size:13.5px}
+.nc-h time{font-size:11.5px;color:var(--dm-muted);white-space:nowrap}
+.nc-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--dm-tc,var(--dm-s-new));margin-right:6px;vertical-align:1px}
+.nc-g:not(.dm-new) .nc-dot{background:transparent;border:1.5px solid var(--dm-line)}
+.nc-t{margin:4px 0;font-weight:600;font-size:13px}
+.nc-g details{border-top:1px dashed var(--dm-line)}
+.nc-g summary{cursor:pointer;padding:6px 11px;font-size:12px;color:var(--dm-muted);font-weight:600;list-style:none}
+.nc-g summary::-webkit-details-marker{display:none}
+.nc-g summary::before{content:"▸ "}
+.nc-g details[open] summary::before{content:"▾ "}
+.nc-old{list-style:none;margin:0;padding:0 11px 8px 11px;display:grid;gap:5px}
+.nc-old li{display:flex;gap:8px;font-size:12px;color:var(--dm-muted)}
+.nc-old time{min-width:38px;font-variant-numeric:tabular-nums}
+.nc-cnt{font:700 11px var(--dm-fb);background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:999px;padding:0 7px;margin-left:6px;color:var(--dm-ink)}
+.nc-sil{margin-top:10px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dm-muted);background:var(--dm-surface2);border-radius:10px;padding:7px 10px}
+.pp-leg{position:absolute;left:16px;bottom:16px;z-index:35;width:min(430px,calc(100% - 500px));min-width:260px}
+@media (max-width:980px){.pp-leg{display:none}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="pp-faixa"><b>PROPOSTA · CENTRAL DE AVISOS</b>Gaveta do sino melhorada: avisos agrupados por demanda e por período, filtros "Não lidos" e "Urgentes", "Marcar todos como lidos" e atalho para as preferências.</div>
+
+<div class="pp-stage">
+  <div class="dm-scroll"><div class="dm-wrap">
+    <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p><p class="dm-sub0">Corte · 3 na fila do setor</p></div>
+      <div class="dm-acts"><span class="dm-clock">qua 28/10 · 10:47</span><button type="button" class="dm-uchip"><span class="dm-av" style="--dm-sc:#E0662F">R</span><span class="dm-t"><b>Rafael Souza</b><small>Corte</small></span></button>
+      <button type="button" class="dm-btn dm-bell" aria-label="Notificações">🔔<b>5</b></button><button type="button" class="dm-btn">◐ Tema</button><button type="button" class="dm-btn dm-primary dm-hdnew">＋ Nova solicitação</button></div></header>
+    <nav class="dm-tabs"><button type="button" class="dm-tab" aria-pressed="true">📥 Recebidas<span class="dm-cnt">2</span></button><button type="button" class="dm-tab" aria-pressed="false">📤 Enviadas<span class="dm-cnt">1</span></button></nav>
+    <div class="dm-opwrap"><div class="dm-empty">(tela de operador atrás da gaveta)</div></div>
+  </div></div>
+
+  <div class="dm-scrim dm-on"></div>
+
+  <aside class="dm-drawer dm-on" id="dm-notif" aria-label="Avisos">
+    <button type="button" class="dm-btn dm-x" aria-label="Fechar">✕</button>
+    <h2>Avisos</h2><div class="dm-hsub"><b id="nc-un">5</b> não lidos · só os seus e os da fila do Corte</div>
+
+    <div class="nc-bar">
+      <div class="dm-seg" role="group" aria-label="Filtro">
+        <button type="button" data-f="all" aria-pressed="true">Todos</button>
+        <button type="button" data-f="new" aria-pressed="false">Não lidos</button>
+        <button type="button" data-f="urg" aria-pressed="false">Urgentes</button>
+      </div>
+      <span class="dm-spacer"></span>
+      <button type="button" class="dm-btn dm-sm" id="nc-all">✓ Marcar todos como lidos</button>
+      <button type="button" class="dm-btn dm-sm" title="Meus avisos">⚙</button>
+    </div>
+    <div class="nc-sil">🌙 Silêncio das 22:00 às 06:00 · 🔊 som ligado neste aparelho · <a href="02-preferencias-avisos.html">mudar</a></div>
+
+    <div class="nc-per">Agora</div>
+    <div class="nc-g dm-new" data-k="urg" data-u="1">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>🚨 Nova demanda · Urgente <span class="nc-cnt">para você</span></b><time>10:42</time></div>
+        <div class="nc-t">SOL-1043 · Corte de chapas 3 mm para o lote 220</div>
+        <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#7357E6">PCP</span>→<span class="dm-abbr" style="--dm-sc:#E0662F">COR</span><span>por Juliana Prado</span><span>· faltam 1h 25min</span></div>
+        <div class="dm-acts2" style="margin-top:8px"><button type="button" class="dm-btn dm-sm dm-go">▶ Aceitar e iniciar</button><button type="button" class="dm-btn dm-sm dm-primary">Ver solicitação</button></div>
+      </div>
+    </div>
+
+    <div class="nc-g dm-new" data-k="comment" data-u="0">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>💬 Comentário novo <span class="nc-cnt">3</span></b><time>10:39</time></div>
+        <div class="nc-t">SOL-1038 · Cortar perfis U 100 para a estrutura da linha 2</div>
+        <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#2F6FDE">MON</span>→<span class="dm-abbr" style="--dm-sc:#E0662F">COR</span><span>Paulo Henrique: “Pode mandar os 12 primeiros antes do almoço?”</span></div>
+      </div>
+      <details><summary>Mais 2 avisos desta demanda</summary>
+        <ul class="nc-old"><li><time>10:31</time><span>💬 Paulo Henrique: “Confirmando medida de 2,40 m.”</span></li><li><time>10:05</time><span>🔔 Cobrança de Paulo Henrique</span></li></ul>
+      </details>
+    </div>
+
+    <div class="nc-per">Hoje</div>
+    <div class="nc-g dm-new" data-k="late" data-u="1">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>⏰ Prazo estourado <span class="nc-cnt">fila do Corte</span></b><time>09:58</time></div>
+        <div class="nc-t">SOL-1031 · Rebarbar peças do pedido 8812</div>
+        <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#0E9F73">QUA</span>→<span class="dm-abbr" style="--dm-sc:#E0662F">COR</span><span>sem responsável</span><span>· atrasada há 49min</span></div>
+      </div>
+      <details><summary>Mais 1 aviso desta demanda</summary>
+        <ul class="nc-old"><li><time>08:12</time><span>📥 Nova na fila do Corte, por Márcia Lima</span></li></ul>
+      </details>
+    </div>
+
+    <div class="nc-g dm-new" data-k="done" data-u="0">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>✅ O que você pediu foi concluído</b><time>09:20</time></div>
+        <div class="nc-t">SOL-1027 · Troca da lâmina da guilhotina 2</div>
+        <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#E0662F">COR</span>→<span class="dm-abbr" style="--dm-sc:#7C879F">MAN</span><span>por Antônio Carlos</span></div>
+      </div>
+    </div>
+
+    <div class="nc-g" data-k="pause" data-u="0">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>⏸ O que você pediu foi pausado</b><time>08:47</time></div>
+        <div class="nc-t">SOL-1027 · Troca da lâmina da guilhotina 2</div>
+        <div class="dm-al-m"><span>· <b>Motivo:</b> Falta de material</span><span>· por Antônio Carlos</span></div>
+      </div>
+    </div>
+
+    <div class="nc-per">Ontem</div>
+    <div class="nc-g" data-k="accepted" data-u="0">
+      <div class="nc-top">
+        <div class="nc-h"><b><span class="nc-dot"></span>▶ O que você pediu foi aceito <span class="nc-cnt">2</span></b><time>ter 16:10</time></div>
+        <div class="nc-t">SOL-1019 e SOL-1021 · Expedição</div>
+        <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#E0662F">COR</span>→<span class="dm-abbr" style="--dm-sc:#C2417A">EXP</span><span>por Fernanda Alves</span></div>
+      </div>
+    </div>
+    <div class="dm-note" style="text-align:center;margin-top:14px">Mostrando os últimos 7 dias · <a href="#">ver mais antigos</a></div>
+  </aside>
+
+  <div class="dm-panel pp-leg"><div class="dm-ph"><h3>Hoje x proposta</h3></div><div class="dm-note" style="font-size:12.5px;margin:0">
+    <b>Hoje</b> (<code>renderNotif</code>): lista das 40 últimas notas do setor, uma por linha, sem filtro; "lida" vale para o setor todo.<br>
+    <b>Proposta</b>: avisos da pessoa + fila do setor; agrupados por demanda e por período; filtros; ação direta ("Aceitar e iniciar"); lido por pessoa; comentários entram; silêncio e som visíveis no topo.</div></div>
+</div>
+</div>
+<script>
+// só para alternar o filtro no mockup
+(function(){
+  var segs = document.querySelectorAll('[data-f]'), gs = document.querySelectorAll('.nc-g');
+  function apply(f){
+    segs.forEach(function(b){b.setAttribute('aria-pressed', String(b.dataset.f === f))});
+    gs.forEach(function(g){g.hidden = (f === 'new' && !g.classList.contains('dm-new')) || (f === 'urg' && g.dataset.u !== '1')});
+  }
+  segs.forEach(function(b){b.addEventListener('click', function(){apply(b.dataset.f)})});
+  document.getElementById('nc-all').addEventListener('click', function(){gs.forEach(function(g){g.classList.remove('dm-new')}); document.getElementById('nc-un').textContent = '0'; document.querySelector('.dm-bell b').hidden = true});
+})();
+</script>
+</body>
+</html>

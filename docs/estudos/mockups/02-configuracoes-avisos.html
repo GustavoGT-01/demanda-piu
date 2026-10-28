@@ -1,0 +1,127 @@
+<!doctype html>
+<!-- Mockup estático (estudo 02 · Avisos). Não é o programa: só HTML e CSS para o dono aprovar. Abre direto no navegador.
+     Diálogo ⚙ Configurações (substitui o "⚙ Rede"), seção Avisos ativa. As outras seções são de outros estudos. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Configurações: Avisos</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{min-height:100vh;overflow:visible}
+.pp-faixa{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.pp-faixa b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px;color:#3DDBA9}
+.pp-fundo{background:rgba(8,12,26,.55);min-height:calc(100vh - 44px);display:grid;place-items:start center;padding:28px 14px}
+/* diálogo comum de configurações */
+.cfg{width:min(760px,100%);background:var(--dm-surface);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);overflow:hidden;display:grid;grid-template-rows:auto 1fr auto}
+.cfg-head{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 18px;border-bottom:1px solid var(--dm-line)}
+.cfg-head h2{margin:0;font:700 20px var(--dm-fh)}
+.cfg-head small{color:var(--dm-muted);font-size:12.5px}
+.cfg-main{display:grid;grid-template-columns:170px 1fr;min-height:560px}
+.cfg-nav{border-right:1px solid var(--dm-line);background:var(--dm-surface2);padding:10px 8px;display:grid;align-content:start;gap:2px}
+.cfg-nav button{display:flex!important;gap:8px;align-items:center;padding:9px 10px!important;border-radius:10px!important;font-weight:600!important;color:var(--dm-muted);text-align:left;width:100%!important}
+.cfg-nav button[aria-current=page]{background:var(--dm-surface)!important;color:var(--dm-ink);box-shadow:var(--dm-shadow)}
+.cfg-body{padding:14px 18px 18px;overflow:auto;max-height:640px}
+.cfg-sec h3{margin:0 0 2px;font:700 17px var(--dm-fh)}
+.cfg-sec h4{margin:16px 0 6px;font:700 13.5px var(--dm-fh)}
+.cfg-foot{display:flex;justify-content:flex-end;gap:7px;padding:12px 18px;border-top:1px solid var(--dm-line)}
+/* específico da seção Avisos */
+.av-sw{position:relative;display:inline-block;width:40px;height:23px;border-radius:12px;background:var(--dm-line);vertical-align:middle}
+.av-sw::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.av-sw[aria-checked=true]{background:var(--dm-s-prog)}
+.av-sw[aria-checked=true]::after{left:20px}
+.av-tab{width:100%;border-collapse:collapse;font-size:12.5px}
+.av-tab th{text-align:left;font-size:11.5px;color:var(--dm-muted);font-weight:700;padding:6px 8px;background:var(--dm-surface2);border-bottom:1px solid var(--dm-line)}
+.av-tab td{padding:7px 8px;border-bottom:1px solid var(--dm-line);vertical-align:middle}
+.av-tab td:last-child,.av-tab th:last-child{text-align:right}
+.av-tab small{color:var(--dm-muted)}
+.av-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px}
+.av-grid .dm-fld{margin:0}
+.av-state{display:grid;gap:8px}
+.av-row{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--dm-line);border-radius:12px;padding:9px 11px;font-size:12.5px}
+.av-row b{display:block;font-size:13px}
+.av-row small{display:block;color:var(--dm-muted);line-height:1.35}
+.av-row .av-r{margin-left:auto;flex:0 0 auto}
+.av-row.av-ok{border-color:color-mix(in srgb,var(--dm-s-prog) 45%,var(--dm-line));background:color-mix(in srgb,var(--dm-s-prog) 7%,var(--dm-surface))}
+.av-row.av-no{border-style:dashed;border-color:var(--dm-s-pause);background:color-mix(in srgb,var(--dm-s-pause) 7%,var(--dm-surface))}
+.av-row.av-off{opacity:.65}
+.av-ic{font-size:18px;line-height:1.1}
+.av-steps{margin:6px 0 0;padding-left:18px;color:var(--dm-muted);font-size:12px}
+@media (max-width:640px){.cfg-main{grid-template-columns:1fr}.cfg-nav{grid-auto-flow:column;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}.av-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="pp-faixa"><b>PROPOSTA · CONFIGURAÇÕES · AVISOS</b>Seção Avisos do diálogo ⚙ Configurações (só no PC principal): padrões da central para quem nunca mexeu em "Meus avisos" e o estado do HTTPS e do push.</div>
+
+<div class="pp-fundo">
+<div class="cfg" role="dialog" aria-modal="true" aria-labelledby="cfg-t">
+  <div class="cfg-head"><div><h2 id="cfg-t">⚙ Configurações</h2><small>Só neste computador</small></div><button type="button" class="dm-btn dm-sm" aria-label="Fechar">✕</button></div>
+  <div class="cfg-main">
+    <nav class="cfg-nav" aria-label="Seções">
+      <button type="button">🌐 Rede</button>
+      <button type="button">💾 Backup</button>
+      <button type="button">✉️ E-mail</button>
+      <button type="button" aria-current="page">🔔 Avisos</button>
+      <button type="button">🖥️ Servidor</button>
+    </nav>
+    <div class="cfg-body">
+      <section class="cfg-sec">
+        <h3>Avisos</h3>
+        <div class="dm-note" style="margin-top:0">Padrões da central. Cada pessoa pode mudar os seus em "Meus avisos"; aqui vale para quem nunca mexeu.</div>
+
+        <h4>Estado</h4>
+        <div class="av-state">
+          <div class="av-row av-ok"><span class="av-ic">🟢</span><div><b>Avisos com a página aberta: ativos</b><small>Banner, som, vibração (Android) e contador na aba, em todos os aparelhos. Funciona em http.</small></div></div>
+          <div class="av-row av-ok"><span class="av-ic">🖥️</span><div><b>Avisos do Windows neste computador: disponíveis</b><small>Em http://127.0.0.1 o navegador já permite notificação do sistema e tela acesa.</small></div><button type="button" class="dm-btn dm-sm av-r">Permitir aqui</button></div>
+          <div class="av-row av-no"><span class="av-ic">🔒</span><div><b>HTTPS: desligado</b><small>Os celulares entram por http://192.168.0.20:8090. Sem HTTPS, o navegador não deixa avisar com o app fechado.</small>
+            <ol class="av-steps"><li>Hospedar a central com endereço próprio e certificado (estudo 03), ou</li><li>certificado próprio na rede: precisa instalar e confiar em cada celular. Não recomendado.</li></ol></div></div>
+          <div class="av-row av-off"><span class="av-ic">📲</span><div><b>Avisos com o app fechado (push): indisponível</b><small>Depende do HTTPS. Depois: chaves VAPID, app instalável e inscrição de cada aparelho. iPhone só com o app na Tela de Início (iOS 16.4+).</small></div><span class="dm-tg av-r" data-k="mut">0 aparelhos</span></div>
+          <div class="av-row av-off"><span class="av-ic">🔑</span><div><b>Chaves VAPID: não geradas</b><small>Identificam esta central para o Google, a Apple e a Mozilla. A chave privada fica em data/ e não vai em backup por e-mail.</small></div><button type="button" class="dm-btn dm-sm av-r" disabled>Gerar chaves</button></div>
+        </div>
+
+        <h4>Quem recebe o quê</h4>
+        <table class="av-tab">
+          <thead><tr><th>Evento</th><th>Quem recebe</th><th>Ligado por padrão</th></tr></thead>
+          <tbody>
+            <tr><td>📥 Demanda nova</td><td>a pessoa escolhida; se for para a fila, todo o setor de destino</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>🚨 Demanda urgente</td><td>destino + escritório</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>▶ Aceita</td><td>quem pediu</td><td><span class="av-sw" role="switch" aria-checked="false"></span></td></tr>
+            <tr><td>⏸ Pausada</td><td>quem pediu + escritório</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>✅ Concluída</td><td>quem pediu</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>🔔 Cobrança</td><td>responsável (ou setor) + escritório</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>⏰ Prazo estourado</td><td>responsável (ou setor) + escritório</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>💬 Comentário</td><td>o outro lado da demanda</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+            <tr><td>✕ Cancelada</td><td>responsável (ou setor)</td><td><span class="av-sw" role="switch" aria-checked="true"></span></td></tr>
+          </tbody>
+        </table>
+
+        <h4>Como e quando</h4>
+        <div class="av-grid">
+          <div class="dm-fld"><label for="c1">Som padrão</label><select id="c1"><option>Curto (bipe duplo)</option><option>Sino</option><option>Sem som</option></select></div>
+          <div class="dm-fld"><label for="c2">Juntar avisos da mesma demanda</label><select id="c2"><option>Dentro de 10 min</option><option>Dentro de 5 min</option><option>Não juntar</option></select></div>
+          <div class="dm-fld"><label>Silêncio padrão</label><div class="dm-row"><input type="time" value="22:00" aria-label="Início"><span class="dm-lbl">às</span><input type="time" value="06:00" aria-label="Fim"></div></div>
+          <div class="dm-fld"><label for="c3">Urgente no silêncio</label><select id="c3"><option>Toca mesmo assim</option><option>Respeita o silêncio</option></select></div>
+          <div class="dm-fld"><label for="c4">Checar atrasos</label><select id="c4"><option>A cada 1 minuto</option><option>A cada 5 minutos</option></select><span class="dm-note" style="margin:0">Hoje o atraso só aparece quando alguém grava algo.</span></div>
+          <div class="dm-fld"><label for="c5">Vibração padrão (Android)</label><select id="c5"><option>Ligada</option><option>Desligada</option></select></div>
+        </div>
+
+        <h4>Outros canais</h4>
+        <div class="av-state">
+          <div class="av-row av-off"><span class="av-ic">✉️</span><div><b>E-mail</b><small>Resumo e avisos por e-mail: seção E-mail (estudo 04).</small></div></div>
+          <div class="av-row av-off"><span class="av-ic">✈️</span><div><b>Telegram (opcional, futuro)</b><small>Bot gratuito; cada pessoa precisa ter Telegram e iniciar a conversa com o bot.</small></div><span class="dm-tg av-r" data-k="mut">não configurado</span></div>
+        </div>
+
+        <div class="dm-acts2" style="margin-top:14px"><button type="button" class="dm-btn dm-sm">🔔 Enviar aviso de teste para este computador</button><span class="dm-note" style="margin:0;align-self:center">Último aviso enviado: hoje 10:42 (SOL-1043)</span></div>
+      </section>
+    </div>
+  </div>
+  <div class="cfg-foot"><button type="button" class="dm-btn">Fechar</button><button type="button" class="dm-btn dm-primary">Salvar padrões</button></div>
+</div>
+</div>
+</div>
+<script src="cfg-nav.js"></script>
+</body>
+</html>

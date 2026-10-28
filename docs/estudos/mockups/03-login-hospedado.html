@@ -1,0 +1,137 @@
+<!doctype html>
+<!-- Mockup estático (estudo 03). Não faz parte do programa. Abre direto no navegador; o JS só alterna as abas. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Entrada da versão hospedada</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{display:block;min-height:100vh;overflow:visible}
+.mk-top{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.mk-top b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px}
+.mk-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px;background:var(--dm-surface);border-bottom:1px solid var(--dm-line)}
+.mk-tabs .dm-seg button{padding:6px 12px}
+.mk-url{margin-left:auto;align-self:center;font-size:12px;color:var(--dm-muted)}
+.mk-url code{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:8px;padding:2px 8px}
+/* no programa a .dm-login cobre o #dmboard; aqui fica no fluxo da página */
+#dmboard .mk-stage .dm-login{position:relative;inset:auto;min-height:calc(100vh - 110px);padding:28px 16px}
+.mk-step{display:none}.mk-step.mk-on{display:block}
+.lg-steps{display:flex;gap:6px;margin:0 0 14px}
+.lg-steps span{flex:1;height:4px;border-radius:4px;background:var(--dm-line)}
+.lg-steps span.on{background:var(--dm-brand)}
+.lg-emp{display:flex;gap:10px;align-items:center;padding:9px 11px;border:1px solid var(--dm-line);border-radius:12px;background:var(--dm-surface2);margin-bottom:10px}
+.lg-emp .lg-logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#1E2E5C;color:#E8EDFF;font:800 14px var(--dm-fh);flex:0 0 auto}
+.lg-emp div{flex:1;min-width:0}.lg-emp small{display:block;color:var(--dm-muted);font-size:11.5px}
+.lg-sub{display:flex;align-items:stretch;border:1px solid var(--dm-line);border-radius:10px;overflow:hidden;background:var(--dm-bg)}
+#dmboard .lg-sub input{border:0;border-radius:0;flex:1;min-width:0;background:transparent;padding:10px 11px;font-size:15px}
+.lg-sub span{display:grid;place-items:center;padding:0 10px;color:var(--dm-muted);font-size:13px;background:var(--dm-surface2);border-left:1px solid var(--dm-line);white-space:nowrap}
+.lg-or{display:flex;align-items:center;gap:10px;color:var(--dm-muted);font-size:12px;margin:12px 0}
+.lg-or::before,.lg-or::after{content:"";flex:1;height:1px;background:var(--dm-line)}
+.lg-chk{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin:10px 0 2px}
+.lg-link{color:var(--dm-s-new);font-size:12.5px;font-weight:600;text-decoration:none}
+.lg-foot{margin-top:14px;font-size:11.5px;color:var(--dm-muted);text-align:center}
+.lg-foot a{color:inherit}
+#dmboard .lg-pass{letter-spacing:normal}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-top"><b>PROPOSTA · ENTRADA DA VERSÃO HOSPEDADA</b>Passo 1 escolhe a empresa (uma vez por aparelho). Passo 2 é o “Quem é você?” de hoje para operadores, ou usuário e senha para o administrador.</div>
+  <div class="mk-tabs">
+    <div class="dm-seg" role="group" aria-label="Telas do mockup">
+      <button type="button" data-step="s1" aria-pressed="true">Passo 1 · Empresa</button>
+      <button type="button" data-step="s2" aria-pressed="false">Passo 2 · Operador</button>
+      <button type="button" data-step="s3" aria-pressed="false">Passo 2 · Administrador</button>
+      <button type="button" data-step="s4" aria-pressed="false">Erro e bloqueio</button>
+    </div>
+    <span class="mk-url" id="mk-url">Endereço: <code>https://centraldemandas.com.br/entrar</code></span>
+  </div>
+
+  <div class="mk-stage">
+    <div class="dm-login">
+
+      <!-- ===== passo 1: empresa ===== -->
+      <form class="dm-lgcard mk-step mk-on" id="s1" novalidate onsubmit="return false">
+        <div class="lg-steps" aria-hidden="true"><span class="on"></span><span></span></div>
+        <div class="dm-lghead"><h2>Qual é a sua empresa?</h2><p class="dm-bfn">Central de demandas</p><p>Digite o endereço da empresa ou o código que o escritório passou.</p></div>
+        <div class="dm-fld"><label for="lg-sub">Endereço da empresa</label>
+          <div class="lg-sub"><input id="lg-sub" value="boavista" autocomplete="organization" aria-describedby="lg-subh"><span>.centraldemandas.com.br</span></div>
+          <span class="dm-note" id="lg-subh" style="margin:2px 0 0">Quem abre direto <b>boavista.centraldemandas.com.br</b> pula este passo.</span></div>
+        <div class="lg-or">ou</div>
+        <div class="dm-fld"><label for="lg-cod">Código da empresa</label>
+          <div class="dm-pwrap"><input id="lg-cod" inputmode="text" maxlength="9" placeholder="BV7-K2Q-9" autocomplete="off"></div></div>
+        <label class="lg-chk"><input type="checkbox" checked> <span>Lembrar a empresa neste aparelho<br><span class="dm-muted">Tablet do chão de fábrica: deixe marcado. O código pessoal continua sendo pedido.</span></span></label>
+        <button type="submit" class="dm-btn dm-primary dm-lgbtn">Continuar →</button>
+        <div class="lg-foot">Ainda não usa? <a href="#">Criar conta da empresa</a> · <a href="#">Termos</a> · <a href="#">Privacidade</a></div>
+      </form>
+
+      <!-- ===== passo 2: operador ("Quem é você?" de hoje) ===== -->
+      <form class="dm-lgcard mk-step" id="s2" novalidate onsubmit="return false">
+        <div class="lg-steps" aria-hidden="true"><span class="on"></span><span class="on"></span></div>
+        <div class="lg-emp"><span class="lg-logo">BV</span><div><b>Metalúrgica Boa Vista</b><small>boavista.centraldemandas.com.br</small></div><button type="button" class="dm-btn dm-sm">Trocar</button></div>
+        <div class="dm-lghead"><h2>Quem é você?</h2><p class="dm-bfn">Central de demandas</p><p>Entre com o seu código pessoal de 4 dígitos.</p></div>
+        <div class="dm-seg dm-lgseg" role="group" aria-label="Tipo de acesso"><button type="button" aria-pressed="true">Operador</button><button type="button" aria-pressed="false">Administrador</button></div>
+        <div class="dm-lglbl">1. Seu setor</div>
+        <div class="dm-lgsecs">
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#E4572E"><i>✂️</i>Corte</button>
+          <button type="button" class="dm-lgsec" aria-pressed="true" style="--dm-sc:#D97706"><i>🔥</i>Solda</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#EC4899"><i>🎨</i>Pintura</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#3B82F6"><i>🔩</i>Montagem</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#6366F1"><i>🗂️</i>PCP</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#0D9488"><i>🚚</i>Expedição</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#64748B"><i>🛠️</i>Manutenção</button>
+          <button type="button" class="dm-lgsec" aria-pressed="false" style="--dm-sc:#10B981"><i>✅</i>Qualidade</button>
+        </div>
+        <div class="dm-lglbl">2. Seu nome</div>
+        <div class="dm-lgusers">
+          <button type="button" class="dm-lguser" aria-pressed="true"><span class="dm-av" style="--dm-sc:#D97706">J</span><span>João Pereira</span></button>
+          <button type="button" class="dm-lguser" aria-pressed="false"><span class="dm-av" style="--dm-sc:#D97706">L</span><span>Lucas Almeida</span></button>
+          <button type="button" class="dm-lguser" aria-pressed="false"><span class="dm-av" style="--dm-sc:#D97706">P</span><span>Paulo Santos</span></button>
+        </div>
+        <div class="dm-fld" style="margin-top:12px"><label for="lg-code">3. Código</label><div class="dm-pwrap"><input id="lg-code" type="password" inputmode="numeric" maxlength="4" placeholder="••••" value="12"><button type="button" class="dm-eye" aria-label="Mostrar ou ocultar o código">👁</button></div><span class="dm-em">Digite os 4 dígitos do seu código.</span></div>
+        <button type="submit" class="dm-btn dm-primary dm-lgbtn">Entrar</button>
+        <div class="lg-foot">Este aparelho está ligado à Metalúrgica Boa Vista desde 02/10 · <a href="#">desligar aparelho</a></div>
+      </form>
+
+      <!-- ===== passo 2: administrador (usuário e senha) ===== -->
+      <form class="dm-lgcard mk-step" id="s3" novalidate onsubmit="return false">
+        <div class="lg-steps" aria-hidden="true"><span class="on"></span><span class="on"></span></div>
+        <div class="lg-emp"><span class="lg-logo">BV</span><div><b>Metalúrgica Boa Vista</b><small>boavista.centraldemandas.com.br</small></div><button type="button" class="dm-btn dm-sm">Trocar</button></div>
+        <div class="dm-lghead"><h2>Quem é você?</h2><p class="dm-bfn">Central de demandas</p><p>Administrador entra com o próprio e-mail e senha.</p></div>
+        <div class="dm-seg dm-lgseg" role="group" aria-label="Tipo de acesso"><button type="button" aria-pressed="false">Operador</button><button type="button" aria-pressed="true">Administrador</button></div>
+        <div class="dm-fld"><label for="lg-mail">E-mail</label><input id="lg-mail" type="email" autocomplete="username" value="mariana.souza@boavista.ind.br"></div>
+        <div class="dm-fld"><label for="lg-pw">Senha</label><div class="dm-pwrap"><input id="lg-pw" class="lg-pass" type="password" autocomplete="current-password" value="senha-ficticia"><button type="button" class="dm-eye" aria-label="Mostrar ou ocultar a senha">👁</button></div></div>
+        <div class="dm-row" style="justify-content:space-between"><label class="lg-chk" style="margin:0"><input type="checkbox"> Manter conectado por 30 dias</label><a class="lg-link" href="#">Esqueci a senha</a></div>
+        <button type="submit" class="dm-btn dm-primary dm-lgbtn" style="margin-top:12px">Entrar como administrador</button>
+        <div class="dm-note" style="text-align:center">Substitui o “PIN do escritório”: cada administrador tem a própria senha e aparece pelo nome no histórico.</div>
+      </form>
+
+      <!-- ===== erro e bloqueio ===== -->
+      <form class="dm-lgcard mk-step" id="s4" novalidate onsubmit="return false">
+        <div class="lg-steps" aria-hidden="true"><span class="on"></span><span class="on"></span></div>
+        <div class="lg-emp"><span class="lg-logo">BV</span><div><b>Metalúrgica Boa Vista</b><small>boavista.centraldemandas.com.br</small></div><button type="button" class="dm-btn dm-sm">Trocar</button></div>
+        <div class="dm-lghead"><h2>Quem é você?</h2><p class="dm-bfn">Central de demandas</p><p>Entre com o seu código pessoal de 4 dígitos.</p></div>
+        <div class="dm-lglbl">2. Seu nome</div>
+        <div class="dm-lgusers"><button type="button" class="dm-lguser" aria-pressed="true"><span class="dm-av" style="--dm-sc:#D97706">J</span><span>João Pereira</span></button></div>
+        <div class="dm-fld dm-err" style="margin-top:12px"><label for="lg-code2">3. Código</label><div class="dm-pwrap"><input id="lg-code2" type="password" inputmode="numeric" maxlength="4" placeholder="••••" disabled><button type="button" class="dm-eye" aria-label="Mostrar ou ocultar o código">👁</button></div><span class="dm-em" role="alert">Muitos códigos errados. Tente de novo em 58 s. O escritório foi avisado.</span></div>
+        <button type="submit" class="dm-btn dm-primary dm-lgbtn" disabled>Entrar</button>
+        <div class="dm-note">Limites na internet: por pessoa (5 erros = 1 min, depois 5 min, 15 min) e por aparelho (IP real vindo do proxy). Empresa sem aparelho ligado nunca chega a esta tela.</div>
+      </form>
+
+    </div>
+  </div>
+</div>
+<script>
+// só para alternar as telas do mockup
+const urls = {s1: 'https://centraldemandas.com.br/entrar', s2: 'https://boavista.centraldemandas.com.br', s3: 'https://boavista.centraldemandas.com.br', s4: 'https://boavista.centraldemandas.com.br'};
+document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-step]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  document.querySelectorAll('.mk-step').forEach(s => s.classList.toggle('mk-on', s.id === b.dataset.step));
+  document.querySelector('#mk-url code').textContent = urls[b.dataset.step];
+}));
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- MOCKUP ESTÁTICO · Estudo 05 (calendário e cronograma). Não é código do programa: só para o dono aprovar o visual.
+     Usa o CSS real (demandas.css / demandas-fontes.css); o <style> abaixo só tem o que ainda não existe. -->
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nova solicitação com data</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#ECEFF6}
+#dmboard{min-height:100vh}
+.mk-band{background:#191919;color:#fff;font:600 13px/1.4 "Figtree","Segoe UI",sans-serif;padding:9px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.mk-band b{font:800 12px "Bricolage Grotesque","Segoe UI",sans-serif;letter-spacing:.08em;background:#D9950B;color:#191919;padding:2px 8px;border-radius:6px}
+#dmboard .cal-newtab{position:relative}
+#dmboard .cal-newbadge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;background:var(--dm-s-pause);color:#fff;border-radius:6px;padding:1px 5px}
+#dmboard .cal-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+#dmboard .cal-bar .dm-h3{margin:0;font:700 18px var(--dm-fh);min-width:150px}
+#dmboard .cal-nav{display:inline-flex;gap:4px}
+#dmboard .cal-sum{display:flex;flex-wrap:wrap;gap:6px}
+#dmboard .cal-sum span{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--dm-surface2);border:1px solid var(--dm-line);color:var(--dm-muted)}
+#dmboard .cal-sum b{color:var(--dm-ink)}
+#dmboard .cal-sum .cal-l,#dmboard .cal-sum .cal-l b{color:var(--dm-s-late)}
+
+#dmboard{min-height:1500px}
+#dmboard .fm-new{border:1.5px dashed var(--dm-s-pause);border-radius:14px;padding:10px 12px;background:color-mix(in srgb,var(--dm-s-pause) 5%,var(--dm-surface))}
+#dmboard .fm-tag{font-size:10px;font-weight:800;text-transform:uppercase;background:var(--dm-s-pause);color:#fff;border-radius:6px;padding:1px 5px;margin-left:4px}
+#dmboard .fm-mode{justify-self:start}
+#dmboard .fm-box{padding:4px 0}
+#dmboard .fm-off{opacity:.45}
+#dmboard .fm-quick{margin-left:4px}
+#dmboard .fm-quick .dm-opt{padding:5px 9px}
+#dmboard .fm-chk{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:6px}
+#dmboard .fm-new .fm-chk input{width:auto;flex:none;margin-top:2px}
+#dmboard .fm-ok{font-size:12.5px;color:var(--dm-s-prog);font-weight:600}
+#dmboard .dm-mbox{animation:none}
+#dmboard .fm-prev{padding:8px 10px;border-radius:10px;background:var(--dm-surface2);border:1px solid var(--dm-line);font-size:13px}
+#dmboard .fm-warn{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:8px 10px;border-radius:10px;border:1px solid var(--dm-s-pause);background:color-mix(in srgb,var(--dm-s-pause) 12%,transparent)}
+#dmboard .fm-warn .dm-btn{margin-top:5px}
+#dmboard .fm-err{border-color:var(--dm-s-late);background:color-mix(in srgb,var(--dm-s-late) 10%,transparent)}
+</style></head>
+<body>
+<div class="mk-band"><b>PROPOSTA · Nova solicitação com data</b><span>Formulário real com o modo novo “Prazo em data e hora”, “Agendar início”, prévia do prazo final e aviso de fora do expediente.</span></div>
+<div id="dmboard" data-theme="light"><svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs>
+<symbol id="dm-i-painel" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.2" y="1.2" width="5.4" height="5.4"/><rect x="9.4" y="1.2" width="5.4" height="5.4"/><rect x="1.2" y="9.4" width="5.4" height="5.4"/><rect x="9.4" y="9.4" width="5.4" height="5.4"/></symbol>
+<symbol id="dm-i-sol" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.2" y="2.2" width="9.2" height="11.6"/><path d="M12.2 6.2H15M13.4 4.6 15 6.2 13.4 7.8"/></symbol>
+<symbol id="dm-i-hist" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.4 3.2H6.2M8.6 3.2h2.2v2.2"/><path d="M1.4 8H14.6"/><path d="M1.4 12.8H14.6"/></symbol>
+<symbol id="dm-i-cal" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.4" y="2.6" width="13.2" height="12"/><path d="M1.4 6.2H14.6M5 1v3M11 1v3M4.4 9h2M9.4 9h2M4.4 12h2"/></symbol>
+<symbol id="dm-i-crono" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.2 8h3.6M6.2 8h3.6M11.2 8h3.6"/></symbol>
+<symbol id="dm-i-admin" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.2 4.6H14.8"/><rect x="4.2" y="2.6" width="3.2" height="4"/><path d="M1.2 11.4H14.8"/><rect x="8.6" y="9.4" width="3.2" height="4"/></symbol>
+</defs></svg>
+<div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">
+<header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p><p class="dm-sub0">Acompanhe, priorize e analise as solicitações entre setores em tempo real.</p></div>
+<div class="dm-acts"><span class="dm-clock">qua 28/10 · 10:40</span><button type="button" class="dm-uchip" aria-label="Quem é você"><span class="dm-av" style="--dm-sc:#6C8BFF">E</span><span class="dm-t"><b>Escritório</b><small>Administrador</small></span></button>
+<button type="button" class="dm-btn dm-bell" aria-label="Notificações">🔔<b>3</b></button><button type="button" class="dm-btn" aria-label="Alternar tema">◐ Tema</button>
+<button type="button" class="dm-btn dm-primary dm-hdnew">＋ Nova solicitação</button></div></header>
+<div id="dm-imp"></div><nav class="dm-tabs" id="dm-tabs" aria-label="Seções"><button type="button" class="dm-tab" aria-pressed="true"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-painel"/></svg>Painel</button><button type="button" class="dm-tab" aria-pressed="false"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-sol"/></svg>Solicitações<span class="dm-cnt">23</span></button><button type="button" class="dm-tab" aria-pressed="false"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-hist"/></svg>Histórico</button><button type="button" class="dm-tab cal-newtab" aria-pressed="false"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-cal"/></svg>Calendário<span class="cal-newbadge">novo</span></button><button type="button" class="dm-tab" aria-pressed="false"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-crono"/></svg>Cronoanálise</button><button type="button" class="dm-tab" aria-pressed="false"><svg class="dm-tab-ico" aria-hidden="true" width="16" height="16"><use href="#dm-i-admin"/></svg>Administração</button></nav><div id="dm-view">
+<div class="dm-empty" style="padding:60px">(tela de fundo: Painel)</div><div class="dm-modal dm-on" id="dm-modal"><div class="dm-mbox" role="dialog" aria-modal="true"><h2>Nova solicitação</h2><div class="dm-note" style="margin-top:0">Preencha os dados. O setor responsável é avisado na hora e você acompanha o andamento em tempo real.</div>
+<div class="dm-fld"><span class="dm-lbl">Tipo</span><div class="dm-opts"><button type="button" class="dm-opt" aria-pressed="true">📌 Demanda</button><button type="button" class="dm-opt" aria-pressed="false">✏️ Alteração</button><button type="button" class="dm-opt" aria-pressed="false">🔁 Entre setores</button><button type="button" class="dm-opt" aria-pressed="false">🛠️ Manutenção</button><button type="button" class="dm-opt" aria-pressed="false">📦 Material</button></div></div>
+<div class="dm-fld"><label for="t">Título</label><input type="text" id="t" value="Soldar suporte do eixo 2 (lote 118)"></div>
+<div class="dm-fld"><label for="ds">Descrição (opcional)</label><textarea id="ds" rows="2">Conforme desenho DES-2210 rev. B.</textarea></div>
+<div class="dm-two"><div class="dm-fld"><span class="dm-lbl">Solicitante</span><select aria-label="Setor solicitante"><option>PCP · PCP</option></select></div>
+<div class="dm-fld"><label for="ts">Setor responsável</label><select id="ts"><option>CRT · CORTE</option><option selected>SLD · SOLDA</option><option>PIN · PINTURA</option><option>MON · MONTAGEM</option><option>PCP · PCP</option><option>EXP · EXPEDIÇÃO</option><option>MAN · MANUTENÇÃO</option><option>QUA · QUALIDADE</option></select></div></div>
+<div class="dm-fld"><label for="tp">Pessoa responsável</label><select id="tp"><option>— Qualquer pessoa do setor —</option><option>José Pereira</option><option>Luiz Oliveira</option></select></div>
+<div class="dm-fld"><span class="dm-lbl">Motivo</span><div class="dm-opts"><button type="button" class="dm-opt" aria-pressed="false">Falta de material</button><button type="button" class="dm-opt" aria-pressed="false">Quebra de máquina</button><button type="button" class="dm-opt" aria-pressed="false">Defeito de qualidade</button><button type="button" class="dm-opt" aria-pressed="false">Mudança de projeto</button><button type="button" class="dm-opt" aria-pressed="true">Ajuste de planejamento</button><button type="button" class="dm-opt" aria-pressed="false">Retrabalho</button><button type="button" class="dm-opt" aria-pressed="false">Solicitação do cliente</button><button type="button" class="dm-opt" aria-pressed="false">Outro</button></div></div>
+<div class="dm-fld"><span class="dm-lbl">Prioridade</span><div class="dm-opts"><button type="button" class="dm-opt" data-p="low" aria-pressed="false">Baixa</button><button type="button" class="dm-opt" data-p="norm" aria-pressed="false">Normal</button><button type="button" class="dm-opt" data-p="high" aria-pressed="true">Alta</button><button type="button" class="dm-opt" data-p="urg" aria-pressed="false">Urgente</button></div></div>
+
+<div class="dm-fld fm-new"><span class="dm-lbl">Prazo <span class="fm-tag">novo</span></span>
+ <div class="dm-seg fm-mode" role="group" aria-label="Como definir o prazo"><button type="button" aria-pressed="false">⏱ Tempo estipulado</button><button type="button" aria-pressed="true">📅 Prazo em data e hora</button></div>
+ <div class="fm-box fm-off"><div class="dm-opts"><button type="button" class="dm-opt" aria-pressed="false">30 min</button><button type="button" class="dm-opt" aria-pressed="false">1 h</button><button type="button" class="dm-opt" aria-pressed="false">2 h</button><button type="button" class="dm-opt" aria-pressed="false">4 h</button><button type="button" class="dm-opt" aria-pressed="false">8 h</button></div>
+  <div class="dm-note" style="margin:4px 0 0">Hoje "1 dia útil (8h)": o rótulo vira "8 h", porque o tempo conta corrido (até a fase 3).</div></div>
+ <div class="fm-box"><div class="dm-row"><input type="date" value="2026-10-30" aria-label="Data do prazo" style="flex:none;width:160px"><input type="time" value="16:00" aria-label="Hora do prazo" style="flex:none;width:110px">
+  <div class="dm-opts fm-quick"><button type="button" class="dm-opt">Hoje 17:00</button><button type="button" class="dm-opt">Amanhã 12:00</button><button type="button" class="dm-opt" aria-pressed="true">Sex 16:00</button></div></div></div>
+ <label class="fm-chk"><input type="checkbox" checked> <span><b>Agendar início</b> · a solicitação só conta a partir desta hora (não fica “esperando” antes)</span></label>
+ <div class="fm-box"><div class="dm-row"><input type="date" value="2026-10-30" aria-label="Data de início" style="flex:none;width:160px"><input type="time" value="07:00" aria-label="Hora de início" style="flex:none;width:110px"><span class="dm-note" style="margin:0">Na fila do setor aparece como <b>Agendada · sex 07:00</b>.</span></div></div>
+ <div class="dm-prev fm-prev">Prazo final: <b>sex 30/10 16:00</b> · começa <b>sex 30/10 07:00</b> · tempo estipulado calculado: <b>9h</b> (corrido)</div>
+ <div class="fm-ok">✓ Dentro do expediente da SOLDA (turnos 06:00–14:00 e 14:00–22:00, seg a sáb).</div>
+ <div class="fm-warn">⚠️ <span><b>Exemplo do aviso (fase 3)</b>, se o prazo caísse no sábado 31/10 para a PINTURA: <i>“O prazo cai fora do expediente da PINTURA (seg a sex, 07:00–17:00). Próximo horário útil: seg 03/11 07:00.”</i><br><button type="button" class="dm-btn dm-sm">Usar seg 03/11 07:00</button> <button type="button" class="dm-btn dm-sm">Manter sáb 31/10 10:00</button></span></div>
+ <div class="fm-warn fm-err">⛔ <span>Exemplo de erro: <i>“O prazo precisa ser depois do início agendado e no máximo 30 dias depois.”</i></span></div>
+</div>
+
+<div class="dm-fld"><span class="dm-lbl">Anexos (JPG, PNG ou PDF, até 5 MB, no máximo 5)</span><div class="dm-files"><button type="button" class="dm-btn dm-sm">＋ Adicionar foto/arquivo</button></div></div>
+<div class="dm-mfoot"><button type="button" class="dm-btn">Cancelar</button><button type="button" class="dm-btn dm-primary">Enviar solicitação</button></div></div></div>
+</div></div></div>
+</div>
+</body></html>

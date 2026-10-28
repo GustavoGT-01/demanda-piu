@@ -1,0 +1,158 @@
+<!doctype html>
+<!-- Mockup estático (estudo 04 · E-mail). Não é tela do programa: mostra como o e-mail chega num cliente de
+     e-mail genérico, de visual neutro (não imita nenhuma marca). O bloco "corpo do e-mail" é o HTML proposto,
+     com estilo inline, como seria enviado. Abre direto no navegador, sem servidor. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · E-mail recebido</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{min-height:100vh}
+.mk-faixa{background:var(--dm-brand);color:var(--dm-brand-ink);padding:10px 16px;font:600 13px var(--dm-fb)}
+.mk-faixa b{font-family:var(--dm-fh);letter-spacing:.04em}
+.mk-wrap{max-width:1280px;margin:0 auto;padding:16px}
+.mk-cli{display:grid;grid-template-columns:330px 1fr;min-height:720px;background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:16px;overflow:hidden;box-shadow:var(--dm-shadow)}
+.mk-cbar{grid-column:1/-1;display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--dm-line);background:var(--dm-surface2)}
+.mk-cbar .mk-logo{width:26px;height:26px;border-radius:8px;background:var(--dm-muted);display:grid;place-items:center;color:var(--dm-surface);font-weight:800}
+.mk-cbar input{flex:1;max-width:420px}
+.mk-cbar small{color:var(--dm-muted);margin-left:auto}
+.mk-inbox{border-right:1px solid var(--dm-line);overflow:auto}
+.mk-ih{padding:10px 14px;font:700 13px var(--dm-fh);color:var(--dm-muted);border-bottom:1px solid var(--dm-line)}
+.mk-msg{display:block;padding:10px 14px;border-bottom:1px solid var(--dm-line);font-size:12.5px;color:var(--dm-ink)}
+.mk-msg .mk-l1{display:flex;gap:6px;align-items:center}
+.mk-msg .mk-l1 b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-msg .mk-l1 time{color:var(--dm-muted);font-size:11.5px}
+.mk-msg .mk-sub{font-weight:600;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-msg .mk-pre{color:var(--dm-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-msg.mk-on{background:color-mix(in srgb,var(--dm-s-new) 10%,var(--dm-surface));border-left:4px solid var(--dm-s-new);padding-left:10px}
+.mk-msg.mk-lida{opacity:.72}
+.mk-n{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:999px;padding:0 6px;font-size:11px;font-weight:700;color:var(--dm-muted)}
+.mk-read{overflow:auto;padding:18px 22px}
+.mk-read h2{font:700 19px var(--dm-fh);margin:0 0 4px}
+.mk-thread{display:grid;gap:8px;margin:14px 0}
+.mk-tm{border:1px solid var(--dm-line);border-radius:12px;background:var(--dm-surface)}
+.mk-tm>summary{list-style:none;display:flex;gap:10px;align-items:center;padding:9px 12px;cursor:pointer;font-size:12.5px}
+.mk-tm>summary::-webkit-details-marker{display:none}
+.mk-tm>summary .mk-ava{width:30px;height:30px;border-radius:50%;background:var(--dm-surface2);border:1px solid var(--dm-line);display:grid;place-items:center;font-weight:800;color:var(--dm-muted)}
+.mk-tm>summary .mk-who{flex:1;min-width:0}
+.mk-tm>summary .mk-who b{display:block}
+.mk-tm>summary .mk-who span{color:var(--dm-muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-tm>summary time{color:var(--dm-muted);font-size:11.5px}
+.mk-body{padding:4px 12px 14px 52px}
+.mk-hdrs{font:11.5px/1.5 ui-monospace,Consolas,monospace;color:var(--dm-muted);background:var(--dm-surface2);border-radius:10px;padding:8px 10px;margin:0 0 12px;overflow-x:auto;white-space:pre}
+.mk-nota{border:1px dashed var(--dm-line);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--dm-muted);margin-top:14px}
+.mk-nota b{color:var(--dm-ink)}
+@media (max-width:860px){.mk-cli{grid-template-columns:1fr}.mk-inbox{border-right:0;border-bottom:1px solid var(--dm-line);max-height:300px}.mk-body{padding-left:12px}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="mk-faixa"><b>PROPOSTA · E-mail da demanda</b> — Como o e-mail da demanda nova SOL-1043 chega na caixa de João (SOLDA), e como as mensagens seguintes formam um fio só.</div>
+<div class="mk-wrap">
+<div class="mk-cli">
+  <div class="mk-cbar"><span class="mk-logo">✉</span><input type="search" value="SOL-1043" aria-label="Pesquisar e-mails"><small>Cliente de e-mail genérico · caixa de joao.pereira@fabrica.example</small></div>
+
+  <!-- caixa de entrada -->
+  <div class="mk-inbox">
+    <div class="mk-ih">Caixa de entrada</div>
+    <a class="mk-msg mk-on" href="#">
+      <div class="mk-l1"><b>Central de demandas</b><span class="mk-n">3</span><time>16:42</time></div>
+      <div class="mk-sub">[SOL-1043] Corrigir solda do quadro da carreta 12</div>
+      <div class="mk-pre">✅ Concluída por João Pereira · ▶ Aceita · 📥 Nova demanda para o seu setor</div>
+    </a>
+    <a class="mk-msg" href="#">
+      <div class="mk-l1"><b>Central de demandas</b><time>15:10</time></div>
+      <div class="mk-sub">[SOL-1041] Trocar bico da tocha MIG 2</div>
+      <div class="mk-pre">📥 Nova demanda para o seu setor · MANUTENÇÃO → SOLDA</div>
+    </a>
+    <a class="mk-msg mk-lida" href="#">
+      <div class="mk-l1"><b>Ana Lima (PCP)</b><time>14:02</time></div>
+      <div class="mk-sub">Programação da semana 44</div>
+      <div class="mk-pre">Segue a programação revisada das carretas…</div>
+    </a>
+    <a class="mk-msg mk-lida" href="#">
+      <div class="mk-l1"><b>Central de demandas</b><span class="mk-n">2</span><time>ontem</time></div>
+      <div class="mk-sub">[SOL-1036] Reforçar travessa do chassi 08</div>
+      <div class="mk-pre">✅ Concluída por Marcos Alves · 📥 Nova demanda para o seu setor</div>
+    </a>
+    <a class="mk-msg mk-lida" href="#">
+      <div class="mk-l1"><b>Qualidade</b><time>ontem</time></div>
+      <div class="mk-sub">Relatório de não conformidades — outubro</div>
+      <div class="mk-pre">Bom dia, segue em anexo o relatório…</div>
+    </a>
+  </div>
+
+  <!-- leitura: o fio -->
+  <div class="mk-read">
+    <h2>[SOL-1043] Corrigir solda do quadro da carreta 12</h2>
+    <div class="dm-note" style="margin:0">3 mensagens neste fio · agrupadas pelo assunto igual e pelos cabeçalhos <code>In-Reply-To</code>/<code>References</code></div>
+
+    <div class="mk-thread">
+      <!-- 1ª mensagem: aberta -->
+      <details class="mk-tm" open>
+        <summary><span class="mk-ava">C</span><span class="mk-who"><b>Central de demandas &lt;demandas@fabrica.example&gt;</b><span>para joao.pereira@fabrica.example</span></span><time>ter 28/10 · 08:00</time></summary>
+        <div class="mk-body">
+<div class="mk-hdrs">Message-ID: &lt;SOL-1043.k7f3q9@fabrica.example&gt;
+Subject: [SOL-1043] Corrigir solda do quadro da carreta 12
+Auto-Submitted: auto-generated
+X-Central-Demanda: SOL-1043</div>
+
+<!-- ===== HTML proposto do e-mail (estilos inline, tabela de 600 px, sem imagem externa) ===== -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;border-collapse:collapse;font-family:'Segoe UI',Arial,sans-serif;color:#162036;background:#ffffff;border:1px solid #DDE3EE;border-radius:12px">
+  <tr><td style="padding:16px 20px 6px 20px;font-size:13px;color:#3B6EF5;font-weight:700">📥 Nova demanda para o seu setor</td></tr>
+  <tr><td style="padding:0 20px 4px 20px;font-size:20px;font-weight:700;line-height:1.25">Corrigir solda do quadro da carreta 12</td></tr>
+  <tr><td style="padding:0 20px 12px 20px;font-size:12.5px;color:#66728D">SOL-1043 · aberta hoje às 08:00 por Carlos Souza</td></tr>
+  <tr><td style="padding:0 20px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#F3F5FA;border-radius:10px;font-size:13px">
+      <tr><td style="padding:10px 12px;font-weight:600"><span style="background:#10B981;color:#fff;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:800">MON</span> Carlos Souza &nbsp;→&nbsp; <span style="background:#E4572E;color:#fff;border-radius:5px;padding:1px 6px;font-size:11px;font-weight:800">SOL</span> João Pereira</td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:12px 20px 0 20px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
+      <tr><td style="padding:5px 0;color:#66728D;width:120px">Prioridade</td><td style="padding:5px 0;font-weight:700;color:#D9950B">● Alta</td></tr>
+      <tr><td style="padding:5px 0;color:#66728D">Prazo</td><td style="padding:5px 0;font-weight:700">28/10/2026 às 12:00 (4 h)</td></tr>
+      <tr><td style="padding:5px 0;color:#66728D">Motivo</td><td style="padding:5px 0">Defeito de qualidade</td></tr>
+      <tr><td style="padding:5px 0;color:#66728D">Tipo</td><td style="padding:5px 0">🔁 Entre setores</td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:10px 20px 0 20px;font-size:13px;line-height:1.5;white-space:pre-wrap">Trinca no cordão da longarina esquerda, perto do 3º travessão. A peça está separada no box 4 da montagem com etiqueta vermelha. Precisa refazer antes da pintura.</td></tr>
+  <tr><td style="padding:16px 20px 6px 20px"><a href="http://192.168.0.10:8090/#SOL-1043" style="display:inline-block;background:#191919;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 18px;border-radius:10px">Abrir a demanda</a></td></tr>
+  <tr><td style="padding:0 20px 14px 20px;font-size:11.5px;color:#66728D">O link só abre nos computadores e celulares ligados à rede da fábrica (Wi-Fi interno), com o PIN.</td></tr>
+  <tr><td style="padding:10px 20px 14px 20px;border-top:1px solid #DDE3EE;font-size:11px;color:#66728D">E-mail automático da Central de demandas. Não responda. Para não receber mais, peça ao escritório para tirar seu e-mail do cadastro.</td></tr>
+</table>
+<!-- ===== fim do HTML proposto ===== -->
+        </div>
+      </details>
+
+      <!-- 2ª mensagem -->
+      <details class="mk-tm">
+        <summary><span class="mk-ava">C</span><span class="mk-who"><b>Central de demandas</b><span>▶ Aceita por João Pereira — em andamento desde 08:12</span></span><time>08:12</time></summary>
+        <div class="mk-body"><div class="mk-hdrs">Message-ID: &lt;SOL-1043.e2.k7f3q9@fabrica.example&gt;
+In-Reply-To: &lt;SOL-1043.k7f3q9@fabrica.example&gt;
+References: &lt;SOL-1043.k7f3q9@fabrica.example&gt;
+Subject: [SOL-1043] Corrigir solda do quadro da carreta 12</div>
+        <div class="dm-note">Mesmo modelo de e-mail, com a primeira linha "▶ Demanda aceita". Este evento é opcional nas Configurações.</div></div>
+      </details>
+
+      <!-- 3ª mensagem -->
+      <details class="mk-tm">
+        <summary><span class="mk-ava">C</span><span class="mk-who"><b>Central de demandas</b><span>✅ Concluída por João Pereira — fora do prazo (4 h previstas, 8 h 42 min no total)</span></span><time>16:42</time></summary>
+        <div class="mk-body"><div class="mk-hdrs">Message-ID: &lt;SOL-1043.e3.k7f3q9@fabrica.example&gt;
+In-Reply-To: &lt;SOL-1043.k7f3q9@fabrica.example&gt;
+References: &lt;SOL-1043.k7f3q9@fabrica.example&gt;
+Subject: [SOL-1043] Corrigir solda do quadro da carreta 12</div></div>
+      </details>
+    </div>
+
+    <div class="mk-nota"><b>Por que agrupa:</b> o assunto é idêntico nas três (o evento vai no corpo, não no assunto) e as seguintes apontam para o <code>Message-ID</code> fixo da primeira. Cada mensagem tem o seu próprio <code>Message-ID</code> único, porque um ID repetido é descartado como duplicado.<br>
+    <b>Mostrado aqui só para o estudo:</b> os cabeçalhos em cinza. O cliente de e-mail não os exibe.</div>
+  </div>
+</div>
+</div>
+</div>
+</body>
+</html>

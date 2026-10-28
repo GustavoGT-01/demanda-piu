@@ -1,0 +1,108 @@
+<!doctype html>
+<!-- Mockup estático (consolidação dos estudos 01 a 05). Não faz parte do programa. Abre direto no navegador, sem servidor. O JS só liga o menu às outras seções. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Configurações › Rede</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{display:block;min-height:100vh;overflow:visible}
+.mk-top{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.mk-top b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px}
+.mk-back{padding:28px 16px;background:rgba(8,12,26,.5);min-height:calc(100vh - 44px);display:grid;place-items:start center}
+
+/* ===== diálogo comum de Configurações (padrão dos estudos 01 a 05) ===== */
+.cfg{width:min(760px,100%);background:var(--dm-surface);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.cfg-head{display:flex;align-items:flex-start;gap:10px;padding:18px 20px 14px;border-bottom:1px solid var(--dm-line)}
+.cfg-head h2{margin:0;font:700 20px var(--dm-fh)}
+.cfg-head p{margin:2px 0 0;color:var(--dm-muted);font-size:12.5px}
+.cfg-main{display:grid;grid-template-columns:170px minmax(0,1fr);min-height:520px}
+.cfg-nav{display:flex;flex-direction:column;gap:2px;padding:12px 8px;background:var(--dm-surface2);border-right:1px solid var(--dm-line)}
+#dmboard .cfg-nav button{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;font-weight:600;color:var(--dm-muted);text-align:left}
+#dmboard .cfg-nav button:hover{background:var(--dm-surface);color:var(--dm-ink)}
+#dmboard .cfg-nav button[aria-current=page]{background:var(--dm-surface);color:var(--dm-ink);box-shadow:var(--dm-shadow);border-left:3px solid var(--dm-brand)}
+.cfg-body{padding:16px 20px;overflow:auto;max-height:70vh}
+.cfg-sec{margin-bottom:18px}
+.cfg-sec>h3{margin:0 0 8px;font:700 15px var(--dm-fh);display:flex;gap:8px;align-items:center}
+.cfg-foot{display:flex;justify-content:flex-end;gap:7px;padding:12px 20px;border-top:1px solid var(--dm-line)}
+
+/* ===== seção Servidor ===== */
+.sv-ok{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;border:1px solid var(--dm-s-prog);background:color-mix(in srgb,var(--dm-s-prog) 12%,transparent);font-size:13px;margin-bottom:12px}
+.sv-ok i{width:10px;height:10px;border-radius:50%;background:var(--dm-s-prog);flex:0 0 auto;box-shadow:0 0 0 4px color-mix(in srgb,var(--dm-s-prog) 25%,transparent)}
+.sv-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.sv-tile{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:12px;padding:9px 11px;min-width:0}
+.sv-tile span{display:block;font-size:11.5px;color:var(--dm-muted);font-weight:700}
+.sv-tile b{display:block;font:800 19px/1.15 var(--dm-fh);margin:2px 0}
+.sv-tile small{display:block;font-size:11.5px;color:var(--dm-muted);overflow-wrap:anywhere}
+.sv-tile[data-k=warn]{border-color:var(--dm-s-pause)}
+.sv-bar{height:6px;border-radius:6px;background:var(--dm-surface);border:1px solid var(--dm-line);overflow:hidden;margin-top:6px}
+.sv-bar span{display:block;height:100%;background:var(--dm-s-new)}
+.sv-sw{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--dm-line);border-radius:12px}
+.sv-sw div{flex:1;min-width:0}.sv-sw small{display:block;color:var(--dm-muted);font-size:12px}
+.sv-tog{position:relative;width:44px;height:24px;border-radius:12px;background:var(--dm-s-prog);flex:0 0 auto}
+.sv-tog::after{content:"";position:absolute;top:3px;left:23px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+#dmboard .sv-modes{display:grid;gap:6px;margin:8px 0 0}
+#dmboard .sv-modes label{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--dm-line);border-radius:12px;font-size:13px;cursor:pointer}
+#dmboard .sv-modes label:has(input:checked){border-color:var(--dm-brand);background:color-mix(in srgb,var(--dm-brand) 7%,transparent)}
+#dmboard .sv-modes small{display:block;color:var(--dm-muted);font-size:12px}
+.sv-steps{margin:0;padding-left:20px;font-size:13px;display:grid;gap:5px}
+.sv-steps code,.sv-addr code{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:6px;padding:1px 6px;font-size:12px}
+.sv-addr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:13px}
+.sv-addr span{color:var(--dm-muted);font-size:12px}
+.sv-log{font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:10px;padding:8px 10px;color:var(--dm-muted);white-space:pre-wrap;margin:6px 0 0}
+@media (max-width:640px){.cfg-main{grid-template-columns:1fr}.cfg-nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}.sv-grid{grid-template-columns:1fr 1fr}}
+/* ===== seção Rede (o "⚙ Rede" de hoje, dentro do diálogo novo) ===== */
+.rd-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rd-pin{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:12px;padding:10px 12px}
+.rd-pin span{display:block;font-size:11.5px;color:var(--dm-muted);font-weight:700}
+.rd-pin b{display:block;font:800 26px/1.2 var(--dm-fh);letter-spacing:.18em;margin:2px 0}
+.rd-pin small{display:block;font-size:12px;color:var(--dm-muted);margin-bottom:8px}
+@media (max-width:640px){.rd-pins{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-top"><b>PROPOSTA · CONFIGURAÇÕES › REDE</b>O diálogo "⚙ Rede" de hoje vira a primeira seção de "⚙ Configurações". Use o menu à esquerda para abrir as outras seções propostas.</div>
+  <div class="mk-back">
+    <div class="cfg" role="dialog" aria-modal="true" aria-labelledby="cfg-t">
+      <div class="cfg-head"><div><h2 id="cfg-t">⚙ Configurações</h2><p>Só neste computador</p></div><span class="dm-spacer"></span><button type="button" class="dm-btn dm-sm" aria-label="Fechar">✕</button></div>
+      <div class="cfg-main">
+        <nav class="cfg-nav" aria-label="Seções das configurações">
+          <button type="button" aria-current="page">🌐 Rede</button>
+          <button type="button">💾 Backup</button>
+          <button type="button">✉️ E-mail</button>
+          <button type="button">🔔 Avisos</button>
+          <button type="button">🖥️ Servidor</button>
+        </nav>
+        <div class="cfg-body">
+          <section class="cfg-sec">
+            <h3>Acesso pela rede</h3>
+            <div class="sv-sw"><div><b>Ligar o acesso pela rede</b><small>Outros computadores, celulares e tablets do mesmo Wi-Fi usam a Central com PIN. Ligar ou desligar vale depois de reiniciar o programa.</small></div><span class="sv-tog" role="switch" aria-checked="true" aria-label="Acesso pela rede"></span></div>
+          </section>
+          <section class="cfg-sec">
+            <h3>PINs</h3>
+            <div class="rd-pins">
+              <div class="rd-pin"><span>PIN do escritório</span><b>482 917</b><small>Abre tudo, inclusive a Administração. Use só nos computadores do escritório.</small><button type="button" class="dm-btn dm-sm">Gerar novo</button></div>
+              <div class="rd-pin"><span>PIN dos operadores</span><b>305 664</b><small>Abre só a tela de operador: pedir, aceitar e acompanhar solicitações.</small><button type="button" class="dm-btn dm-sm">Gerar novo</button></div>
+            </div>
+            <div class="dm-note">Gerar um PIN novo desconecta os aparelhos que entraram com o antigo.</div>
+          </section>
+          <section class="cfg-sec">
+            <h3>Endereços para os outros aparelhos</h3>
+            <div class="sv-addr">
+              <span>Wi-Fi</span><code>http://192.168.0.20:8090</code><span class="dm-pill" data-st="prog">IP fixo</span>
+              <span>Cabo</span><code>http://10.0.0.15:8090</code><span></span>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="cfg-foot"><button type="button" class="dm-btn">Fechar</button></div>
+    </div>
+  </div>
+</div>
+<script src="cfg-nav.js"></script>
+</body>
+</html>

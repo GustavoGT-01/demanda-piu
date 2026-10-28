@@ -1,0 +1,98 @@
+<!doctype html>
+<!-- Mockup estático (estudo 04 · E-mail): modais reais de cadastro (renderUF e renderSF em demandas/demandas.js)
+     com o campo e-mail novo, e a gaveta da demanda (renderDrawer) com a linha "✉ e-mail enviado" no histórico.
+     Os modais e a gaveta aparecem abertos lado a lado só para o estudo; no programa, um de cada vez. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Cadastro com e-mail</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{min-height:100vh}
+.mk-faixa{background:var(--dm-brand);color:var(--dm-brand-ink);padding:10px 16px;font:600 13px var(--dm-fb)}
+.mk-faixa b{font-family:var(--dm-fh);letter-spacing:.04em}
+.mk-palco{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;justify-content:center;padding:24px 16px;background:rgba(8,12,26,.5)}
+.mk-col{display:grid;gap:8px;min-width:0}
+.mk-rot{color:#E7ECFA;font:700 12px var(--dm-fb);letter-spacing:.06em;text-transform:uppercase;opacity:.8}
+#dmboard .mk-palco .dm-mbox{width:min(520px,100%);animation:none}
+/* gaveta parada na tela (no programa ela é absoluta e desliza) */
+#dmboard .mk-palco .dm-drawer{position:relative;transform:none;visibility:visible;width:min(440px,100%);border-radius:16px;border:1px solid var(--dm-line);box-shadow:var(--dm-shadow);max-height:none;overflow:visible}
+/* novo: linha de e-mail no histórico */
+#dmboard .dm-tl li[data-ev=mail]{--dm-ec:var(--dm-muted)}
+#dmboard .dm-tl li[data-ev=mail] i{display:grid;place-items:center;font-size:10px;font-style:normal;border-style:dashed}
+#dmboard .dm-tl li[data-ev=mail] b{font-weight:600;color:var(--dm-muted)}
+#dmboard .dm-tl li[data-ev=mailerr]{--dm-ec:var(--dm-s-late)}
+#dmboard .dm-tl li[data-ev=mailerr] i{display:grid;place-items:center;font-size:10px;font-style:normal;border-style:dashed}
+#dmboard .dm-tl li[data-ev=mailerr] b{font-weight:600;color:var(--dm-s-late)}
+.mk-novo{outline:2px dashed var(--dm-s-new);outline-offset:4px;border-radius:10px}
+.mk-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:6px;background:color-mix(in srgb,var(--dm-s-new) 15%,transparent);color:var(--dm-s-new);font-size:10.5px;font-weight:800;vertical-align:middle}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="mk-faixa"><b>PROPOSTA · E-mail no cadastro</b> — Campo e-mail opcional na pessoa e no setor (só o escritório edita), e a gaveta da demanda mostrando os e-mails enviados no histórico.</div>
+<div class="mk-palco">
+
+  <!-- ===== Editar usuário (renderUF) ===== -->
+  <div class="mk-col">
+    <span class="mk-rot">Administração › Usuários › ✏️ Editar</span>
+    <div class="dm-mbox" role="dialog" aria-modal="true" aria-label="Editar usuário">
+      <h2>Editar usuário</h2><div class="dm-note" style="margin-top:0">Matrícula M107</div>
+      <div class="dm-fld"><label for="uf-name">Nome do usuário</label><input type="text" id="uf-name" maxlength="60" value="João Pereira"><span class="dm-em">Informe o nome (2 a 60 caracteres).</span></div>
+      <div class="dm-fld"><label for="uf-sec">Setor</label><select id="uf-sec"><option>SOL · Solda</option></select><span class="dm-em">Escolha o setor do usuário.</span></div>
+      <div class="dm-fld mk-novo"><label for="uf-mail">E-mail (opcional) <span class="mk-tag">NOVO</span></label><input type="email" id="uf-mail" maxlength="254" value="joao.pereira@fabrica.example" placeholder="Ex.: nome@empresa.com.br" autocomplete="off"><span class="dm-em">E-mail inválido.</span><span class="dm-note" style="margin:0">Recebe o aviso das demandas atribuídas a ele. Só o escritório vê este campo.</span></div>
+      <div class="dm-fld"><label for="uf-code">Novo código (opcional)</label><div class="dm-row"><div class="dm-pwrap" style="flex:1"><input type="password" id="uf-code" inputmode="numeric" maxlength="4" autocomplete="off" value="" placeholder="Deixe em branco para manter"><button type="button" class="dm-eye" aria-label="Mostrar ou ocultar o código">👁</button></div><button type="button" class="dm-btn">Gerar</button></div><span class="dm-em">O código tem exatamente 4 números.</span></div>
+      <div class="dm-note"><b>2</b> em aberto · <b>9</b> concluídas (7d) · desempenho: <b>89% no prazo</b> · status: <b>ativo</b></div>
+      <div class="dm-dact"><button type="button" class="dm-btn">⏸ Desativar usuário</button><button type="button" class="dm-btn dm-danger">🗑 Excluir usuário</button></div>
+      <div class="dm-mfoot"><button type="button" class="dm-btn">Cancelar</button><button type="button" class="dm-btn dm-primary">Salvar alterações</button></div>
+    </div>
+  </div>
+
+  <!-- ===== Editar setor (renderSF), com erro de validação ===== -->
+  <div class="mk-col">
+    <span class="mk-rot">Administração › Setores › ✏️ Editar setor</span>
+    <div class="dm-mbox" role="dialog" aria-modal="true" aria-label="Editar setor">
+      <h2>Editar setor</h2><div class="dm-note" style="margin-top:0">A sigla não pode ser alterada porque identifica o setor no histórico.</div>
+      <div class="dm-fld"><label for="sf-name">Nome do setor</label><input type="text" id="sf-name" maxlength="40" value="Pintura"><span class="dm-em">Informe o nome (3 a 40 caracteres).</span></div>
+      <div class="dm-two"><div class="dm-fld"><label for="sf-id">Sigla (2 a 4 caracteres)</label><input type="text" id="sf-id" maxlength="4" value="PIN" disabled style="text-transform:uppercase"><span class="dm-em">Sigla inválida.</span></div>
+        <div class="dm-fld"><span class="dm-lbl">Pré-visualização</span><div class="dm-fixed"><span class="dm-abbr" style="--dm-sc:#EC4899">PIN</span><span>🎨 Pintura</span></div></div></div>
+      <div class="dm-fld dm-err mk-novo"><label for="sf-mail">E-mail do setor (opcional) <span class="mk-tag">NOVO</span></label><input type="email" id="sf-mail" maxlength="254" value="pintura@fabrica" placeholder="Ex.: pintura@empresa.com.br"><span class="dm-em">E-mail inválido: falta o domínio completo (ex.: pintura@empresa.com.br).</span><span class="dm-note" style="margin:0">Recebe as demandas que chegam na fila do setor, sem pessoa definida. Sem ele, o aviso vai para as pessoas do setor que têm e-mail.</span></div>
+      <div class="dm-fld"><span class="dm-lbl">Ícone</span><div class="dm-opts"><button type="button" class="dm-opt dm-eo" aria-pressed="false">🔩</button><button type="button" class="dm-opt dm-eo" aria-pressed="false">🛠️</button><button type="button" class="dm-opt dm-eo" aria-pressed="true">🎨</button><button type="button" class="dm-opt dm-eo" aria-pressed="false">🧪</button><button type="button" class="dm-opt dm-eo" aria-pressed="false">📦</button><button type="button" class="dm-opt dm-eo" aria-pressed="false">🚚</button></div></div>
+      <div class="dm-fld"><span class="dm-lbl">Cor do setor</span><div class="dm-opts"><button type="button" class="dm-sw" style="--dm-sc:#6366F1" aria-pressed="false" aria-label="Cor #6366F1"></button><button type="button" class="dm-sw" style="--dm-sc:#0D9488" aria-pressed="false" aria-label="Cor #0D9488"></button><button type="button" class="dm-sw" style="--dm-sc:#E4572E" aria-pressed="false" aria-label="Cor #E4572E"></button><button type="button" class="dm-sw" style="--dm-sc:#EC4899" aria-pressed="true" aria-label="Cor #EC4899"></button><button type="button" class="dm-sw" style="--dm-sc:#64748B" aria-pressed="false" aria-label="Cor #64748B"></button></div></div>
+      <div class="dm-note"><b>4</b> usuário(s) ativo(s) · <b>3</b> solicitação(ões) em aberto · status: <b>ativo</b></div>
+      <div class="dm-mfoot"><button type="button" class="dm-btn">Cancelar</button><button type="button" class="dm-btn dm-primary">Salvar alterações</button></div>
+    </div>
+  </div>
+
+  <!-- ===== Gaveta da demanda (renderDrawer), visão do escritório ===== -->
+  <div class="mk-col">
+    <span class="mk-rot">Gaveta da demanda · visão do escritório</span>
+    <aside class="dm-drawer dm-on" aria-label="Detalhes da solicitação">
+      <button type="button" class="dm-btn dm-x" aria-label="Fechar">✕</button>
+      <div class="dm-dtags"><span class="dm-pill" data-st="prog">Em andamento</span><span class="dm-pb" data-p="high">Alta</span><span class="dm-tg" data-k="mut">🔁 Entre setores</span></div>
+      <h2>Corrigir solda do quadro da carreta 12</h2><div class="dm-hsub">SOL-1043 · aberta hoje 08:00 por Carlos Souza (MON)</div>
+      <div class="dm-big-route"><div class="dm-who"><span class="dm-abbr" style="--dm-sc:#10B981">MON</span> <span class="dm-av" style="--dm-sc:#10B981">C</span> Carlos Souza</div><b>→</b><div class="dm-who"><span class="dm-abbr" style="--dm-sc:#E4572E">SOL</span> <span class="dm-av" style="--dm-sc:#E4572E">J</span> João Pereira</div></div>
+      <div class="dm-slarow"><span>Prazo: <b>hoje 12:00</b></span><span>faltam 1 h 18 min</span></div>
+      <div class="dm-sla dm-warn"><span style="width:67%"></span></div>
+      <div class="dm-meta"><div>Motivo<b>Defeito de qualidade</b></div><div>Setor responsável<b>Solda</b></div></div>
+      <div class="dm-secx">Descrição</div><div class="dm-desc">Trinca no cordão da longarina esquerda, perto do 3º travessão. A peça está separada no box 4 da montagem com etiqueta vermelha.</div>
+      <div class="dm-secx">Histórico</div>
+      <ul class="dm-tl">
+        <li data-ev="created"><i></i><b>Solicitação criada</b><time>hoje 08:00</time><small>Carlos Souza</small></li>
+        <li data-ev="assigned"><i></i><b>Responsável definido</b><time>hoje 08:00</time><small>Carlos Souza · Responsável: João Pereira</small></li>
+        <li data-ev="mail"><i>✉</i><b>✉ E-mail enviado para joao.pereira@fabrica.example</b><time>hoje 08:00</time><small>Sistema · aviso de demanda criada</small></li>
+        <li data-ev="started"><i></i><b>Iniciada</b><time>hoje 08:12</time><small>João Pereira</small></li>
+        <li data-ev="nudge"><i></i><b>Cobrança enviada</b><time>hoje 10:30</time><small>Carlos Souza</small></li>
+        <li data-ev="mailerr"><i>✉</i><b>✉ E-mail não enviado (tentando de novo)</b><time>hoje 10:30</time><small>Sistema · para joao.pereira@fabrica.example · 2ª tentativa às 10:35</small></li>
+      </ul>
+      <div class="dm-note" style="border:1px dashed var(--dm-line);border-radius:10px;padding:8px 10px">As linhas ✉ vêm do registro de envios (<code>data/email-log.json</code>), não dos eventos da demanda: não ocupam o teto de 500 eventos e não aparecem para os operadores.</div>
+    </aside>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

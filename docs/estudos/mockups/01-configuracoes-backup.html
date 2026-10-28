@@ -1,0 +1,233 @@
+<!doctype html>
+<!-- MOCKUP ESTÁTICO (estudo 01 · Backup automático). Não faz parte do programa e não chama nenhuma API.
+     Abre direto no navegador. O pouco de JS no fim só abre e fecha o modal de restauração e alterna o tema;
+     sem JS, as duas cenas aparecem uma embaixo da outra. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Backup nas Configurações</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+/* Só o que não existe no demandas.css. Sempre com as variáveis --dm-*. */
+html,body{margin:0;background:#0C1224}
+#dmboard{display:block;overflow:visible;min-height:100vh}
+.mk-faixa{background:var(--dm-s-pause);color:#fff;padding:9px 16px;font:600 13px var(--dm-fb);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mk-faixa b{font:800 12px var(--dm-fh);letter-spacing:.08em;text-transform:uppercase;background:rgba(0,0,0,.18);padding:2px 8px;border-radius:6px}
+.mk-faixa .dm-btn{margin-left:auto}
+.mk-cena{position:relative;border-bottom:2px dashed var(--dm-line)}
+.mk-cena>.mk-rot{position:absolute;left:12px;top:10px;z-index:45;font:700 11px var(--dm-fb);letter-spacing:.08em;text-transform:uppercase;color:#fff;background:rgba(8,12,26,.6);padding:3px 8px;border-radius:6px}
+.mk-fundo{padding:40px 16px 14px;filter:saturate(.8)}
+#dmboard .dm-modal.mk-modal{position:relative;inset:auto;display:grid;padding:4px 14px 40px;background:none;overflow:visible}
+#dmboard .mk-cena{background:color-mix(in srgb,var(--dm-bg) 55%,#0b1222)}
+#dmboard .mk-cena .mk-fundo{opacity:.45}
+#dmboard .cfg,#dmboard .dm-mbox{animation:none}
+
+/* ---- diálogo ⚙ Configurações (padrão comum dos estudos) ---- */
+#dmboard .cfg{width:min(760px,100%);background:var(--dm-surface);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);display:grid;grid-template-columns:170px minmax(0,1fr);grid-template-rows:auto 1fr;overflow:hidden;animation:dm-pop .25s}
+#dmboard .cfg-head{grid-column:1/-1;display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--dm-line)}
+#dmboard .cfg-head h2{margin:0;font:700 20px var(--dm-fh)}
+#dmboard .cfg-head small{color:var(--dm-muted);font-size:12.5px}
+#dmboard .cfg-head .dm-x{position:static;margin-left:auto}
+#dmboard .cfg-nav{background:var(--dm-surface2);border-right:1px solid var(--dm-line);padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+#dmboard .cfg-nav button{text-align:left;padding:8px 10px;border-radius:10px;font-weight:600;color:var(--dm-muted);display:flex;gap:8px;align-items:center}
+#dmboard .cfg-nav button:hover{background:var(--dm-surface);color:var(--dm-ink)}
+#dmboard .cfg-nav button[aria-current=page]{background:var(--dm-surface);color:var(--dm-ink);box-shadow:inset 3px 0 0 var(--dm-brand)}
+#dmboard .cfg-nav .cfg-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--dm-s-late)}
+#dmboard .cfg-body{padding:16px 18px 18px;min-width:0}
+#dmboard .cfg-sec{border:1px solid var(--dm-line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
+#dmboard .cfg-sec[data-sec]{border:0;padding:0;margin:0}   /* a seção ativa: os blocos dentro dela têm a borda */
+#dmboard .cfg-sec h3{margin:0 0 8px;font:700 14.5px var(--dm-fh);display:flex;gap:8px;align-items:center}
+#dmboard .cfg-sec h3 .dm-spacer{flex:1}
+#dmboard .cfg-linha{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0}
+#dmboard .cfg-linha>label{font-weight:600}
+#dmboard .cfg-ajuda{font-size:12px;color:var(--dm-muted);margin:4px 0 0}
+#dmboard .cfg-sw{position:relative;display:inline-flex;align-items:center;gap:9px;font-weight:700;cursor:pointer}
+#dmboard .cfg-sw i{width:38px;height:22px;border-radius:11px;background:var(--dm-s-prog);position:relative;flex:none}
+#dmboard .cfg-sw i::after{content:"";position:absolute;top:3px;left:19px;width:16px;height:16px;border-radius:50%;background:#fff}
+#dmboard .cfg-dest{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--dm-line)}
+#dmboard .cfg-dest:first-of-type{border-top:0}
+#dmboard .cfg-dest .cfg-ico{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:var(--dm-surface2);font-size:16px;grid-row:span 2}
+#dmboard .cfg-dest code{font:600 12.5px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+#dmboard .cfg-dest small{grid-column:2/-1;color:var(--dm-muted);font-size:12px}
+#dmboard .cfg-dest .dm-acts{grid-row:span 2}
+#dmboard .cfg-ret{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+#dmboard .cfg-ret label{display:grid;gap:4px;font-size:12px;font-weight:700;color:var(--dm-muted)}
+#dmboard .cfg-ret input{width:100%}
+#dmboard .cfg-ult{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:8px 0}
+#dmboard .cfg-ult div{background:var(--dm-surface2);border-radius:10px;padding:7px 9px;font-size:11.5px;color:var(--dm-muted)}
+#dmboard .cfg-ult b{display:block;color:var(--dm-ink);font-size:13px}
+#dmboard .cfg-ok{color:var(--dm-s-prog)!important}
+#dmboard .cfg-lista{border:1px solid var(--dm-line);border-radius:12px;overflow:hidden}
+#dmboard .cfg-cp{display:grid;grid-template-columns:minmax(0,1fr) 92px 74px 84px auto;gap:8px;align-items:center;padding:7px 10px;border-top:1px solid var(--dm-line);font-size:12.5px}
+#dmboard .cfg-cp:first-child{border-top:0}
+#dmboard .cfg-cp.cfg-th{background:var(--dm-surface2);font-size:11.5px;font-weight:700;color:var(--dm-muted)}
+#dmboard .cfg-cp b{font-weight:600}
+#dmboard .cfg-cp small{display:block;color:var(--dm-muted);font-size:11px}
+#dmboard .cfg-tipo{justify-self:start;white-space:nowrap;display:inline-flex;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700;background:var(--dm-surface2);border:1px solid var(--dm-line);color:var(--dm-muted)}
+#dmboard .cfg-tipo[data-t=manual]{color:var(--dm-s-new);border-color:color-mix(in srgb,var(--dm-s-new) 40%,var(--dm-line))}
+#dmboard .cfg-tipo[data-t=antes]{color:var(--dm-s-pause);border-color:color-mix(in srgb,var(--dm-s-pause) 40%,var(--dm-line))}
+#dmboard .cfg-barra{height:7px;border-radius:7px;background:var(--dm-surface2);border:1px solid var(--dm-line);overflow:hidden;margin-top:6px}
+#dmboard .cfg-barra span{display:block;height:100%;width:22%;background:var(--dm-s-new)}
+#dmboard .cfg-foot{display:flex;gap:7px;justify-content:flex-end;padding-top:4px}
+
+/* ---- modal de confirmação ---- */
+#dmboard .rs-box{width:min(560px,100%)}
+#dmboard .rs-cmp{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;margin:12px 0}
+#dmboard .rs-cmp>div{background:var(--dm-surface2);border-radius:12px;padding:9px 11px;font-size:12px;color:var(--dm-muted)}
+#dmboard .rs-cmp b{display:block;color:var(--dm-ink);font-size:13.5px}
+#dmboard .rs-cmp .rs-seta{background:none;font-size:20px;color:var(--dm-muted);padding:0}
+#dmboard .rs-passos{margin:8px 0;padding-left:20px;font-size:13px;display:grid;gap:5px}
+#dmboard .rs-perde{border:1px solid var(--dm-s-late);border-left:5px solid var(--dm-s-late);background:color-mix(in srgb,var(--dm-s-late) 8%,var(--dm-surface));border-radius:12px;padding:9px 11px;font-size:13px;margin:10px 0}
+#dmboard .rs-perde b{color:var(--dm-s-late)}
+#dmboard .rs-conf input{font:700 15px ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase}
+@media (max-width:700px){
+  #dmboard .cfg{grid-template-columns:1fr}
+  #dmboard .cfg-nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}
+  #dmboard .cfg-ret,#dmboard .cfg-ult{grid-template-columns:1fr 1fr}
+  #dmboard .cfg-cp{grid-template-columns:minmax(0,1fr) auto}
+  #dmboard .cfg-cp>:nth-child(2),#dmboard .cfg-cp>:nth-child(3),#dmboard .cfg-cp>:nth-child(4){display:none}
+  #dmboard .rs-cmp{grid-template-columns:1fr}
+  #dmboard .rs-cmp .rs-seta{transform:rotate(90deg);justify-self:center}
+}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-faixa"><b>PROPOSTA · Backup automático</b><span>Seção Backup do diálogo ⚙ Configurações, só no próprio PC, e a confirmação antes de restaurar uma cópia.</span>
+    <button type="button" class="dm-btn dm-sm" id="mk-tema">◐ Tema</button></div>
+
+  <!-- ===== CENA 1: seção Backup ===== -->
+  <section class="mk-cena" aria-label="Cena 1: seção Backup">
+    <span class="mk-rot">Cena 1 · ⚙ Configurações → Backup</span>
+    <div class="mk-fundo" aria-hidden="true">
+      <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p></div>
+        <div class="dm-acts"><span class="dm-clock">Qua 28/10 · 14:12</span><span class="dm-uchip"><span class="dm-av" style="--dm-sc:#6C8BFF">E</span><span class="dm-t"><b>Escritório</b><small>Administrador</small></span></span></div></header>
+    </div>
+    <div class="dm-modal mk-modal">
+      <div class="cfg" role="dialog" aria-modal="true" aria-labelledby="cfg-t">
+        <div class="cfg-head"><h2 id="cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-x" aria-label="Fechar">✕</button></div>
+        <nav class="cfg-nav" aria-label="Seções das configurações">
+          <button type="button">🌐 Rede</button>
+          <button type="button" aria-current="page">💾 Backup<span class="cfg-dot" title="Destino extra não encontrado"></span></button>
+          <button type="button">✉️ E-mail</button>
+          <button type="button">🔔 Avisos</button>
+          <button type="button">🖥️ Servidor</button>
+        </nav>
+        <div class="cfg-body">
+          <div class="cfg-sec" data-sec="backup">
+
+            <div class="cfg-sec">
+              <h3>Cópia automática<span class="dm-spacer"></span><label class="cfg-sw"><input type="checkbox" checked hidden><i aria-hidden="true"></i>Ligada</label></h3>
+              <div class="cfg-linha"><label for="bk-hora">Todo dia às</label><input id="bk-hora" type="time" value="12:00" style="width:110px">
+                <label class="dm-inl"><input type="checkbox" checked> Também ao ligar o programa, se a última cópia tiver mais de 20 h</label></div>
+              <p class="cfg-ajuda">Se o computador estiver desligado no horário, a cópia é feita assim que ele for ligado. Antes de restaurar, sempre é feita uma cópia do estado atual.</p>
+            </div>
+
+            <div class="cfg-sec">
+              <h3>Onde guardar</h3>
+              <div class="cfg-dest">
+                <span class="cfg-ico">🗄️</span>
+                <span><b>Pasta neste computador</b> · <code>C:\CentralDemandas\backup</code></span>
+                <span class="dm-acts"><span class="dm-pill" data-st="prog">Pronta</span><button type="button" class="dm-btn dm-sm">📂 Abrir pasta</button></span>
+                <small>Sempre ligada. Protege contra erro e arquivo corrompido, mas não contra o computador quebrar. 41,2 GB livres.</small>
+              </div>
+              <div class="cfg-dest">
+                <span class="cfg-ico">🔌</span>
+                <span><b>Cópia extra</b> · <code>E:\CentralDemandas-backup</code></span>
+                <span class="dm-acts"><span class="dm-pill" data-st="late">Não encontrado</span><button type="button" class="dm-btn dm-sm">Escolher pasta</button></span>
+                <small>Pen drive E: não está conectado desde 25/10 12:00. A cópia local continua sendo feita. Use pen drive, pasta de rede (\\SERVIDOR\backup) ou a pasta do OneDrive/Google Drive.</small>
+              </div>
+              <p class="cfg-ajuda">⚠ A cópia contém nomes, matrículas e os códigos das pessoas. Guarde o pen drive em local seguro (de preferência com BitLocker). Os PINs de rede não entram na cópia.</p>
+            </div>
+
+            <div class="cfg-sec">
+              <h3>Quantas cópias guardar</h3>
+              <div class="cfg-ret">
+                <label>Diárias<input type="number" value="7" min="1" max="60"></label>
+                <label>Semanais<input type="number" value="4" min="0" max="60"></label>
+                <label>Mensais<input type="number" value="12" min="0" max="60"></label>
+                <label>Limite de espaço<select><option>2 GB</option><option selected>5 GB</option><option>10 GB</option><option>Sem limite</option></select></label>
+              </div>
+              <div class="cfg-barra" aria-hidden="true"><span></span></div>
+              <p class="cfg-ajuda">Usando 1,1 GB de 5 GB com 23 cópias (cerca de 46 MB cada). Cópias manuais e as de "antes de restaurar": ficam as 5 últimas de cada.</p>
+            </div>
+
+            <div class="cfg-sec">
+              <h3>Último backup<span class="dm-spacer"></span><button type="button" class="dm-btn dm-sm dm-primary">💾 Fazer backup agora</button></h3>
+              <div class="cfg-ult">
+                <div>Quando<b>Hoje, 12:00</b></div>
+                <div>Tamanho<b>46,0 MB</b></div>
+                <div>Conteúdo<b>4.211 dem. · 214 anexos</b></div>
+                <div>Integridade<b class="cfg-ok">Verificado ✓</b></div>
+              </div>
+              <p class="cfg-ajuda">Cópia extra: <b style="color:var(--dm-s-late)">falhou</b>, porque o destino E:\ não foi encontrado. Última cópia extra boa: 25/10 12:00.</p>
+            </div>
+
+            <div class="cfg-sec">
+              <h3>Cópias guardadas<span class="dm-spacer"></span><span class="dm-seg" role="group" aria-label="Local das cópias"><button type="button" aria-pressed="true">Neste computador</button><button type="button" aria-pressed="false">Cópia extra</button></span></h3>
+              <div class="cfg-lista">
+                <div class="cfg-cp cfg-th"><span>Cópia</span><span>Tipo</span><span>Tamanho</span><span>Verificação</span><span></span></div>
+                <div class="cfg-cp"><span><b>Hoje, 12:00</b><small>central-demandas_20261028-1200_auto.zip</small></span><span class="cfg-tipo">diária</span><span>46,0 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>Hoje, 07:12</b><small>ao ligar</small></span><span class="cfg-tipo">ao ligar</span><span>45,9 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>Ontem, 16:40</b><small>feita por Escritório</small></span><span class="cfg-tipo" data-t="manual">manual</span><span>45,8 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>27/10, 12:00</b></span><span class="cfg-tipo">diária</span><span>45,7 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>26/10, 12:00</b></span><span class="cfg-tipo">semanal</span><span>45,5 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>14/10, 09:03</b><small>antes de restaurar a de 13/10</small></span><span class="cfg-tipo" data-t="antes">antes de restaurar</span><span>44,1 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>01/10, 12:00</b></span><span class="cfg-tipo">mensal</span><span>41,9 MB</span><span class="cfg-ok">✓ ok</span><button type="button" class="dm-btn dm-sm" data-act="restore">Restaurar</button></div>
+                <div class="cfg-cp"><span><b>01/09, 12:00</b></span><span class="cfg-tipo">mensal</span><span>38,2 MB</span><span style="color:var(--dm-s-late)">✕ corrompida</span><button type="button" class="dm-btn dm-sm" disabled title="Cópia com defeito: não pode ser restaurada">Restaurar</button></div>
+              </div>
+              <p class="cfg-ajuda">Mostrando 8 de 23. A verificação é refeita uma vez por semana em todas as cópias.</p>
+            </div>
+
+            <div class="cfg-foot"><button type="button" class="dm-btn">Cancelar</button><button type="button" class="dm-btn dm-primary">Salvar</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== CENA 2: confirmação de restauração ===== -->
+  <section class="mk-cena" id="mk-cena2" aria-label="Cena 2: confirmar restauração">
+    <span class="mk-rot">Cena 2 · Restaurar → confirmação</span>
+    <div class="mk-fundo" aria-hidden="true">
+      <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p></div></header>
+    </div>
+    <div class="dm-modal mk-modal" id="mk-modal-rs">
+      <div class="dm-mbox rs-box" role="dialog" aria-modal="true" aria-labelledby="rs-t">
+        <h2 id="rs-t">Restaurar a cópia de 27/10, 12:00?</h2>
+        <p class="dm-note">Os dados da Central de demandas voltam a ser exatamente os desta cópia.</p>
+        <div class="rs-cmp">
+          <div>Agora<b>4.211 demandas</b>214 anexos · 86 pessoas</div>
+          <div class="rs-seta" aria-hidden="true">→</div>
+          <div>Cópia de 27/10, 12:00<b>4.188 demandas</b>209 anexos · 86 pessoas</div>
+        </div>
+        <div class="rs-perde"><b>Vai se perder:</b> tudo o que foi feito depois de 27/10 12:00: 23 solicitações novas e 141 movimentações (aceites, pausas, conclusões, comentários).</div>
+        <div class="dm-secx">O que vai acontecer</div>
+        <ol class="rs-passos">
+          <li>A cópia escolhida é conferida (hash ✓). Se tiver defeito, nada muda.</li>
+          <li>Antes de trocar, é feita uma <b>cópia de segurança do estado atual</b> ("antes de restaurar"). Dá para desfazer por ela.</li>
+          <li>Os dados são trocados. Os números SOL-n continuam a partir do maior já usado (o próximo é o SOL-5235). Nenhum número se repete.</li>
+          <li>As pessoas nos celulares e tablets voltam para "Quem é você?" e digitam o código de novo. Os aparelhos <b>não</b> precisam do PIN de novo.</li>
+          <li>As telas abertas se atualizam sozinhas em até 3 segundos e mostram o aviso "Dados restaurados para 27/10 12:00".</li>
+        </ol>
+        <div class="dm-fld rs-conf"><label for="rs-c">Para confirmar, digite RESTAURAR</label><input id="rs-c" autocomplete="off" placeholder="RESTAURAR"></div>
+        <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="rs-x">Cancelar</button><button type="button" class="dm-btn dm-danger" id="rs-ok" disabled>Restaurar esta cópia</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+/* Só para o mockup: alternar tema, habilitar o botão ao digitar e levar até a cena 2. */
+(function(){
+  var b = document.getElementById('dmboard');
+  document.getElementById('mk-tema').onclick = function(){b.dataset.theme = b.dataset.theme === 'dark' ? 'light' : 'dark'};
+  var inp = document.getElementById('rs-c'), ok = document.getElementById('rs-ok');
+  inp.oninput = function(){ok.disabled = inp.value.trim().toUpperCase() !== 'RESTAURAR'};
+  document.querySelectorAll('[data-act=restore]').forEach(function(x){x.onclick = function(){document.getElementById('mk-cena2').scrollIntoView({behavior: 'smooth'}); inp.focus()}});
+})();
+</script>
+<script src="cfg-nav.js"></script>
+</body>
+</html>

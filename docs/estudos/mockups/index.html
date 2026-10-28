@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Índice dos mockups estáticos dos estudos 01 a 05. Abre direto no navegador, sem servidor. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Propostas · Mockups</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:var(--dm-bg,#F4F6FB)}
+#dmboard{display:block;min-height:100vh;overflow:visible}
+.ix{max-width:1080px;margin:0 auto;padding:28px 16px 48px}
+.ix h1{font:800 28px var(--dm-fh);margin:0 0 4px}
+.ix>p{color:var(--dm-muted);margin:0 0 22px;max-width:70ch}
+.ix-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.ix-c{background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:16px;padding:16px 18px;box-shadow:var(--dm-shadow)}
+.ix-c h2{font:700 17px var(--dm-fh);margin:0 0 2px;display:flex;gap:8px;align-items:center}
+.ix-c h2 span{font:800 12px var(--dm-fh);color:var(--dm-brand);letter-spacing:.06em}
+.ix-c>p{color:var(--dm-muted);font-size:13px;margin:0 0 10px}
+.ix-c ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.ix-c a{display:block;padding:7px 10px;border-radius:10px;color:var(--dm-ink);text-decoration:none;font-weight:600;font-size:14px;background:var(--dm-surface2)}
+.ix-c a:hover{outline:2px solid var(--dm-brand)}
+.ix-c a small{display:block;font-weight:400;color:var(--dm-muted);font-size:12px}
+.ix-c .ix-doc{background:none;padding:6px 0 0;font-weight:600;font-size:13px;color:var(--dm-brand)}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<main class="ix">
+  <h1>Propostas: novas funções da Central de demandas</h1>
+  <p>Telas estáticas, só para aprovação. Nada disso está no programa ainda. Cada tela tem uma faixa “PROPOSTA” no topo
+    explicando o que mostra. O estudo completo de cada tema está no arquivo .md ao lado.</p>
+  <div class="ix-g">
+    <section class="ix-c"><h2><span>00</span>⚙ Configurações</h2><p>O “⚙ Rede” de hoje vira um diálogo com 5 seções, só no PC principal. O menu à esquerda navega entre elas.</p>
+      <ul><li><a href="00-configuracoes.html">Rede<small>PINs e endereços (o que já existe, no layout novo)</small></a></li>
+        <li><a href="01-configuracoes-backup.html">Backup</a></li><li><a href="04-configuracoes-email.html">E-mail</a></li>
+        <li><a href="02-configuracoes-avisos.html">Avisos</a></li><li><a href="03-configuracoes-servidor.html">Servidor</a></li></ul></section>
+    <section class="ix-c"><h2><span>01</span>Backup automático</h2><p>Cópia diária verificada, retenção, destino extra e restauração pela tela.</p>
+      <ul><li><a href="01-configuracoes-backup.html">Configurações › Backup<small>agenda, destinos, cópias e restaurar</small></a></li>
+        <li><a href="01-aviso-backup.html">Aviso no Painel<small>“último backup há 3 dias”</small></a></li></ul>
+      <a class="ix-doc" href="../01-backup.md">Ler o estudo 01 →</a></section>
+    <section class="ix-c"><h2><span>02</span>Avisos</h2><p>Som, título piscando e vibração já; aviso com o app fechado quando houver HTTPS.</p>
+      <ul><li><a href="02-celular-avisos.html">No celular<small>app aberto, tela bloqueada, permissão</small></a></li>
+        <li><a href="02-preferencias-avisos.html">Meus avisos<small>preferências da pessoa</small></a></li>
+        <li><a href="02-central-avisos.html">Central de avisos<small>gaveta do sino melhorada</small></a></li>
+        <li><a href="02-configuracoes-avisos.html">Configurações › Avisos</a></li></ul>
+      <a class="ix-doc" href="../02-avisos.md">Ler o estudo 02 →</a></section>
+    <section class="ix-c"><h2><span>03</span>Continuidade e hospedagem</h2><p>PC servidor robusto agora; caminho para hospedar sem reescrever.</p>
+      <ul><li><a href="03-servidor-fora.html">Servidor fora do ar<small>reconexão sem perder o que foi digitado</small></a></li>
+        <li><a href="03-login-hospedado.html">Entrada da versão hospedada<small>empresa + “Quem é você?”</small></a></li>
+        <li><a href="03-configuracoes-servidor.html">Configurações › Servidor<small>saúde, iniciar com o Windows, PC reserva</small></a></li></ul>
+      <a class="ix-doc" href="../03-continuidade-hospedagem.md">Ler o estudo 03 →</a></section>
+    <section class="ix-c"><h2><span>04</span>E-mail</h2><p>Demanda nova vira e-mail para quem recebe, com um fio por demanda na caixa.</p>
+      <ul><li><a href="04-email-recebido.html">E-mail recebido<small>mensagem e o fio [SOL-1043]</small></a></li>
+        <li><a href="04-configuracoes-email.html">Configurações › E-mail<small>conta, eventos, teste e registro</small></a></li>
+        <li><a href="04-cadastro-email.html">Cadastro com e-mail<small>pessoa, setor e histórico da gaveta</small></a></li></ul>
+      <a class="ix-doc" href="../04-email.md">Ler o estudo 04 →</a></section>
+    <section class="ix-c"><h2><span>05</span>Calendário e cronograma</h2><p>Aba Calendário e cronograma de vários dias, sem mudar os dados na fase 1.</p>
+      <ul><li><a href="05-calendario-mes.html">Calendário · mês</a></li>
+        <li><a href="05-calendario-semana.html">Calendário · semana</a></li>
+        <li><a href="05-cronograma.html">Cronograma por setor</a></li>
+        <li><a href="05-nova-solicitacao-data.html">Nova solicitação com data<small>prazo em data e hora, agendar início</small></a></li></ul>
+      <a class="ix-doc" href="../05-calendario-cronograma.md">Ler o estudo 05 →</a></section>
+  </div>
+</main>
+</div>
+</body>
+</html>

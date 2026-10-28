@@ -1,0 +1,175 @@
+<!doctype html>
+<!-- Mockup estático (estudo 02 · Avisos). Não é o programa: só HTML e CSS para o dono aprovar. Abre direto no navegador. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Avisos no celular</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#D9DEEA}
+#dmboard{min-height:100vh;overflow:visible}
+.pp-faixa{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.pp-faixa b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px;color:#3DDBA9}
+.pp-row{display:flex;flex-wrap:wrap;gap:28px;justify-content:center;padding:24px 16px 40px}
+.pp-col{display:grid;gap:10px;justify-items:center;width:390px;max-width:100%}
+.pp-cap{font:700 15px var(--dm-fh);color:var(--dm-ink);text-align:center}
+.pp-cap small{display:block;font:500 12.5px var(--dm-fb);color:var(--dm-muted);margin-top:2px}
+.pp-tag{display:inline-block;border-radius:999px;padding:1px 9px;font:700 11px var(--dm-fb);color:#fff;background:var(--dm-s-prog);vertical-align:1px}
+.pp-tag.pp-c2{background:var(--dm-s-done)}
+/* moldura de celular: 390 px */
+.ph{width:390px;max-width:100%;height:800px;border-radius:44px;background:#0B0F1C;padding:12px;box-shadow:0 30px 60px -20px rgba(12,18,36,.55)}
+.ph-scr{position:relative;height:100%;border-radius:34px;overflow:hidden;background:var(--dm-bg);display:flex;flex-direction:column}
+.ph-st{display:flex;justify-content:space-between;align-items:center;padding:10px 24px 4px;font:700 13px var(--dm-fb);color:var(--dm-ink)}
+.ph-url{margin:4px 10px 0;border-radius:12px;background:var(--dm-surface);border:1px solid var(--dm-line);padding:6px 10px;font-size:11.5px;color:var(--dm-muted);display:flex;gap:6px;align-items:center}
+.ph-url b{color:var(--dm-ink);font-weight:700}
+.ph-url .pp-blink{animation:dm-blink 1s infinite;color:var(--dm-s-late)}
+.ph-body{flex:1;overflow:hidden;padding:10px 12px;position:relative}
+.ph .dm-top{margin-bottom:8px}
+.ph .dm-h1{font-size:18px}
+.ph .dm-ophead{padding:12px 14px;border-radius:16px}
+.ph .dm-ophead h2{font-size:17px}
+.ph .dm-orb{width:38px;height:38px;font-size:19px}
+.ph .dm-opstats{flex-wrap:nowrap}
+.ph .dm-opstats div{min-width:0;flex:1;padding:6px 2px;font-size:10.5px}
+.ph .dm-opstats b{font-size:17px}
+.ph .dm-ocard h3{font-size:15px}
+.ph .dm-alerts{position:absolute!important;top:150px;left:10px;right:10px;width:auto}
+.ph .dm-alert{box-shadow:0 18px 44px rgba(12,18,36,.45)}
+.pp-vib{position:absolute;bottom:16px;right:16px;z-index:60;display:flex;gap:6px;align-items:center;background:var(--dm-ink);color:var(--dm-bg);border-radius:999px;padding:4px 10px;font:700 11.5px var(--dm-fb)}
+.pp-vib i{font-style:normal;animation:pp-shake .25s infinite}
+@keyframes pp-shake{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+.pp-snd{position:absolute;bottom:16px;left:16px;z-index:60;background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:999px;padding:4px 10px;font:700 11.5px var(--dm-fb);color:var(--dm-ink)}
+.ph-nav{display:flex;justify-content:space-around;border-top:1px solid var(--dm-line);background:var(--dm-surface);padding:8px 0 16px;font-size:11px;color:var(--dm-muted)}
+.ph-nav span{display:grid;justify-items:center;gap:2px;position:relative}
+.ph-nav span.on{color:var(--dm-ink);font-weight:700}
+.ph-nav em{position:absolute;top:-4px;right:-10px;font-style:normal;background:var(--dm-s-late);color:#fff;border-radius:9px;font-size:10px;padding:0 5px;font-weight:700}
+/* tela bloqueada */
+.lk{background:radial-gradient(600px 400px at 20% 0%,#2C3F7A,transparent),radial-gradient(500px 400px at 100% 100%,#0E6B55,transparent),#0C1224;color:#fff}
+.lk .ph-st{color:#fff}
+.lk-h{text-align:center;margin-top:40px}
+.lk-h small{display:block;font:600 15px var(--dm-fb);opacity:.85}
+.lk-h b{display:block;font:300 84px/1 var(--dm-fb);letter-spacing:-.02em;margin-top:4px}
+.lk-n{margin:46px 12px 0;display:grid;gap:8px}
+.nt{background:rgba(245,247,252,.86);color:#162036;border-radius:20px;padding:11px 13px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.nt-h{display:flex;gap:8px;align-items:center;font-size:12px;color:#4A5674}
+.nt-h i{width:22px;height:22px;border-radius:6px;background:#0C1224;display:grid;place-items:center;font-style:normal;color:#22C08B;font-size:12px;font-weight:800}
+.nt-h span{flex:1;font-weight:700;letter-spacing:.02em}
+.nt b{display:block;font:700 14.5px var(--dm-fb);margin-top:6px}
+.nt p{margin:2px 0 0;font-size:13.5px;line-height:1.35}
+.nt-a{display:flex;gap:6px;margin-top:9px}
+.nt-a span{flex:1;text-align:center;background:rgba(22,32,54,.08);border-radius:12px;padding:7px;font-weight:700;font-size:13px}
+.nt.nt-old{opacity:.8;transform:scale(.97);padding:9px 12px}
+.lk-f{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:12px;opacity:.7}
+/* pedido de permissão */
+.pm-card{background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:18px;padding:16px;box-shadow:var(--dm-shadow)}
+.pm-card h3{margin:8px 0 4px;font:700 18px/1.2 var(--dm-fh)}
+.pm-card p{margin:0 0 8px;font-size:13px;color:var(--dm-muted)}
+.pm-ico{width:46px;height:46px;border-radius:14px;background:color-mix(in srgb,var(--dm-s-new) 16%,var(--dm-surface));display:grid;place-items:center;font-size:24px}
+.pm-list{margin:8px 0 12px;padding:0;list-style:none;display:grid;gap:6px;font-size:13px}
+.pm-list li{display:flex;gap:8px}
+.pm-btns{display:flex;gap:8px}
+.pm-btns .dm-btn{flex:1;min-height:44px}
+.pm-step{font:700 11px var(--dm-fb);letter-spacing:.08em;text-transform:uppercase;color:var(--dm-muted);margin:14px 2px 6px}
+.br-dlg{background:#fff;color:#1F1F1F;border-radius:22px;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.35);font-family:Roboto,"Segoe UI",system-ui,sans-serif}
+#dmboard[data-theme] .br-dlg{color-scheme:light}
+.br-dlg small{display:block;font-size:12px;color:#5F6368}
+.br-dlg b{display:block;font-size:16px;margin:8px 0 14px;font-weight:500}
+.br-dlg .br-b{display:flex;justify-content:flex-end;gap:18px;font-weight:600;color:#0B57D0;font-size:14px}
+.pm-off{margin-top:12px;border:1px dashed var(--dm-s-pause);border-radius:12px;padding:9px 11px;font-size:12.5px;background:color-mix(in srgb,var(--dm-s-pause) 8%,var(--dm-surface))}
+.pp-leg{max-width:1250px;margin:0 auto;padding:0 16px 40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="pp-faixa"><b>PROPOSTA · AVISOS NO CELULAR</b>O que o operador vê quando chega uma demanda: com o app aberto (camada 1, já em http), com o celular bloqueado (camada 2, só com HTTPS) e o pedido de permissão.</div>
+
+<div class="pp-row">
+
+  <!-- (a) app aberto -->
+  <div class="pp-col">
+    <div class="pp-cap">(a) App aberto: chega uma demanda <span class="pp-tag">Camada 1 · http</span><small>Banner, som curto, vibração (só Android), badge e título da aba piscando.</small></div>
+    <div class="ph"><div class="ph-scr">
+      <div class="ph-st"><span>10:42</span><span>📶 🔋 78%</span></div>
+      <div class="ph-url">⚠ Não seguro <span>192.168.0.20:8090</span> · aba: <b class="pp-blink">(1) 🚨 Nova! SOL-1043</b></div>
+      <div class="pp-snd">🔊 som "curto" · 1 vez</div>
+      <div class="pp-vib"><i>📳</i> vibra 200·100·200 ms</div>
+      <div class="ph-body">
+        <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1></div>
+          <div class="dm-acts"><button type="button" class="dm-btn dm-bell dm-ring" aria-label="Notificações">🔔<b>1</b></button></div></header>
+        <div class="dm-ophead"><span class="dm-orb">✂️</span><div><h2>Olá, Rafael</h2><div class="dm-opsub">Corte · matrícula 4471</div></div>
+          <div class="dm-opstats" style="width:100%;margin-left:0"><div><b>3</b>Na fila</div><div><b>1</b>Andamento</div><div><b>0</b>Pausadas</div><div><b>0</b>Atrasadas</div></div></div>
+        <nav class="dm-tabs"><button type="button" class="dm-tab" aria-pressed="true">📥 Recebidas<span class="dm-cnt">2</span></button><button type="button" class="dm-tab" aria-pressed="false">📤 Enviadas<span class="dm-cnt">1</span></button></nav>
+        <div class="dm-ocard" data-st="prog">
+          <div class="dm-oh"><b>SOL-1038</b><span class="dm-pill" data-st="prog">Em andamento</span><span class="dm-pb" data-p="norm">Normal</span></div>
+          <h3>Cortar perfis U 100 para a estrutura da linha 2</h3>
+          <div class="dm-route"><span class="dm-abbr" style="--dm-sc:#2F6FDE">MON</span>→<span class="dm-abbr" style="--dm-sc:#E0662F">COR</span><span>De Paulo Henrique</span></div>
+          <div class="dm-sla"><span style="width:46%"></span></div>
+        </div>
+      </div>
+      <div class="dm-alerts" aria-live="assertive">
+        <div class="dm-alert" data-k="urg" role="alert">
+          <h4><span>🚨 Nova demanda · Urgente</span><button type="button" class="dm-btn dm-sm" aria-label="Fechar alerta">✕</button></h4>
+          <dl class="dm-kv"><dt>Solicitação</dt><dd>SOL-1043 · Corte de chapas 3 mm para o lote 220</dd><dt>Setores</dt><dd><span class="dm-abbr" style="--dm-sc:#7357E6">PCP</span> → <span class="dm-abbr" style="--dm-sc:#E0662F">COR</span></dd><dt>Para</dt><dd>Rafael Souza (você)</dd><dt>Quem</dt><dd>Juliana Prado às 10:42</dd><dt>Prazo</dt><dd>Faltam 1h 30min</dd></dl>
+          <div class="dm-acts2"><button type="button" class="dm-btn dm-sm dm-go">▶ Aceitar e iniciar</button><button type="button" class="dm-btn dm-sm dm-primary">Ver solicitação</button><button type="button" class="dm-btn dm-sm">Dispensar</button></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- (b) tela bloqueada -->
+  <div class="pp-col">
+    <div class="pp-cap">(b) Celular bloqueado <span class="pp-tag pp-c2">Camada 2 · só HTTPS</span><small>Push do service worker. Chega com o app fechado. No iPhone, só com o app na Tela de Início (iOS 16.4+).</small></div>
+    <div class="ph"><div class="ph-scr lk">
+      <div class="ph-st"><span>Vivo</span><span>📶 🔋 78%</span></div>
+      <div class="lk-h"><small>quarta-feira, 28 de outubro</small><b>10:42</b></div>
+      <div class="lk-n">
+        <div class="nt">
+          <div class="nt-h"><i>↗</i><span>CENTRAL DE DEMANDAS</span>agora</div>
+          <b>🚨 Nova demanda SOL-1043 · Urgente</b>
+          <p>De PCP para você (Corte). Corte de chapas 3 mm para o lote 220. Prazo 12:12.</p>
+          <div class="nt-a"><span>▶ Aceitar</span><span>Ver</span></div>
+        </div>
+        <div class="nt nt-old">
+          <div class="nt-h"><i>↗</i><span>CENTRAL DE DEMANDAS</span>9:58</div>
+          <b>⏰ SOL-1031 passou do prazo</b>
+          <p>2 avisos agrupados · Fila do Corte</p>
+        </div>
+      </div>
+      <div class="lk-f">Botões de ação aparecem no Android. No iPhone, toque e segure.</div>
+    </div></div>
+  </div>
+
+  <!-- (c) pedido de permissão -->
+  <div class="pp-col">
+    <div class="pp-cap">(c) Pedido de permissão <span class="pp-tag pp-c2">Camada 2 · só HTTPS</span><small>Primeiro o nosso cartão; o diálogo do navegador só abre depois do toque em "Quero receber".</small></div>
+    <div class="ph"><div class="ph-scr">
+      <div class="ph-st"><span>10:40</span><span>📶 🔋 79%</span></div>
+      <div class="ph-url">🔒 <span>demandas.suaempresa.com.br</span></div>
+      <div class="ph-body">
+        <div class="pm-step">Passo 1 · cartão da central</div>
+        <div class="pm-card">
+          <div class="pm-ico">🔔</div>
+          <h3>Quer receber avisos desta central?</h3>
+          <p>Avisamos no seu celular, mesmo com o app fechado:</p>
+          <ul class="pm-list"><li>📥 <span>Demanda nova para você ou para a fila do <b>Corte</b></span></li><li>⏰ <span>Prazo estourado e cobrança</span></li><li>✅ <span>Quando o que você pediu for aceito ou concluído</span></li></ul>
+          <p>Fora do seu horário (22:00 às 06:00) fica em silêncio. Dá para mudar em <b>Meus avisos</b>.</p>
+          <div class="pm-btns"><button type="button" class="dm-btn">Agora não</button><button type="button" class="dm-btn dm-primary">Quero receber</button></div>
+        </div>
+        <div class="pm-step">Passo 2 · diálogo do navegador (Chrome Android)</div>
+        <div class="br-dlg"><small>demandas.suaempresa.com.br</small><b>Permitir que o site envie notificações?</b><div class="br-b"><span>Bloquear</span><span>Permitir</span></div></div>
+        <div class="pm-off">Em <b>http://192.168.…</b> o cartão mostra: <b>"Avisos com o app fechado precisam de HTTPS. Com o app aberto, você já recebe som, vibração e banner."</b></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<div class="pp-leg">
+  <div class="dm-panel"><div class="dm-ph"><h3>O que muda em (a)</h3></div><div class="dm-note" style="font-size:13px">O banner já existe (<code>showAlert</code>). Novo: som curto (Web Audio, depois do primeiro toque), vibração no Android, título da aba "(1) 🚨 Nova!" piscando até a aba voltar, botão "Aceitar e iniciar" direto no banner, e o aviso vai para a pessoa escolhida em vez do setor todo.</div></div>
+  <div class="dm-panel"><div class="dm-ph"><h3>Limites da camada 1</h3></div><div class="dm-note" style="font-size:13px">Só com a página aberta. Aba escondida há mais de 5 min pode atrasar o aviso em até 1 min (Chrome). iPhone não vibra. Tela acesa (Wake Lock) não funciona em http nos celulares.</div></div>
+  <div class="dm-panel"><div class="dm-ph"><h3>Camada 2</h3></div><div class="dm-note" style="font-size:13px">Exige HTTPS (hospedagem, estudo 03), manifest, service worker em <code>/sw.js</code> e chaves VAPID. Avisos da mesma demanda se substituem (cabeçalho <code>Topic</code>).</div></div>
+</div>
+</div>
+</body>
+</html>

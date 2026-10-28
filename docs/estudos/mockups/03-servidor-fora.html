@@ -1,0 +1,148 @@
+<!doctype html>
+<!-- Mockup estático (estudo 03). Não faz parte do programa. Abre direto no navegador, sem servidor. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Servidor fora do ar</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#C9CFDC}
+#dmboard{display:block;min-height:100vh;overflow:visible;padding:0 0 40px}
+.mk-top{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.mk-top b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px}
+.mk-stage{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;justify-content:center;padding:24px 16px}
+.mk-cap{font:700 12px var(--dm-fb);color:var(--dm-muted);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px}
+.mk-phone{width:390px;max-width:100%;border:10px solid #111827;border-radius:42px;background:var(--dm-bg);overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.mk-phone .dm-scroll{padding:12px;overflow:visible}
+.mk-notch{height:26px;background:#111827;display:flex;justify-content:center}.mk-notch span{width:120px;height:18px;background:#000;border-radius:0 0 14px 14px}
+.mk-pc{width:min(1000px,100%);border:1px solid var(--dm-line);border-radius:14px;overflow:hidden;background:var(--dm-bg);box-shadow:0 20px 50px rgba(0,0,0,.2)}
+.mk-pcbar{display:flex;gap:6px;align-items:center;padding:8px 12px;background:var(--dm-surface2);border-bottom:1px solid var(--dm-line);font-size:12px;color:var(--dm-muted)}
+.mk-pcbar i{width:10px;height:10px;border-radius:50%;background:var(--dm-line);display:inline-block}
+.mk-pcbar code{margin-left:10px;background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:8px;padding:2px 10px}
+.mk-pc .dm-scroll{overflow:visible}
+.mk-notes{max-width:1420px;margin:0 auto;padding:0 16px}
+.mk-notes .dm-panel ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+
+/* faixa de conexão (nova): fica acima das abas, presa no topo da área rolável */
+.cx-off{position:sticky;top:0;z-index:15;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:12px;
+  border:1px solid var(--dm-s-pause);background:color-mix(in srgb,var(--dm-s-pause) 16%,var(--dm-surface));color:var(--dm-ink);font-size:13px;box-shadow:var(--dm-shadow)}
+.cx-off .cx-dot{width:10px;height:10px;border-radius:50%;background:var(--dm-s-pause);flex:0 0 auto;animation:dm-blink 1.2s infinite}
+.cx-off .cx-txt{flex:1 1 220px;min-width:0}
+.cx-off .cx-txt b{display:block}
+.cx-off .cx-txt small{color:var(--dm-muted);font-size:12px}
+.cx-off.cx-ok{border-color:var(--dm-s-prog);background:color-mix(in srgb,var(--dm-s-prog) 14%,var(--dm-surface))}
+.cx-off.cx-ok .cx-dot{background:var(--dm-s-prog);animation:none}
+/* modo só leitura: dados esmaecidos de leve, botões de escrita desligados */
+[data-offline] .dm-ocard,[data-offline] .dm-card{filter:saturate(.6)}
+.mk-ro{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--dm-muted);border:1px dashed var(--dm-line);border-radius:999px;padding:1px 8px}
+.mk-draft{margin:0 0 12px;padding:9px 12px;border-radius:12px;border:1px dashed var(--dm-s-new);background:color-mix(in srgb,var(--dm-s-new) 8%,var(--dm-surface));font-size:12.5px}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-top"><b>PROPOSTA · SERVIDOR FORA DO AR</b>O PC da central parou de responder: cada aparelho mostra a faixa, continua exibindo os últimos dados em modo só leitura e tenta reconectar sozinho.</div>
+
+  <div class="mk-stage">
+    <!-- ===== celular do operador ===== -->
+    <div>
+      <p class="mk-cap">Celular do operador · 390 px</p>
+      <div class="mk-phone">
+        <div class="mk-notch"><span></span></div>
+        <div class="dm-scroll" data-offline>
+          <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p></div>
+            <div class="dm-acts"><button type="button" class="dm-uchip" aria-label="Quem é você"><span class="dm-av" style="--dm-sc:#D97706">J</span></button>
+              <button type="button" class="dm-btn dm-bell" aria-label="Notificações" disabled>🔔</button></div></header>
+
+          <div class="cx-off" role="status" aria-live="polite">
+            <span class="cx-dot" aria-hidden="true"></span>
+            <span class="cx-txt"><b>Sem conexão com a central, tentando de novo em 5 s</b><small>Última atualização às 14:32 · os dados abaixo podem estar desatualizados</small></span>
+            <button type="button" class="dm-btn dm-sm dm-primary">Tentar agora</button>
+          </div>
+
+          <nav class="dm-tabs" aria-label="Seções"><button type="button" class="dm-tab" aria-pressed="true">📥 Recebidas<span class="dm-cnt">2</span></button><button type="button" class="dm-tab" aria-pressed="false">📤 Enviadas<span class="dm-cnt">1</span></button></nav>
+
+          <div class="dm-opwrap">
+            <div class="dm-ophead"><span class="dm-orb">🔥</span><div><h2>Olá, João Pereira</h2><div class="dm-opsub">Solda · matrícula 0412 · ter 28/10</div></div>
+              <div class="dm-opstats"><div><b>3</b>Na fila</div><div><b>1</b>Andamento</div><div><b>1</b>Pausadas</div><div><b>0</b>Atrasadas</div></div></div>
+
+            <div class="mk-draft">📝 <b>Rascunho guardado neste aparelho:</b> “Solda de 12 suportes do chassi”. Envie quando a conexão voltar.</div>
+
+            <div class="dm-ocard" data-st="prog">
+              <div class="dm-oh"><b>SOL-1043</b><span class="dm-pill" data-st="prog">Em andamento</span><span class="dm-pb" data-p="high">Alta</span><span class="dm-tg" data-k="wait">Minha</span><span class="dm-oty">📌 Demanda</span></div>
+              <h3>Soldar 8 suportes da base da prensa</h3>
+              <div class="dm-route"><span class="dm-abbr" style="--dm-sc:#6366F1">PCP</span>→<span class="dm-abbr" style="--dm-sc:#D97706">SLD</span><span>De Mariana Souza</span></div>
+              <div class="dm-meta-line"><span>📌 Ajuste de planejamento</span><span>⏱ Estipulado: 2h</span><span>📎 1</span></div>
+              <div class="dm-sla"><span style="width:46%"></span></div><div class="dm-slarow"><span>Faltam 1h 05min</span><span>Prazo hoje 15:40</span></div>
+              <div class="dm-obtns"><button type="button" class="dm-btn dm-big dm-pz" disabled>⏸ Pausar</button><button type="button" class="dm-btn dm-big dm-fin" disabled>✔ Concluir</button></div>
+              <div style="margin-top:8px"><span class="mk-ro">🔒 Só leitura até a conexão voltar</span></div>
+            </div>
+
+            <div class="dm-ocard" data-st="pause">
+              <div class="dm-oh"><b>SOL-1039</b><span class="dm-pill" data-st="pause">Pausada</span><span class="dm-pb" data-p="norm">Normal</span><span class="dm-oty">🔁 Entre setores</span></div>
+              <h3>Reforço na grade de proteção da linha 2</h3>
+              <div class="dm-route"><span class="dm-abbr" style="--dm-sc:#3B82F6">MON</span>→<span class="dm-abbr" style="--dm-sc:#D97706">SLD</span><span>De Carlos Lima</span></div>
+              <div class="dm-pinfo">⏸ <b>Aguardando material</b> · por João Pereira às 13:50</div>
+              <div class="dm-sla dm-warn"><span style="width:78%"></span></div><div class="dm-slarow"><span>Faltam 40 min</span><span>Prazo hoje 15:15</span></div>
+              <div class="dm-obtns"><button type="button" class="dm-btn dm-big dm-go" disabled>▶ Retomar</button><button type="button" class="dm-btn dm-big dm-fin" disabled>✔ Concluir</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PC do escritório ===== -->
+    <div style="flex:1 1 640px;max-width:1000px">
+      <p class="mk-cap">PC do escritório (outro computador, pela rede)</p>
+      <div class="mk-pc">
+        <div class="mk-pcbar"><i></i><i></i><i></i><code>http://192.168.0.20:8090</code></div>
+        <div class="dm-scroll" data-offline>
+          <div class="dm-wrap">
+            <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p><p class="dm-sub0">Acompanhe, priorize e analise as solicitações entre setores em tempo real.</p></div>
+              <div class="dm-acts"><span class="dm-clock">ter 28/10 · 14:36</span><button type="button" class="dm-uchip"><span class="dm-av" style="--dm-sc:#6C8BFF">E</span><span class="dm-t"><b>Escritório</b><small>Administrador</small></span></button>
+                <button type="button" class="dm-btn dm-bell" disabled>🔔<b>2</b></button><button type="button" class="dm-btn">◐ Tema</button><button type="button" class="dm-btn dm-primary" disabled>＋ Nova solicitação</button></div></header>
+
+            <div class="cx-off" role="status" aria-live="polite">
+              <span class="cx-dot" aria-hidden="true"></span>
+              <span class="cx-txt"><b>Sem conexão com a central, tentando de novo em 5 s</b><small>Última atualização às 14:32 (há 4 min). Você pode consultar; pedir, aceitar e concluir voltam quando a conexão voltar. Tentativa 6 · próximas a cada 10, 20 e 30 s.</small></span>
+              <button type="button" class="dm-btn dm-sm dm-primary">Tentar agora</button>
+            </div>
+
+            <nav class="dm-tabs"><button type="button" class="dm-tab" aria-pressed="false">Painel</button><button type="button" class="dm-tab" aria-pressed="true">Solicitações<span class="dm-cnt">9</span></button><button type="button" class="dm-tab" aria-pressed="false">Histórico</button><button type="button" class="dm-tab" aria-pressed="false">Cronoanálise</button><button type="button" class="dm-tab" aria-pressed="false">Administração</button></nav>
+
+            <div class="dm-board">
+              <div class="dm-col" data-st="new"><h3><span class="dm-dot"></span>Abertas<span class="dm-n">3</span></h3><div class="dm-list">
+                <button type="button" class="dm-card" data-st="new"><div class="dm-r1"><span>SOL-1048 · 📦 Material</span><span class="dm-pb" data-p="urg">Urgente</span></div><div class="dm-nm">Chapa 3 mm para o lote 220</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#3B82F6">MON</span>→<span class="dm-abbr" style="--dm-sc:#E4572E">COR</span><span class="dm-av dm-none">?</span><span>Sem responsável</span></div><div class="dm-sla"><span style="width:20%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="new">Aberta</span><span>Faltam 48 min</span></div></button>
+                <button type="button" class="dm-card" data-st="new"><div class="dm-r1"><span>SOL-1046 · 🛠️ Manutenção</span><span class="dm-pb" data-p="high">Alta</span></div><div class="dm-nm">Vazamento na cabine de pintura</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#EC4899">PIN</span>→<span class="dm-abbr" style="--dm-sc:#64748B">MAN</span><span class="dm-av dm-none">?</span><span>Sem responsável</span></div><div class="dm-sla"><span style="width:35%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="new">Aberta</span><span>Faltam 1h 20min</span></div></button>
+              </div></div>
+              <div class="dm-col" data-st="prog"><h3><span class="dm-dot"></span>Em andamento<span class="dm-n">3</span></h3><div class="dm-list">
+                <button type="button" class="dm-card" data-st="prog"><div class="dm-r1"><span>SOL-1043 · 📌 Demanda</span><span class="dm-pb" data-p="high">Alta</span></div><div class="dm-nm">Soldar 8 suportes da base da prensa</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#6366F1">PCP</span>→<span class="dm-abbr" style="--dm-sc:#D97706">SLD</span><span class="dm-av" style="--dm-sc:#D97706">J</span><span>João Pereira</span></div><div class="dm-sla"><span style="width:46%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="prog">Em andamento</span><span>Faltam 1h 05min</span></div></button>
+                <button type="button" class="dm-card" data-st="prog"><div class="dm-r1"><span>SOL-1041 · 📌 Demanda</span><span class="dm-pb" data-p="norm">Normal</span></div><div class="dm-nm">Inspeção dimensional do lote 218</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#3B82F6">MON</span>→<span class="dm-abbr" style="--dm-sc:#10B981">QUA</span><span class="dm-av" style="--dm-sc:#10B981">A</span><span>Ana Ribeiro</span></div><div class="dm-sla"><span style="width:60%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="prog">Em andamento</span><span>Faltam 50 min</span></div></button>
+              </div></div>
+              <div class="dm-col" data-st="pause"><h3><span class="dm-dot"></span>Pausadas<span class="dm-n">1</span></h3><div class="dm-list">
+                <button type="button" class="dm-card" data-st="pause"><div class="dm-r1"><span>SOL-1039 · 🔁 Entre setores</span><span class="dm-pb" data-p="norm">Normal</span></div><div class="dm-nm">Reforço na grade de proteção da linha 2</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#3B82F6">MON</span>→<span class="dm-abbr" style="--dm-sc:#D97706">SLD</span><span class="dm-av" style="--dm-sc:#D97706">J</span><span>João Pereira</span></div><div class="dm-sla dm-warn"><span style="width:78%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="pause">Pausada</span><span>Faltam 40 min</span></div></button>
+              </div></div>
+              <div class="dm-col" data-st="late"><h3><span class="dm-dot"></span>Atrasadas<span class="dm-n">1</span></h3><div class="dm-list">
+                <button type="button" class="dm-card" data-st="late"><div class="dm-r1"><span>SOL-1035 · 📦 Material</span><span class="dm-pb" data-p="high">Alta</span></div><div class="dm-nm">Embalar 40 caixas para o cliente Rodoterra</div><div class="dm-route"><span class="dm-abbr" style="--dm-sc:#6366F1">PCP</span>→<span class="dm-abbr" style="--dm-sc:#0D9488">EXP</span><span class="dm-av" style="--dm-sc:#0D9488">R</span><span>Rafael Costa</span></div><div class="dm-sla dm-bad"><span style="width:100%"></span></div><div class="dm-r2"><span class="dm-pill" data-st="late">Atrasada</span><span>Atrasada 25 min</span></div></button>
+              </div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="mk-cap" style="margin-top:22px">Quando volta (fica 4 s e some)</p>
+      <div class="cx-off cx-ok" role="status" style="position:static"><span class="cx-dot" aria-hidden="true"></span><span class="cx-txt"><b>Conexão restabelecida</b><small>Dados atualizados às 14:41. A central reiniciou às 14:39; ninguém precisou entrar de novo.</small></span></div>
+    </div>
+  </div>
+
+  <div class="mk-notes"><div class="dm-panel"><div class="dm-ph"><h3>Como se comporta</h3></div><ul>
+    <li>A faixa só aparece depois de 2 falhas seguidas do <code>/api/rev</code> (cerca de 6 s), para não piscar num soluço do Wi-Fi.</li>
+    <li>Espera crescente entre tentativas: 3, 5, 10, 20 e 30 s. “Tentar agora” tenta na hora e zera a espera.</li>
+    <li>Só leitura: os botões que gravam ficam desligados. A gaveta da solicitação abre normalmente para consulta.</li>
+    <li>O texto de “Nova solicitação”, pausa, conclusão e comentário fica guardado neste aparelho (sem o código da pessoa) e volta ao reabrir.</li>
+    <li>Ao voltar: atualiza tudo, mostra “Conexão restabelecida” e, se a central reiniciou, a pessoa continua identificada.</li>
+  </ul></div></div>
+</div>
+</body>
+</html>

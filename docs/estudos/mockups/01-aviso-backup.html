@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- MOCKUP ESTÁTICO (estudo 01 · Backup automático). Não faz parte do programa e não chama nenhuma API.
+     Painel do ADM com o aviso de backup velho. O JS no fim só alterna o tema e a variante "ADM pela rede". -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Aviso de backup no Painel</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+/* Só o que não existe no demandas.css. Sempre com as variáveis --dm-*. */
+html,body{margin:0;background:#0C1224}
+#dmboard{display:flex;min-height:100vh;height:auto;overflow:visible}
+.mk-faixa{background:var(--dm-s-pause);color:#fff;padding:9px 16px;font:600 13px var(--dm-fb);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.mk-faixa b{font:800 12px var(--dm-fh);letter-spacing:.08em;text-transform:uppercase;background:rgba(0,0,0,.18);padding:2px 8px;border-radius:6px}
+.mk-faixa .mk-bts{margin-left:auto;display:flex;gap:6px}
+#dmboard .dm-scroll{overflow:visible}
+#dmboard .dm-alerts{top:600px}   /* no mockup, mais abaixo para não cobrir a faixa; no programa fica no canto de cima */
+#dmboard .dm-alert,#dmboard .dm-tile.dm-intro,#dmboard .dm-tile.dm-hasLate{animation:none}
+/* aviso de sistema no Painel: mesmo desenho do .dm-al, com ícone e botões à direita */
+#dmboard .bk-av{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:11px 13px;box-shadow:var(--dm-shadow)}
+#dmboard .bk-av .bk-ico{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;flex:none;background:color-mix(in srgb,var(--dm-tc) 14%,var(--dm-surface))}
+#dmboard .bk-av .bk-txt{flex:1;min-width:240px}
+#dmboard .bk-av .dm-al-t{margin:2px 0 2px;font-size:14px}
+#dmboard .bk-av .dm-al-b{margin-top:0}
+#dmboard .mk-nota{font-size:12px;color:var(--dm-muted);margin:-4px 0 12px;padding-left:2px}
+#dmboard [data-so=rede]{display:none}
+#dmboard.mk-rede [data-so=rede]{display:inline-flex}
+#dmboard.mk-rede [data-so=pc]{display:none}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-faixa"><b>PROPOSTA · Aviso de backup</b><span>Painel do ADM avisando que o backup está velho porque o destino não foi encontrado.</span>
+    <span class="mk-bts"><button type="button" class="dm-btn dm-sm" id="mk-rede">Ver como ADM pela rede</button><button type="button" class="dm-btn dm-sm" id="mk-tema">◐ Tema</button></span></div>
+
+  <div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">
+    <header class="dm-top"><div><h1 class="dm-h1">Central de demandas</h1><p class="dm-bfn">Demandas entre setores</p><p class="dm-sub0">Escritório · 8 setores · 86 usuários ativos</p></div>
+      <div class="dm-acts"><span class="dm-clock">Qua 28/10 · 14:12</span>
+        <button type="button" class="dm-uchip" aria-label="Quem é você"><span class="dm-av" style="--dm-sc:#6C8BFF">E</span><span class="dm-t"><b>Escritório</b><small>Administrador</small></span></button>
+        <button type="button" class="dm-btn dm-bell" aria-label="Notificações">🔔<b>4</b></button>
+        <button type="button" class="dm-btn" aria-label="Alternar tema">◐ Tema</button>
+        <button type="button" class="dm-btn dm-primary dm-hdnew">＋ Nova solicitação</button></div></header>
+    <nav class="dm-tabs" aria-label="Seções">
+      <button type="button" class="dm-tab" aria-pressed="true">Painel</button>
+      <button type="button" class="dm-tab" aria-pressed="false">Solicitações<span class="dm-cnt">37</span></button>
+      <button type="button" class="dm-tab" aria-pressed="false">Histórico</button>
+      <button type="button" class="dm-tab" aria-pressed="false">Cronoanálise</button>
+      <button type="button" class="dm-tab" aria-pressed="false">Administração</button>
+    </nav>
+
+    <div id="dm-view">
+      <!-- NOVO: aviso de sistema, sempre no topo do Painel enquanto o backup estiver velho ou falhando -->
+      <div class="dm-al bk-av" data-k="late" role="alert">
+        <span class="bk-ico" aria-hidden="true">💾</span>
+        <div class="bk-txt">
+          <div class="dm-al-h"><b>Backup</b><span class="dm-tg" data-k="late">Último backup há 3 dias</span><span class="dm-tg" data-k="mut">3 tentativas falharam</span></div>
+          <div class="dm-al-t">Último backup há 3 dias: o destino (pen drive E:) não foi encontrado.</div>
+          <div class="dm-al-m"><span>Última cópia no pen drive: dom 25/10 12:00 · A cópia neste computador está em dia (hoje 12:00 ✓), mas não salva os dados se o PC quebrar.</span><span data-so="pc">· Conecte o pen drive ou escolha outro destino.</span><span data-so="rede">· Resolva no computador principal, em ⚙ Configurações.</span></div>
+        </div>
+        <div class="dm-al-b">
+          <button type="button" class="dm-btn dm-sm dm-primary" data-so="pc">💾 Fazer backup agora</button>
+          <button type="button" class="dm-btn dm-sm" data-so="pc">⚙ Abrir configurações</button>
+          <button type="button" class="dm-btn dm-sm" data-so="rede">Entendi</button>
+        </div>
+      </div>
+      <p class="mk-nota">Some sozinho quando sai uma cópia verificada. Aparece com mais de 26 h sem backup ou depois de uma falha. Operadores nunca veem. "Fazer backup agora" e "Abrir configurações" só existem no próprio PC. Pela rede o ADM vê só o aviso, sem caminho de pasta (use o botão da faixa de cima para ver).</p>
+
+      <div class="dm-kpis">
+        <button type="button" class="dm-kpi" data-st="new"><b>9</b><span>Abertas</span><small>Aguardando aceite</small></button>
+        <button type="button" class="dm-kpi" data-st="prog"><b>21</b><span>Em andamento</span><small>Sendo executadas</small></button>
+        <button type="button" class="dm-kpi" data-st="pause"><b>4</b><span>Pausadas</span><small>Com impedimento</small></button>
+        <button type="button" class="dm-kpi" data-st="late"><b>3</b><span>Atrasadas</span><small>Prazo estourado</small></button>
+        <button type="button" class="dm-kpi" data-st="late"><b>2</b><span>Urgentes</span><small>Ainda em aberto</small></button>
+        <button type="button" class="dm-kpi" data-st="done"><b>17</b><span>Concluídas hoje</span><small>Finalizadas</small></button>
+      </div>
+
+      <div class="dm-panel"><div class="dm-ph"><h3>Mapa de setores</h3><span class="dm-s">Solicitações em aberto por setor responsável. Clique para filtrar.</span></div>
+        <div class="dm-mapbar"><div class="dm-mapsum"><span><b>8</b> setores</span><span><b>37</b> em aberto</span><span class="dm-ml"><b>2</b> com atraso</span><span class="dm-mo"><b>5</b> em dia</span></div><span class="dm-spacer"></span><div class="dm-seg" role="group" aria-label="Ordem do mapa"><button type="button" aria-pressed="true">Mais críticos</button><button type="button" aria-pressed="false">A–Z</button></div></div>
+        <div class="dm-map">
+          <button type="button" class="dm-tile dm-hasLate" style="--dm-sc:#E4572E"><div class="dm-thead"><span class="dm-tico">🔧</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#E4572E">MAN</span><em>Manutenção</em></span></div><div class="dm-tnum"><b>9</b>em aberto</div><div class="dm-tbar"><span style="width:100%"></span></div><div class="dm-ttags"><span class="dm-tg" data-k="late">2 atras.</span><span class="dm-tg" data-k="urg">1 urg.</span></div></button>
+          <button type="button" class="dm-tile dm-hasLate" style="--dm-sc:#D97706"><div class="dm-thead"><span class="dm-tico">🔩</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#D97706">SOL</span><em>Solda</em></span></div><div class="dm-tnum"><b>7</b>em aberto</div><div class="dm-tbar"><span style="width:77.8%"></span></div><div class="dm-ttags"><span class="dm-tg" data-k="late">1 atras.</span><span class="dm-tg" data-k="pause">1 paus.</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#EC4899"><div class="dm-thead"><span class="dm-tico">🎨</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#EC4899">PIN</span><em>Pintura</em></span></div><div class="dm-tnum"><b>6</b>em aberto</div><div class="dm-tbar"><span style="width:66.7%"></span></div><div class="dm-ttags"><span class="dm-tg" data-k="urg">1 urg.</span><span class="dm-tg" data-k="pause">2 paus.</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#3B82F6"><div class="dm-thead"><span class="dm-tico">✂️</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#3B82F6">COR</span><em>Corte</em></span></div><div class="dm-tnum"><b>5</b>em aberto</div><div class="dm-tbar"><span style="width:55.6%"></span></div><div class="dm-ttags"><span class="dm-ok0">Em dia</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#10B981"><div class="dm-thead"><span class="dm-tico">🛠️</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#10B981">MON</span><em>Montagem</em></span></div><div class="dm-tnum"><b>4</b>em aberto</div><div class="dm-tbar"><span style="width:44.4%"></span></div><div class="dm-ttags"><span class="dm-tg" data-k="pause">1 paus.</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#6366F1"><div class="dm-thead"><span class="dm-tico">🗂️</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#6366F1">PCP</span><em>PCP</em></span></div><div class="dm-tnum"><b>3</b>em aberto</div><div class="dm-tbar"><span style="width:33.3%"></span></div><div class="dm-ttags"><span class="dm-ok0">Em dia</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#0D9488"><div class="dm-thead"><span class="dm-tico">✅</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#0D9488">QUA</span><em>Qualidade</em></span></div><div class="dm-tnum"><b>2</b>em aberto</div><div class="dm-tbar"><span style="width:22.2%"></span></div><div class="dm-ttags"><span class="dm-ok0">Em dia</span></div></button>
+          <button type="button" class="dm-tile" style="--dm-sc:#64748B"><div class="dm-thead"><span class="dm-tico">🚚</span><span class="dm-tname"><span class="dm-abbr" style="--dm-sc:#64748B">EXP</span><em>Expedição</em></span></div><div class="dm-tnum"><b>1</b>em aberto</div><div class="dm-tbar"><span style="width:11.1%"></span></div><div class="dm-ttags"><span class="dm-ok0">Em dia</span></div></button>
+        </div></div>
+
+      <div class="dm-grid2">
+        <div class="dm-panel"><div class="dm-ph"><h3>🚨 Atenção agora</h3><span class="dm-s">5 itens exigem atenção</span></div>
+          <div class="dm-al" data-k="late"><div class="dm-al-h"><b>SOL-5218</b><span class="dm-tg" data-k="late">Atrasada há 2h 10min</span><span class="dm-tg" data-k="urg">Urgente</span></div>
+            <div class="dm-al-t">Trocar rolamento da prensa 3</div>
+            <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#10B981">MON</span>→<span class="dm-abbr" style="--dm-sc:#E4572E">MAN</span><span>Carlos Eduardo Souza</span><span>· Quebra de máquina</span></div>
+            <div class="dm-al-b"><button type="button" class="dm-btn dm-sm">Ver</button><button type="button" class="dm-btn dm-sm">🔔 Cobrar</button><button type="button" class="dm-btn dm-sm">↪ Reatribuir</button></div></div>
+          <div class="dm-al" data-k="late"><div class="dm-al-h"><b>SOL-5224</b><span class="dm-tg" data-k="late">Atrasada há 45min</span></div>
+            <div class="dm-al-t">Soldar suporte do quadro, lote 118</div>
+            <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#6366F1">PCP</span>→<span class="dm-abbr" style="--dm-sc:#D97706">SOL</span><span>João Pedro Lima</span><span>· Ajuste de planejamento</span></div>
+            <div class="dm-al-b"><button type="button" class="dm-btn dm-sm">Ver</button><button type="button" class="dm-btn dm-sm">🔔 Cobrar</button><button type="button" class="dm-btn dm-sm">↪ Reatribuir</button></div></div>
+          <div class="dm-al" data-k="pause"><div class="dm-al-h"><b>SOL-5229</b><span class="dm-tg" data-k="pause">Pausada há 1h 05min</span></div>
+            <div class="dm-al-t">Pintar 40 tampas na cor RAL 7035</div>
+            <div class="dm-al-m"><span class="dm-abbr" style="--dm-sc:#10B981">MON</span>→<span class="dm-abbr" style="--dm-sc:#EC4899">PIN</span><span>Ana Paula Ferreira</span><span>· <b>Motivo:</b> Aguardando material (Ana Paula Ferreira)</span></div>
+            <div class="dm-al-b"><button type="button" class="dm-btn dm-sm">Ver</button><button type="button" class="dm-btn dm-sm">🔔 Cobrar</button><button type="button" class="dm-btn dm-sm">↪ Reatribuir</button></div></div>
+        </div>
+        <div class="dm-panel"><div class="dm-ph"><h3>Atividade ao vivo</h3><span class="dm-s">Últimos eventos</span></div>
+          <ul class="dm-feed">
+            <li class="dm-ok"><time>14:08</time><button type="button">SOL-5231 concluída por Marcos Vinícius</button></li>
+            <li><time>14:02</time><button type="button">SOL-5235 criada por Fernanda Oliveira (PCP → COR)</button></li>
+            <li class="dm-warn"><time>13:58</time><button type="button">SOL-5224 está atrasada</button></li>
+            <li><time>13:41</time><button type="button">SOL-5229 pausada: Aguardando material</button></li>
+            <li><time>13:30</time><button type="button">SOL-5233 aceita por Rafael Santos</button></li>
+            <li class="dm-ok"><time>13:12</time><button type="button">SOL-5220 concluída por Juliana Costa</button></li>
+          </ul></div>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- NOVO: o mesmo aviso como alerta flutuante, uma vez por dia ao abrir a tela (no estilo do showAlert) -->
+  <div class="dm-alerts" aria-live="assertive">
+    <div class="dm-alert" data-k="late" role="alert">
+      <h4><span>💾 Backup atrasado</span><button type="button" class="dm-btn dm-sm" aria-label="Fechar alerta">✕</button></h4>
+      <dl class="dm-kv"><dt>Último backup</dt><dd>No pen drive: há 3 dias (dom 25/10 12:00)</dd><dt>Problema</dt><dd>Destino não encontrado: pen drive E:</dd><dt>Tentativas</dt><dd>26/10, 27/10 e 28/10 às 12:00 falharam</dd><dt>Neste PC</dt><dd>Hoje 12:00 · verificada ✓ (não protege se o PC quebrar)</dd></dl>
+      <div class="dm-acts2"><button type="button" class="dm-btn dm-sm dm-primary" data-so="pc">⚙ Abrir configurações</button><button type="button" class="dm-btn dm-sm">Dispensar</button></div>
+    </div>
+  </div>
+</div>
+<script>
+/* Só para o mockup. */
+(function(){
+  var b = document.getElementById('dmboard');
+  document.getElementById('mk-tema').onclick = function(){b.dataset.theme = b.dataset.theme === 'dark' ? 'light' : 'dark'};
+  var r = document.getElementById('mk-rede');
+  r.onclick = function(){var on = b.classList.toggle('mk-rede'); r.textContent = on ? 'Ver como ADM no próprio PC' : 'Ver como ADM pela rede'};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<!-- Mockup estático (estudo 03). Não faz parte do programa. Abre direto no navegador, sem servidor e sem JS. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Configurações › Servidor</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{display:block;min-height:100vh;overflow:visible}
+.mk-top{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.mk-top b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px}
+.mk-back{padding:28px 16px;background:rgba(8,12,26,.5);min-height:calc(100vh - 44px);display:grid;place-items:start center}
+
+/* ===== diálogo comum de Configurações (padrão dos estudos 01 a 05) ===== */
+.cfg{width:min(760px,100%);background:var(--dm-surface);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr) auto}
+.cfg-head{display:flex;align-items:flex-start;gap:10px;padding:18px 20px 14px;border-bottom:1px solid var(--dm-line)}
+.cfg-head h2{margin:0;font:700 20px var(--dm-fh)}
+.cfg-head p{margin:2px 0 0;color:var(--dm-muted);font-size:12.5px}
+.cfg-main{display:grid;grid-template-columns:170px minmax(0,1fr);min-height:520px}
+.cfg-nav{display:flex;flex-direction:column;gap:2px;padding:12px 8px;background:var(--dm-surface2);border-right:1px solid var(--dm-line)}
+#dmboard .cfg-nav button{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;font-weight:600;color:var(--dm-muted);text-align:left}
+#dmboard .cfg-nav button:hover{background:var(--dm-surface);color:var(--dm-ink)}
+#dmboard .cfg-nav button[aria-current=page]{background:var(--dm-surface);color:var(--dm-ink);box-shadow:var(--dm-shadow);border-left:3px solid var(--dm-brand)}
+.cfg-body{padding:16px 20px;overflow:auto;max-height:70vh}
+.cfg-sec{margin-bottom:18px}
+.cfg-sec>h3{margin:0 0 8px;font:700 15px var(--dm-fh);display:flex;gap:8px;align-items:center}
+.cfg-foot{display:flex;justify-content:flex-end;gap:7px;padding:12px 20px;border-top:1px solid var(--dm-line)}
+
+/* ===== seção Servidor ===== */
+.sv-ok{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:12px;border:1px solid var(--dm-s-prog);background:color-mix(in srgb,var(--dm-s-prog) 12%,transparent);font-size:13px;margin-bottom:12px}
+.sv-ok i{width:10px;height:10px;border-radius:50%;background:var(--dm-s-prog);flex:0 0 auto;box-shadow:0 0 0 4px color-mix(in srgb,var(--dm-s-prog) 25%,transparent)}
+.sv-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.sv-tile{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:12px;padding:9px 11px;min-width:0}
+.sv-tile span{display:block;font-size:11.5px;color:var(--dm-muted);font-weight:700}
+.sv-tile b{display:block;font:800 19px/1.15 var(--dm-fh);margin:2px 0}
+.sv-tile small{display:block;font-size:11.5px;color:var(--dm-muted);overflow-wrap:anywhere}
+.sv-tile[data-k=warn]{border-color:var(--dm-s-pause)}
+.sv-bar{height:6px;border-radius:6px;background:var(--dm-surface);border:1px solid var(--dm-line);overflow:hidden;margin-top:6px}
+.sv-bar span{display:block;height:100%;background:var(--dm-s-new)}
+.sv-sw{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--dm-line);border-radius:12px}
+.sv-sw div{flex:1;min-width:0}.sv-sw small{display:block;color:var(--dm-muted);font-size:12px}
+.sv-tog{position:relative;width:44px;height:24px;border-radius:12px;background:var(--dm-s-prog);flex:0 0 auto}
+.sv-tog::after{content:"";position:absolute;top:3px;left:23px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+#dmboard .sv-modes{display:grid;gap:6px;margin:8px 0 0}
+#dmboard .sv-modes label{display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:1px solid var(--dm-line);border-radius:12px;font-size:13px;cursor:pointer}
+#dmboard .sv-modes label:has(input:checked){border-color:var(--dm-brand);background:color-mix(in srgb,var(--dm-brand) 7%,transparent)}
+#dmboard .sv-modes small{display:block;color:var(--dm-muted);font-size:12px}
+.sv-steps{margin:0;padding-left:20px;font-size:13px;display:grid;gap:5px}
+.sv-steps code,.sv-addr code{background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:6px;padding:1px 6px;font-size:12px}
+.sv-addr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:13px}
+.sv-addr span{color:var(--dm-muted);font-size:12px}
+.sv-log{font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--dm-surface2);border:1px solid var(--dm-line);border-radius:10px;padding:8px 10px;color:var(--dm-muted);white-space:pre-wrap;margin:6px 0 0}
+@media (max-width:640px){.cfg-main{grid-template-columns:1fr}.cfg-nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}.sv-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+  <div class="mk-top"><b>PROPOSTA · CONFIGURAÇÕES › SERVIDOR</b>Saúde do PC da central, início automático com o Windows, roteiro do PC reserva e os endereços para os aparelhos.</div>
+  <div class="mk-back">
+    <div class="cfg" role="dialog" aria-modal="true" aria-labelledby="cfg-t">
+      <div class="cfg-head"><div><h2 id="cfg-t">⚙ Configurações</h2><p>Só neste computador</p></div><span class="dm-spacer"></span><button type="button" class="dm-btn dm-sm" aria-label="Fechar">✕</button></div>
+      <div class="cfg-main">
+        <nav class="cfg-nav" aria-label="Seções das configurações">
+          <button type="button">🌐 Rede</button>
+          <button type="button">💾 Backup</button>
+          <button type="button">✉️ E-mail</button>
+          <button type="button">🔔 Avisos</button>
+          <button type="button" aria-current="page">🖥️ Servidor</button>
+        </nav>
+
+        <div class="cfg-body">
+          <!-- saúde -->
+          <section class="cfg-sec">
+            <h3>Saúde</h3>
+            <div class="sv-ok"><i aria-hidden="true"></i><span><b>Funcionando.</b> 7 aparelhos com sessão aberta pela rede · última gravação às 14:31.</span></div>
+            <div class="sv-grid">
+              <div class="sv-tile"><span>Ligado há</span><b>1 d 6 h</b><small>desde seg 27/10 às 08:02 · 2 reinícios automáticos esta semana</small></div>
+              <div class="sv-tile"><span>Versão</span><b>1.0.0</b><small>Python 3.12.4 · Windows 11 Pro</small></div>
+              <div class="sv-tile"><span>Último backup</span><b>hoje 06:30</b><small>D:\Backup Central · 8 cópias guardadas</small></div>
+              <div class="sv-tile"><span>Espaço em disco (C:)</span><b>182 GB livres</b><small>de 475 GB</small><div class="sv-bar"><span style="width:62%"></span></div></div>
+              <div class="sv-tile"><span>Tamanho dos dados</span><b>52,5 MB</b><small>demandas 2,4 MB · arquivo morto 9,1 MB · anexos 41 MB</small></div>
+              <div class="sv-tile"><span>Anexos</span><b>41 de 300 MB</b><small>14% da cota</small><div class="sv-bar"><span style="width:14%"></span></div></div>
+            </div>
+            <details style="margin-top:8px"><summary class="dm-note" style="cursor:pointer;display:list-item">Reinícios recentes (data/servidor.log)</summary>
+<pre class="sv-log">27/10 08:02  ligado com o Windows (tarefa agendada)
+26/10 22:15  parou (código 1) · religado em 5 s
+24/10 07:58  ligado com o Windows (tarefa agendada)</pre></details>
+          </section>
+
+          <!-- iniciar com o Windows -->
+          <section class="cfg-sec">
+            <h3>Iniciar com o Windows</h3>
+            <div class="sv-sw"><div><b>Ligar a Central sozinha quando o computador ligar</b><small>Também religa em 5 s se o programa parar. Não precisa mais deixar a janela preta aberta.</small></div><span class="sv-tog" role="switch" aria-checked="true" aria-label="Iniciar com o Windows"></span></div>
+            <div class="sv-modes" role="radiogroup" aria-label="Como iniciar">
+              <label><input type="radio" name="modo" checked><span><b>Antes de alguém entrar no Windows</b> (recomendado) · <span class="dm-pill" data-st="prog">Instalado</span><small>Tarefa agendada “Central de demandas”, criada pelo <code>instalar-inicio.bat</code> (pede administrador uma vez). Volta sozinha depois de queda de energia e de atualização do Windows.</small></span></label>
+              <label><input type="radio" name="modo"><span><b>Quando alguém entrar no Windows</b><small>Atalho na pasta Inicializar. Não precisa de administrador, mas só liga depois do login no PC.</small></span></label>
+            </div>
+            <div class="dm-note">Confira também: <b>suspensão desligada</b> nas opções de energia e, na BIOS, <b>ligar ao voltar a energia</b>. Um computador que “dorme” desliga a Central para todos.</div>
+          </section>
+
+          <!-- PC reserva -->
+          <section class="cfg-sec">
+            <h3>PC reserva</h3>
+            <p class="dm-note" style="margin-top:0">Se este computador quebrar, outro assume em 10 a 20 minutos. Perde-se só o que foi feito depois do último backup.</p>
+            <ol class="sv-steps">
+              <li>No PC reserva, instale o Python 3.10 ou mais novo e copie a pasta do programa.</li>
+              <li>Copie a pasta do último backup (<code>D:\Backup Central\2026-10-28_0630</code>) para <code>data\</code> do PC reserva.</li>
+              <li>Dê ao PC reserva o endereço <code>192.168.0.20</code> (no roteador ou nas configurações de rede). Assim os celulares e tablets continuam funcionando, sem digitar o PIN de novo.</li>
+              <li>Rode <code>instalar-inicio.bat</code> como administrador e reinicie o PC reserva.</li>
+              <li>Abra <code>http://127.0.0.1:8090</code> e confira aqui: “Último backup” e as solicitações de hoje.</li>
+            </ol>
+            <div class="dm-row" style="margin-top:8px"><button type="button" class="dm-btn dm-sm">📄 Imprimir este roteiro</button><span class="dm-note" style="margin:0">Último teste de troca: nunca feito</span></div>
+          </section>
+
+          <!-- endereços -->
+          <section class="cfg-sec">
+            <h3>Endereços</h3>
+            <div class="sv-addr">
+              <span>Neste PC</span><code>http://127.0.0.1:8090</code><span></span>
+              <span>Pela rede</span><code>http://192.168.0.20:8090</code><span class="dm-pill" data-st="prog">IP fixo</span>
+              <span>Nome do PC</span><code>ESCRITORIO-01</code><span></span>
+              <span>Porta</span><code>8090</code><span></span>
+            </div>
+            <div class="dm-note">Se o endereço de rede mudar, os aparelhos param de achar a Central. Peça a quem cuida do roteador para reservar este IP para este computador.</div>
+          </section>
+        </div>
+      </div>
+      <div class="cfg-foot"><button type="button" class="dm-btn">Fechar</button></div>
+    </div>
+  </div>
+</div>
+<script src="cfg-nav.js"></script>
+</body>
+</html>

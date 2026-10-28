@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- Mockup estático (estudo 02 · Avisos). Não é o programa: só HTML e CSS para o dono aprovar. Abre direto no navegador. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Meus avisos</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#D9DEEA}
+#dmboard{min-height:100vh;overflow:visible}
+.pp-faixa{background:var(--dm-track);color:#E8EDFF;padding:12px 18px;font-size:13px}
+.pp-faixa b{font:800 13px var(--dm-fh);letter-spacing:.08em;margin-right:8px;color:#3DDBA9}
+.pp-row{display:flex;flex-wrap:wrap;gap:28px;justify-content:center;align-items:flex-start;padding:24px 16px 40px}
+.ph{width:390px;max-width:100%;border-radius:44px;background:#0B0F1C;padding:12px;box-shadow:0 30px 60px -20px rgba(12,18,36,.55)}
+.ph-scr{border-radius:34px;overflow:hidden;background:var(--dm-bg)}
+.ph-st{display:flex;justify-content:space-between;padding:10px 24px 4px;font:700 13px var(--dm-fb);color:var(--dm-ink)}
+.ph-body{padding:8px 12px 22px}
+.av-head{display:flex;gap:10px;align-items:center;margin:4px 0 12px}
+.av-head h2{margin:0;font:800 20px/1.1 var(--dm-fh)}
+.av-head small{display:block;color:var(--dm-muted);font-size:12px}
+.av-sec{background:var(--dm-surface);border:1px solid var(--dm-line);border-radius:16px;margin-bottom:10px;box-shadow:var(--dm-shadow);overflow:hidden}
+.av-sec h3{margin:0;padding:11px 14px 4px;font:700 14px var(--dm-fh)}
+.av-sec .dm-note{padding:0 14px;margin:0 0 6px}
+.av-li{display:flex;gap:10px;align-items:center;padding:10px 14px;border-top:1px solid var(--dm-line);font-size:13.5px}
+.av-li:first-of-type{border-top:0}
+.av-li .av-t{flex:1;min-width:0}
+.av-li .av-t small{display:block;color:var(--dm-muted);font-size:11.5px;line-height:1.3}
+.av-li .av-i{width:28px;text-align:center;font-size:17px}
+/* interruptor */
+.av-sw{position:relative;width:44px;height:26px;border-radius:13px;background:var(--dm-line);flex:0 0 auto}
+.av-sw::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.av-sw[aria-checked=true]{background:var(--dm-s-prog)}
+.av-sw[aria-checked=true]::after{left:21px}
+.av-sw[aria-disabled=true]{opacity:.45}
+.av-st{display:grid;gap:8px;padding:10px 14px 12px}
+.av-stl{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:9px 11px;font-size:13px;border:1px solid var(--dm-line)}
+.av-stl b{display:block}
+.av-stl small{color:var(--dm-muted);font-size:11.5px;display:block;line-height:1.35}
+.av-stl.av-ok{border-color:color-mix(in srgb,var(--dm-s-prog) 45%,var(--dm-line));background:color-mix(in srgb,var(--dm-s-prog) 8%,var(--dm-surface))}
+.av-stl.av-no{border-style:dashed;border-color:var(--dm-s-pause);background:color-mix(in srgb,var(--dm-s-pause) 8%,var(--dm-surface))}
+.av-dot{width:10px;height:10px;border-radius:50%;margin-top:4px;flex:0 0 auto;background:var(--dm-s-prog)}
+.av-no .av-dot{background:var(--dm-s-pause)}
+.av-hr{display:flex;gap:8px;align-items:center;padding:4px 14px 12px;flex-wrap:wrap}
+.av-hr input{width:92px}
+.av-where{display:flex;gap:6px;padding:0 14px 12px;flex-wrap:wrap}
+.av-where .dm-tg{font-size:11px}
+.av-foot{display:flex;gap:8px;margin-top:6px}
+.av-foot .dm-btn{flex:1;min-height:44px}
+.pp-side{width:340px;max-width:100%;display:grid;gap:12px}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="pp-faixa"><b>PROPOSTA · MEUS AVISOS</b>Tela de preferências do operador no celular: o que avisa, como avisa e quando fica em silêncio. Abre pelo chip com o nome da pessoa ou pela gaveta do sino.</div>
+
+<div class="pp-row">
+<div class="ph"><div class="ph-scr">
+  <div class="ph-st"><span>10:45</span><span>📶 🔋 77%</span></div>
+  <div class="ph-body">
+    <div class="av-head"><button type="button" class="dm-btn dm-sm" aria-label="Voltar">←</button><div><h2>Meus avisos</h2><small>Rafael Souza · Corte</small></div></div>
+
+    <div class="av-sec">
+      <h3>Neste aparelho</h3>
+      <div class="av-st">
+        <div class="av-stl av-ok"><span class="av-dot"></span><div><b>Avisos com o app aberto: ativos</b><small>Banner, som, vibração e contador na aba.</small></div></div>
+        <div class="av-stl av-no"><span class="av-dot"></span><div><b>Avisos com o app fechado: disponível só com HTTPS</b><small>Este endereço é http://192.168.0.20:8090. Quando a central tiver HTTPS, aparece aqui o botão "Ativar avisos com o app fechado".</small></div></div>
+      </div>
+    </div>
+
+    <div class="av-sec">
+      <h3>O que me avisa</h3>
+      <div class="dm-note">Vale em qualquer aparelho em que você entrar.</div>
+      <div class="av-li"><span class="av-i">📥</span><span class="av-t">Demanda nova para mim<small>Quando alguém escolhe você como responsável</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">🗂️</span><span class="av-t">Demanda nova na fila do Corte<small>Sem responsável: qualquer um do setor pode pegar</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">▶</span><span class="av-t">O que eu pedi foi aceito<small>Demandas que você enviou</small></span><span class="av-sw" role="switch" aria-checked="false"></span></div>
+      <div class="av-li"><span class="av-i">⏸</span><span class="av-t">O que eu pedi foi pausado</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">✅</span><span class="av-t">O que eu pedi foi concluído</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">🔔</span><span class="av-t">Cobrança<small>Alguém cobrou andamento de uma demanda sua</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">⏰</span><span class="av-t">Prazo estourado</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">💬</span><span class="av-t">Comentário do outro lado</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">✕</span><span class="av-t">Demanda cancelada</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+    </div>
+
+    <div class="av-sec">
+      <h3>Como me avisa</h3>
+      <div class="dm-note">Só neste aparelho: o tablet do chão pode tocar alto e o seu celular não.</div>
+      <div class="av-li"><span class="av-i">🔊</span><span class="av-t">Som<small>Toca depois do primeiro toque na tela (regra do navegador)</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li" style="border-top:0;padding-top:0"><span class="av-i"></span><span class="av-t"><select aria-label="Tipo de som"><option>Curto (bipe duplo)</option><option>Sino</option><option>Alarme (só urgentes)</option></select></span><button type="button" class="dm-btn dm-sm">▶ Testar</button></div>
+      <div class="av-li"><span class="av-i">📳</span><span class="av-t">Vibração<small>Android. iPhone não vibra pelo navegador.</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-li"><span class="av-i">💡</span><span class="av-t">Manter a tela acesa<small>Disponível só com HTTPS ou no computador principal</small></span><span class="av-sw" role="switch" aria-checked="false" aria-disabled="true"></span></div>
+      <div class="av-li"><span class="av-i">🧺</span><span class="av-t">Juntar avisos da mesma demanda<small>Dentro de 10 min, toca uma vez só</small></span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+    </div>
+
+    <div class="av-sec">
+      <h3>Horário de silêncio</h3>
+      <div class="dm-note">Fora do seu turno nada toca nem vibra. O sino continua contando.</div>
+      <div class="av-li"><span class="av-i">🌙</span><span class="av-t">Silêncio ligado</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+      <div class="av-hr"><span class="dm-lbl">das</span><input type="time" value="22:00" aria-label="Início do silêncio"><span class="dm-lbl">às</span><input type="time" value="06:00" aria-label="Fim do silêncio"></div>
+      <div class="av-where"><span class="dm-tg" data-k="mut">Turno A 06–14</span><span class="dm-tg" data-k="mut">Turno B 14–22</span><span class="dm-tg" data-k="mut">Turno C 22–06</span><span class="dm-tg" data-k="wait">Personalizado ✓</span></div>
+      <div class="av-li"><span class="av-i">🚨</span><span class="av-t">Urgente toca mesmo no silêncio</span><span class="av-sw" role="switch" aria-checked="true"></span></div>
+    </div>
+
+    <div class="av-foot"><button type="button" class="dm-btn">Voltar ao padrão</button><button type="button" class="dm-btn dm-primary">Salvar</button></div>
+  </div>
+</div></div>
+
+<div class="pp-side">
+  <div class="dm-panel"><div class="dm-ph"><h3>Onde cada escolha fica</h3></div>
+    <div class="dm-note" style="font-size:13px"><b>No servidor</b> (<code>data/avisos.json</code>): eventos e horário de silêncio. Valem em qualquer aparelho e o push da camada 2 filtra por eles.<br><br><b>No navegador</b> (<code>localStorage</code>): som, vibração, tela acesa. Cada aparelho tem o seu.</div></div>
+  <div class="dm-panel"><div class="dm-ph"><h3>Padrão da central</h3></div>
+    <div class="dm-note" style="font-size:13px">Quem nunca abriu esta tela recebe o padrão definido no PC principal (⚙ Configurações · Avisos). Só o que a pessoa muda fica gravado para ela. "Voltar ao padrão" apaga as diferenças.</div></div>
+  <div class="dm-panel"><div class="dm-ph"><h3>Turnos</h3></div>
+    <div class="dm-note" style="font-size:13px">Hoje o programa não tem turno. Os botões de turno só preenchem o horário de silêncio. Se o estudo 05 criar turnos de verdade, esta escolha passa a apontar para eles.</div></div>
+</div>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,155 @@
+<!doctype html>
+<!-- Mockup estático (estudo 04 · E-mail): seção "E-mail" do diálogo ⚙ Configurações, que substitui o "⚙ Rede".
+     Só aparece no próprio computador (papel "maquina"). Nenhum dado é real e nada é enviado.
+     Classes .cfg, .cfg-nav, .cfg-body e .cfg-sec seguem o padrão comum dos estudos 01-05. -->
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta · Configurações · E-mail</title>
+<link rel="stylesheet" href="../../../demandas/demandas-fontes.css">
+<link rel="stylesheet" href="../../../demandas/demandas.css">
+<style>
+body{margin:0;background:#0C1224}
+#dmboard{min-height:100vh}
+.mk-faixa{background:var(--dm-brand);color:var(--dm-brand-ink);padding:10px 16px;font:600 13px var(--dm-fb)}
+.mk-faixa b{font-family:var(--dm-fh);letter-spacing:.04em}
+.mk-fundo{display:grid;place-items:start center;padding:24px 16px;background:rgba(8,12,26,.5);min-height:calc(100vh - 40px)}
+/* diálogo comum */
+.cfg{width:min(760px,100%);background:var(--dm-surface);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);display:grid;grid-template-columns:170px 1fr;overflow:hidden}
+.cfg-head{grid-column:1/-1;display:flex;align-items:flex-start;gap:10px;padding:16px 18px 12px;border-bottom:1px solid var(--dm-line)}
+.cfg-head h2{margin:0;font:700 20px var(--dm-fh)}
+.cfg-head p{margin:2px 0 0;color:var(--dm-muted);font-size:12.5px}
+.cfg-head .dm-btn{margin-left:auto}
+.cfg-nav{display:flex;flex-direction:column;gap:2px;padding:12px 8px;background:var(--dm-surface2);border-right:1px solid var(--dm-line)}
+.cfg-nav button{text-align:left;padding:8px 10px;border-radius:10px;font-weight:600;color:var(--dm-muted);display:flex;gap:8px;align-items:center}
+.cfg-nav button[aria-current=true]{background:var(--dm-surface);color:var(--dm-ink);box-shadow:var(--dm-shadow)}
+.cfg-nav .cfg-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--dm-s-late)}
+.cfg-body{padding:16px 18px;max-height:calc(100vh - 160px);overflow:auto;min-width:0}
+.cfg-sec{margin-bottom:18px}
+.cfg-sec>h3{font:700 14.5px var(--dm-fh);margin:0 0 8px;display:flex;gap:8px;align-items:center}
+.cfg-sec>h3 small{font:500 12px var(--dm-fb);color:var(--dm-muted)}
+.cfg-on{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--dm-line);border-radius:12px;margin-bottom:14px}
+.cfg-on b{display:block}
+.cfg-on small{color:var(--dm-muted)}
+.cfg-sw{position:relative;width:44px;height:24px;border-radius:12px;background:var(--dm-s-prog);flex:0 0 auto}
+.cfg-sw::after{content:"";position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.cfg-g3{display:grid;grid-template-columns:2fr 90px 1.3fr;gap:10px}
+.cfg-chks{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.cfg-chks label{display:flex;gap:8px;align-items:center;font-size:13px}
+.cfg-chks label small{color:var(--dm-muted)}
+.cfg-saved{font-size:11.5px;color:var(--dm-s-prog);font-weight:600}
+.cfg-test{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cfg-test input{flex:1;min-width:200px}
+.cfg-res{margin-top:8px;padding:8px 10px;border-radius:10px;font-size:12.5px;background:color-mix(in srgb,var(--dm-s-prog) 12%,transparent);color:var(--dm-ink)}
+.cfg-res b{color:var(--dm-s-prog)}
+.cfg-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.cfg-kpis .dm-kpi{padding:8px 10px}
+.cfg-kpis .dm-kpi b{display:block;font:800 22px var(--dm-fh)}
+.cfg-kpis .dm-kpi span{font-size:12px;color:var(--dm-muted)}
+.cfg-log{border:1px solid var(--dm-line);border-radius:12px;overflow:hidden}
+.cfg-log table{width:100%;border-collapse:collapse;font-size:12.5px}
+.cfg-log th{text-align:left;font-size:11.5px;color:var(--dm-muted);font-weight:700;background:var(--dm-surface2);padding:6px 8px}
+.cfg-log td{padding:7px 8px;border-top:1px solid var(--dm-line);vertical-align:top}
+.cfg-log td small{display:block;color:var(--dm-muted);font-size:11.5px}
+.cfg-log .cfg-mail{overflow-wrap:anywhere}
+.cfg-foot{grid-column:1/-1;display:flex;justify-content:flex-end;gap:7px;padding:12px 18px;border-top:1px solid var(--dm-line)}
+@media (max-width:700px){.cfg{grid-template-columns:1fr}.cfg-nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--dm-line)}.cfg-g3,.cfg-chks,.cfg-kpis{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="dmboard" data-theme="light">
+<div class="mk-faixa"><b>PROPOSTA · Configurações de e-mail</b> — Seção "E-mail" do diálogo ⚙ Configurações: conta de envio, eventos, teste, estado da fila e últimos envios. Só no computador principal.</div>
+<div class="mk-fundo">
+<div class="cfg" role="dialog" aria-modal="true" aria-labelledby="cfg-t">
+  <div class="cfg-head"><div><h2 id="cfg-t">⚙ Configurações</h2><p>Só neste computador</p></div><button type="button" class="dm-btn dm-x" style="position:static" aria-label="Fechar">✕</button></div>
+
+  <nav class="cfg-nav" aria-label="Seções das configurações">
+    <button type="button">🌐 Rede</button>
+    <button type="button">💾 Backup</button>
+    <button type="button" aria-current="true">✉ E-mail <span class="cfg-dot" title="2 falhas"></span></button>
+    <button type="button">🔔 Avisos</button>
+    <button type="button">🖥 Servidor</button>
+  </nav>
+
+  <div class="cfg-body">
+    <div class="cfg-on"><div><b>Enviar e-mails da Central</b><small>A tela nunca espera o envio: os e-mails entram numa fila e saem em segundo plano.</small></div><span class="cfg-sw" role="switch" aria-checked="true" aria-label="Ligado"></span></div>
+
+    <!-- conta de envio -->
+    <section class="cfg-sec">
+      <h3>Conta de envio <small>peça ao TI os dados do servidor de e-mail da empresa</small></h3>
+      <div class="cfg-g3">
+        <div class="dm-fld"><label for="c-host">Servidor SMTP</label><input id="c-host" type="text" value="smtp.fabrica.example"></div>
+        <div class="dm-fld"><label for="c-porta">Porta</label><input id="c-porta" type="text" inputmode="numeric" value="587"></div>
+        <div class="dm-fld"><label for="c-seg">Segurança</label><select id="c-seg"><option selected>STARTTLS (587)</option><option>SSL/TLS (465)</option><option>Nenhuma (só rede interna)</option></select></div>
+      </div>
+      <div class="dm-two">
+        <div class="dm-fld"><label for="c-user">Usuário</label><input id="c-user" type="text" value="demandas@fabrica.example" autocomplete="off"></div>
+        <div class="dm-fld"><label for="c-pass">Senha <span class="cfg-saved">· guardada e protegida pelo Windows</span></label>
+          <div class="dm-pwrap"><input id="c-pass" type="password" value="" placeholder="••••••••  (digite só para trocar)" autocomplete="new-password"><button type="button" class="dm-eye" aria-label="Mostrar a senha digitada">👁</button></div></div>
+      </div>
+      <div class="dm-fld"><label for="c-from">Remetente (como aparece para quem recebe)</label><input id="c-from" type="text" value="Central de demandas <demandas@fabrica.example>"></div>
+      <div class="dm-two">
+        <div class="dm-fld"><label for="c-link">Endereço do link "Abrir a demanda"</label><input id="c-link" type="text" value="http://192.168.0.10:8090/"><span class="dm-note" style="margin:0">Só abre dentro da rede da fábrica enquanto o sistema não estiver hospedado.</span></div>
+        <div class="dm-fld"><label for="c-fila">Demanda para a fila do setor (sem pessoa)</label><select id="c-fila"><option selected>E-mail do setor; sem ele, todas as pessoas do setor</option><option>Só o e-mail do setor</option></select></div>
+      </div>
+      <div class="dm-note">Gmail e Google Workspace: use uma <b>senha de app</b>, não a senha normal. Microsoft 365: a senha simples deixa de funcionar por padrão no fim de 2026; o TI pode precisar liberar o "SMTP AUTH".</div>
+    </section>
+
+    <!-- eventos -->
+    <section class="cfg-sec">
+      <h3>Quando enviar <small>todos os e-mails de uma demanda ficam no mesmo fio: [SOL-1043] título</small></h3>
+      <div class="cfg-chks">
+        <label><input type="checkbox" checked> 📥 Demanda criada <small>→ quem vai fazer</small></label>
+        <label><input type="checkbox"> ▶ Aceita <small>→ quem pediu</small></label>
+        <label><input type="checkbox"> ✅ Concluída <small>→ quem pediu</small></label>
+        <label><input type="checkbox"> 🔔 Cobrada <small>→ quem vai fazer</small></label>
+        <label><input type="checkbox"> ⏰ Atrasada <small>→ quem vai fazer</small></label>
+        <label><input type="checkbox"> 💬 Comentário <small>→ o outro lado</small></label>
+        <label><input type="checkbox"> ✕ Cancelada <small>→ quem ia fazer</small></label>
+        <label><input type="checkbox"> Cópia para quem pediu <small>(se tiver e-mail)</small></label>
+      </div>
+      <label class="cfg-chks" style="display:flex;margin-top:8px;font-size:13px;gap:8px"><input type="checkbox" checked> Incluir a descrição (até 400 caracteres)</label>
+    </section>
+
+    <!-- teste -->
+    <section class="cfg-sec">
+      <h3>Enviar teste</h3>
+      <div class="cfg-test"><input type="email" value="ana.lima@fabrica.example" aria-label="Enviar teste para"><button type="button" class="dm-btn">✉ Enviar teste</button></div>
+      <div class="cfg-res"><b>✔ Enviado</b> às 09:14 para ana.lima@fabrica.example · conectou em smtp.fabrica.example:587 com STARTTLS em 1,2 s. Confira a caixa de entrada (e o spam).</div>
+    </section>
+
+    <!-- fila -->
+    <section class="cfg-sec">
+      <h3>Fila de envio <small>última rodada há 12 s</small></h3>
+      <div class="cfg-kpis">
+        <div class="dm-kpi" data-st="prog"><b>0</b><span>pendentes</span></div>
+        <div class="dm-kpi" data-st="late"><b>2</b><span>falhas (últimas 24 h)</span></div>
+        <div class="dm-kpi" data-st="done"><b>37</b><span>enviados hoje</span></div>
+      </div>
+      <div class="dm-dact" style="margin:0 0 10px"><button type="button" class="dm-btn dm-sm">↻ Reenviar as falhas</button><button type="button" class="dm-btn dm-sm">Limpar falhas</button></div>
+
+      <div class="cfg-log">
+        <table>
+          <thead><tr><th>Quando</th><th>Demanda</th><th>Para</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>09:02</td><td><b>SOL-1043</b><small>criada</small></td><td class="cfg-mail">joao.pereira@fabrica.example</td><td><span class="dm-pill" data-st="prog">Enviado</span></td></tr>
+            <tr><td>08:47</td><td><b>SOL-1042</b><small>criada · fila do setor</small></td><td class="cfg-mail">pintura@fabrica.example</td><td><span class="dm-pill" data-st="prog">Enviado</span></td></tr>
+            <tr><td>08:31</td><td><b>SOL-1041</b><small>criada</small></td><td class="cfg-mail">marcos.alves@fabrica.example</td><td><span class="dm-pill" data-st="prog">Enviado</span><small>2ª tentativa</small></td></tr>
+            <tr><td>08:10</td><td><b>SOL-1040</b><small>criada</small></td><td class="cfg-mail">jose.santos@fabrca.example</td><td><span class="dm-pill" data-st="late">Falhou</span><small>550 · endereço não existe. Corrija o e-mail no cadastro de José.</small></td></tr>
+            <tr><td>ontem 17:55</td><td><b>SOL-1039</b><small>criada · fila do setor</small></td><td class="cfg-mail">—</td><td><span class="dm-pill" data-st="canc">Sem destinatário</span><small>EXPEDIÇÃO não tem e-mail nem pessoas com e-mail.</small></td></tr>
+            <tr><td>ontem 16:20</td><td><b>SOL-1038</b><small>criada</small></td><td class="cfg-mail">rafael.costa@fabrica.example</td><td><span class="dm-pill" data-st="late">Falhou</span><small>6 tentativas · tempo esgotado ao conectar no servidor.</small></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="dm-note">Guarda os últimos 2.000 envios. A senha nunca aparece aqui nem volta para a tela.</div>
+    </section>
+  </div>
+
+  <div class="cfg-foot"><button type="button" class="dm-btn">Fechar</button><button type="button" class="dm-btn dm-primary">Salvar</button></div>
+</div>
+</div>
+</div>
+<script src="cfg-nav.js"></script>
+</body>
+</html>
