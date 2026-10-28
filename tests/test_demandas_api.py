@@ -269,6 +269,236 @@ class Email(Base):
                                                                         "icone": "⚙️", "cor": "#3B82F6", "email": "a@b.com"}), 403)
 
 
+class AvisoPorEmail(Base):
+    """Os eventos gravados viram itens da fila de e-mail depois do commit, fora do LOCK, para quem deve receber."""
+
+    def setUp(self):
+        super().setUp()
+        self.cfg()
+
+    def cfg(self, **kw):
+        c = {"ligado": True, "host": "smtp.x.com", "remetente": "central@x.com", "instalacao": "abc123"}
+        c.update(kw)
+        (self.dir / "email.json").write_text(json.dumps(c), encoding="utf-8")
+
+    def fila(self):
+        p = self.dir / "email-fila.json"
+        return json.loads(p.read_text(encoding="utf-8"))["itens"] if p.exists() else []
+
+    def log(self):
+        p = self.dir / "email-log.json"
+        return json.loads(p.read_text(encoding="utf-8"))["itens"] if p.exists() else []
+
+    def email(self, kind, rid, e):
+        rows = self.disco()["setores" if kind == "s" else "pessoas"]
+        r = next(x for x in rows if x["id"] == rid)
+        if kind == "s":
+            self.adm("setor/salvar", {"modo": "editar", "id": rid, "nome": r["nome"], "icone": r["icone"], "cor": r["cor"],
+                                      "rev": r["_rv"], "email": e})
+        else:
+            self.adm("pessoa/salvar", {"modo": "editar", "id": rid, "nome": r["nome"], "setor": r["setor"], "rev": r["_rv"],
+                                       "email": e})
+
+    def para(self):
+        return [i["para"] for i in self.fila()]
+
+    def test_criada_para_a_pessoa_com_a_foto_dos_dados(self):
+        self.email("p", self.carlos, "carlos@x.com")
+        d = self.nova(para={"s": "CNC", "p": self.carlos}, desc="Trinca no cordão", prio="high", est=90)
+        it = self.fila()[0]
+        self.assertEqual((it["dem"], it["ev"], it["para"], it["cc"], it["criado"]), (d["id"], "created", ["carlos@x.com"], [], self.t))
+        self.assertEqual(it["dados"], {"titulo": "Cortar chapas", "de": "Planejamento", "para": "Corte CNC · Carlos",
+                                       "prio": "Alta", "prazo": self.t + 90 * MIN, "motivo": "Outro", "tipo": "Demanda",
+                                       "quem": "Escritório", "nota": "", "desc": "Trinca no cordão"})
+        self.assertEqual(len(self.fila()), 1, "o 'assigned' não manda e-mail")
+
+    def test_pessoa_sem_email_usa_o_do_setor_e_sem_nenhum_so_registra(self):
+        self.email("s", "CNC", "corte@x.com")
+        self.nova(para={"s": "CNC", "p": self.carlos})
+        self.assertEqual(self.para(), [["corte@x.com"]])
+        self.email("s", "CNC", "")
+        self.nova(para={"s": "CNC", "p": self.carlos})
+        self.assertEqual(len(self.fila()), 1)
+        self.assertEqual([i["status"] for i in self.log()], ["sem_destinatario"])
+
+    def test_fila_do_setor(self):
+        self.email("p", self.carlos, "carlos@x.com")
+        self.email("p", self.bruno, "bruno@x.com")
+        self.email("p", self.fer, "fer@x.com")   # outro setor
+        self.adm("pessoa/ativar", {"id": self.bruno, "rev": next(p["_rv"] for p in self.disco()["pessoas"] if p["id"] == self.bruno)})
+        self.nova()   # fila do CNC, sem e-mail do setor: as pessoas ativas com e-mail
+        self.assertEqual(self.para(), [["carlos@x.com"]])
+        self.email("s", "CNC", "corte@x.com")
+        self.nova()
+        self.assertEqual(self.para()[-1], ["corte@x.com"])
+        self.cfg(fila_setor="pessoas")
+        self.nova()
+        self.assertEqual(self.para()[-1], ["carlos@x.com"])
+        self.cfg(fila_setor="so_setor")
+        self.email("s", "CNC", "")
+        self.nova()
+        self.assertEqual(len(self.fila()), 3)
+        self.assertEqual(self.log()[-1]["status"], "sem_destinatario")
+        self.assertEqual(self.fila()[0]["dados"]["para"], "Corte CNC (fila do setor)")
+
+    def test_teto_de_pessoas(self):
+        self.email("p", self.carlos, "carlos@x.com")
+        self.email("p", self.bruno, "bruno@x.com")
+        with mock.patch.object(api.mail, "PARA_MAX", 1):
+            self.nova()
+        self.assertEqual(self.para(), [["carlos@x.com"]])
+
+    def test_eventos_desligados_e_ligados(self):
+        self.email("p", self.helena, "helena@x.com")
+        self.email("p", self.carlos, "carlos@x.com")
+        d = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        self.assertEqual([i["ev"] for i in self.fila()], ["created"], "aceita desligada por padrão")
+        self.cfg(eventos={"created": False, "started": True, "done": True, "canc": True, "nudge": True})
+        d2 = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d2["id"]})
+        self.pes(self.tk_c, "demanda/concluir", {"id": d2["id"], "nota": "feito"})
+        ultimos = [(i["ev"], i["para"], i["dados"]["nota"]) for i in self.fila()[1:]]
+        self.assertEqual(ultimos, [("started", ["helena@x.com"], ""), ("done", ["helena@x.com"], "feito")],
+                         "aceita e concluída avisam quem pediu")
+        d3 = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_h, "demanda/cobrar", {"id": d3["id"]})
+        self.pes(self.tk_h, "demanda/cancelar", {"id": d3["id"], "motivo": "não precisa mais"})
+        self.assertEqual([(i["ev"], i["para"]) for i in self.fila()[3:]], [("nudge", ["carlos@x.com"]), ("canc", ["carlos@x.com"])])
+
+    def test_comentario_avisa_o_outro_lado(self):
+        self.cfg(eventos={"created": False, "comment": True})
+        self.email("p", self.helena, "helena@x.com")
+        self.email("p", self.carlos, "carlos@x.com")
+        d = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_h, "demanda/comentar", {"id": d["id"], "texto": "quando fica pronto?"})
+        self.pes(self.tk_c, "demanda/comentar", {"id": d["id"], "texto": "amanhã"})
+        self.adm("demanda/comentar", {"id": d["id"], "texto": "ok"})
+        self.assertEqual([(i["para"], i["dados"]["nota"], i["dados"]["quem"]) for i in self.fila()],
+                         [(["carlos@x.com"], "quando fica pronto?", "Helena"), (["helena@x.com"], "amanhã", "Carlos"),
+                          (["carlos@x.com"], "ok", "Escritório")])
+
+    def test_copia_ao_solicitante(self):
+        self.cfg(copia_solicitante=True)
+        self.email("p", self.helena, "helena@x.com")
+        self.email("p", self.carlos, "carlos@x.com")
+        self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.nova(para={"s": "CNC", "p": self.carlos})   # pedido do Escritório: sem cópia
+        self.assertEqual([i["cc"] for i in self.fila()], [["helena@x.com"], []])
+        self.email("p", self.carlos, "helena@x.com")   # mesma caixa: não repete
+        self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.assertEqual(self.fila()[-1]["cc"], [])
+        self.cfg(copia_solicitante=True, eventos={"created": False, "started": True})
+        d = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        self.assertEqual(self.fila()[-1]["cc"], [], "aviso ao solicitante não leva cópia para ele mesmo")
+
+    def test_descricao_opcional_e_cortada(self):
+        self.email("s", "CNC", "corte@x.com")
+        self.nova(desc="x" * 600)
+        self.assertEqual(len(self.fila()[0]["dados"]["desc"]), 400)
+        self.assertTrue(self.fila()[0]["dados"]["desc"].endswith("…"))
+        self.cfg(descricao=False)
+        self.nova(desc="segredo")
+        self.assertEqual(self.fila()[1]["dados"]["desc"], "")
+        self.assertEqual(api._corta("abc", 3), "abc")
+        self.assertEqual(api._corta("abcd", 3), "ab…")
+        self.assertEqual(api._corta(None, 3), "")
+
+    def test_desligado_falha_ou_repetido_nao_enfileira(self):
+        self.email("s", "CNC", "corte@x.com")
+        self.cfg(ligado=False)
+        self.nova()
+        self.assertEqual(self.fila(), [])
+        self.cfg()
+        self.assertEqual(self.erro(self.adm, "demanda/criar", {"titulo": "x"}), 400)
+        self.assertEqual(self.fila(), [])
+        self.nova(cid="chave-repetida")
+        self.nova(cid="chave-repetida")
+        self.assertEqual(len(self.fila()), 1)
+
+    def test_atrasada_quando_ligada(self):
+        self.cfg(eventos={"created": False, "late": True})
+        self.email("s", "CNC", "corte@x.com")
+        d = self.nova(est=30)
+        self.t += 31 * MIN
+        self.adm("nota/todas", {})   # qualquer gravação marca o atraso
+        self.assertEqual([(i["dem"], i["ev"], i["dados"]["quem"]) for i in self.fila()], [(d["id"], "late", "Sistema")])
+
+    def test_enfileira_depois_de_gravar_e_fora_do_lock(self):
+        self.email("s", "CNC", "corte@x.com")
+        visto = []
+
+        def confere(envios, t):
+            visto.append((api.LOCK.locked(), [d["id"] for d in self.disco()["demandas"]], [e["dem"] for e in envios], t))
+
+        with mock.patch.object(api.mail, "enfileirar", side_effect=confere):
+            d = self.nova()
+        self.assertEqual(visto, [(False, [d["id"]], [d["id"]], self.t)])
+
+    def test_depois_da_acao_continua_rodando(self):
+        self.email("s", "CNC", "corte@x.com")
+        self.cfg(eventos={"created": True})
+        anexo = self.nova()
+        aid = api.handle("POST", "anexo/enviar", {"id": anexo["id"], "nome": "f.jpg", "dados": B64}, ADM)["demandas"]
+        aid = next(x for x in aid if x["id"] == anexo["id"])["anexos"][0]["id"]
+        self.adm("anexo/apagar", {"id": anexo["id"], "aid": aid})
+        self.assertFalse(list((self.dir / "demandas-anexos").glob(aid + ".*")), "o depois do anexo/apagar ainda roda")
+
+    def test_nomes_dos_tipos(self):
+        self.assertEqual(api.TIPO_NOME, {"dem": "Demanda", "alt": "Alteração", "set": "Entre setores", "man": "Manutenção",
+                                         "mat": "Material"})
+        self.email("s", "CNC", "corte@x.com")
+        for tipo in api.TIPOS:
+            self.nova(tipo=tipo)
+        self.assertEqual([i["dados"]["tipo"] for i in self.fila()], [api.TIPO_NOME[t] for t in api.TIPOS])
+
+    def test_quem_pediu_pelo_escritorio_recebe_so_pelo_email_do_setor(self):
+        self.cfg(eventos={"created": False, "started": True})
+        self.email("p", self.helena, "helena@x.com")   # pessoa do setor que pediu, mas o pedido foi do Escritório
+        d = self.nova(para={"s": "CNC", "p": self.carlos})   # de: PCP, sem pessoa
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        self.assertEqual(self.fila(), [])
+        self.assertEqual(self.log()[-1]["status"], "sem_destinatario")
+        self.email("s", "PCP", "pcp@x.com")
+        d = self.nova(para={"s": "CNC", "p": self.carlos})
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        self.assertEqual(self.para(), [["pcp@x.com"]])
+
+    def test_sem_copia_quando_desligada(self):
+        self.email("p", self.helena, "helena@x.com")
+        self.email("p", self.carlos, "carlos@x.com")
+        self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})
+        self.assertEqual(self.fila()[0]["cc"], [])
+
+    def test_evento_desligado_antes_de_um_ligado(self):
+        self.cfg(eventos={"created": False, "late": True})
+        self.email("s", "CNC", "corte@x.com")
+        d = self.nova(self.tk_h, est=30)
+        self.t += 31 * MIN
+        self.pes(self.tk_h, "demanda/cobrar", {"id": d["id"]})   # nudge (desligado) e depois late (ligado)
+        self.assertEqual([i["ev"] for i in self.fila()], ["late"])
+
+    def test_depois_da_acao_e_o_email_juntos(self):
+        self.cfg(eventos={"created": False, "late": True})
+        self.email("s", "CNC", "corte@x.com")
+        d = self.nova(est=30)
+        v = api.handle("POST", "anexo/enviar", {"id": d["id"], "nome": "f.jpg", "dados": B64}, ADM)
+        aid = next(x for x in v["demandas"] if x["id"] == d["id"])["anexos"][0]["id"]
+        self.t += 31 * MIN
+        self.adm("anexo/apagar", {"id": d["id"], "aid": aid})   # o apagar devolve um depois; o atraso, um e-mail
+        self.assertFalse(list((self.dir / "demandas-anexos").glob(aid + ".*")))
+        self.assertEqual([i["ev"] for i in self.fila()], ["late"])
+
+    def test_ponta_de_setor_que_nao_existe_mais(self):
+        self.assertEqual(api._ponta_txt(self.disco(), {"s": "ZZZ", "p": None}, " (fila)"), "ZZZ (fila)")
+
+    def test_demanda_que_sumiu_e_sem_eventos(self):
+        doc = self.disco()
+        self.assertEqual(api._envios(doc, [{"dem": "SOL-999", "ev": "created", "quem": "x", "nota": ""}]), [])
+        self.assertEqual(api._envios(doc, []), [])
+
+
 class Identidade(Base):
     def test_esquecer_pessoas_depois_de_restaurar(self):
         self.pes(self.tk_c, "vista")

@@ -98,6 +98,13 @@ def backup_mod():
     return demandas_backup
 
 
+def email_mod():
+    """email_envio.py (raiz): a conta de envio é da máquina, como a rede; o api.py usa o mesmo módulo."""
+    api_mod()
+    import email_envio
+    return email_envio
+
+
 # ---------- thread de fundo ----------
 def fundo(tarefas, parar: threading.Event, intervalo: float = 60, relogio=None) -> None:
     """Roda cada tarefa(agora em ms) logo ao ligar e depois a cada intervalo, até parar. A falha de uma tarefa não
@@ -666,7 +673,8 @@ def main(argv=None) -> None:
     except OSError:
         print(f"Já existe um servidor na porta {PORT}: use a janela aberta ou feche-a")
         sys.exit(1)
-    iniciar_fundo([backup_mod().tarefa])   # só depois de abrir a porta: um segundo servidor não faz backup
+    # só depois de abrir a porta: um segundo servidor não faz backup nem manda e-mail
+    iniciar_fundo([backup_mod().tarefa, email_mod().tarefa])
     print(f"Central de demandas aberta em http://{HOST}:{PORT}")
     if NET_ON:
         print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))

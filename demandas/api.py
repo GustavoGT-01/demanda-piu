@@ -22,6 +22,7 @@ from collections import OrderedDict
 import demandas_backup as bk
 import demandas_calc as calc
 import demandas_store as ds
+import email_envio as mail
 import store
 
 LOCK = ds.LOCK
@@ -33,6 +34,7 @@ CID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")          # chave do pedido gerada 
 EMAIL_RE = re.compile(r"^[^@\s,;<>\"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$")   # sem espaço/quebra: nada de cabeçalho extra
 EMAIL_MAX = 254
 TIPOS = ("dem", "alt", "set", "man", "mat")
+TIPO_NOME = {"dem": "Demanda", "alt": "Alteração", "set": "Entre setores", "man": "Manutenção", "mat": "Material"}
 MOTIVOS = ("Falta de material", "Quebra de máquina", "Defeito de qualidade", "Mudança de projeto",
            "Ajuste de planejamento", "Retrabalho", "Solicitação do cliente", "Outro")
 PAUSAS = ("Aguardando material", "Aguardando outro setor", "Máquina parada", "Aguardando aprovação",
@@ -103,6 +105,7 @@ def _find(rows: list, rid):
 
 
 _RV = [0]   # rev que a gravação em curso recebe; só muda sob LOCK
+_EVS: list = []   # eventos da gravação em curso (só sob LOCK): depois de gravar, viram e-mails
 
 
 def _stamp(row: dict) -> dict:
@@ -301,6 +304,7 @@ def _so_adm(ator) -> None:
 
 def _evento(d: dict, ev: str, quem: str, nota: str, t: int) -> None:
     d["eventos"].append({"t": t, "ev": ev, "quem": quem, "nota": nota})
+    _EVS.append({"dem": d["id"], "ev": ev, "quem": quem, "nota": nota})
     if len(d["eventos"]) > ds.MAX["eventos"]:
         del d["eventos"][1]   # o "created" fica; sai o mais antigo depois dele
 
@@ -588,6 +592,9 @@ def _comentar(doc: dict, ator, body: dict, t: int):
         raise ApiError(400, "Limite de comentários desta demanda atingido.")
     d["comentarios"].append({"quem": _quem(ator), "t": t, "texto": texto})
     _anota_cid(doc, cid, d["id"])
+    # comentário não é evento da demanda, mas pode avisar por e-mail o outro lado da conversa
+    _EVS.append({"dem": d["id"], "ev": "comment", "quem": _quem(ator), "nota": texto,
+                 "autor": None if ator is None else ator["setor"]})
     _stamp(d)
 
 
@@ -884,13 +891,87 @@ ESCRITAS = {
 LEITURAS = {"vista": _vista, "historico": _historico, "crono": _crono}
 
 
+# ---------- e-mail: quem recebe e o que vai (a fila e o envio ficam no email_envio.py) ----------
+
+def _email_de(row):
+    return row["email"] if row is not None and isinstance(row.get("email"), str) else None
+
+
+def _lado(doc: dict, ponta: dict, cfg: dict, fila: bool) -> list:
+    """E-mails de uma ponta da demanda (de ou para). Pessoa sem e-mail: o do setor. Sem pessoa (fila do setor), com
+    fila=True: a regra da configuração (o e-mail do setor ou as pessoas ativas do setor que têm e-mail)."""
+    s = _find(doc["setores"], ponta["s"])
+    if ponta.get("p"):
+        e = _email_de(_find(doc["pessoas"], ponta["p"])) or _email_de(s)
+        return [e] if e else []
+    modo = cfg["fila_setor"] if fila else "so_setor"
+    if modo == "so_setor" or (modo == "setor_ou_pessoas" and _email_de(s)):
+        return [_email_de(s)] if _email_de(s) else []
+    return [p["email"] for p in doc["pessoas"] if p.get("setor") == ponta["s"] and p.get("ativo") and _email_de(p)
+            ][:mail.PARA_MAX]
+
+
+def _destinos(doc: dict, d: dict, e: dict, cfg: dict) -> tuple:
+    """(para, cc). Aceita e concluída avisam quem pediu; comentário avisa o outro lado; o resto avisa o responsável.
+    Cópia ao solicitante (opcional) só nos avisos ao responsável e só para uma pessoa (o Escritório não tem e-mail)."""
+    ao_solicitante = e["ev"] in ("started", "done") or (e["ev"] == "comment" and e.get("autor") == d["para"]["s"])
+    para = _lado(doc, d["de"], cfg, False) if ao_solicitante else _lado(doc, d["para"], cfg, True)
+    copia = cfg["copia_solicitante"] and not ao_solicitante and d["de"].get("p")
+    c = _email_de(_find(doc["pessoas"], d["de"]["p"])) if copia else None
+    return list(dict.fromkeys(para)), [c] if c and c not in para else []
+
+
+def _ponta_txt(doc: dict, ponta: dict, fila: str = "") -> str:
+    s = _find(doc["setores"], ponta["s"])
+    nome = s["nome"] if s else ponta["s"]
+    return "%s · %s" % (nome, _nome_pessoa(doc, ponta["p"])) if ponta.get("p") else nome + fila
+
+
+def _corta(v, n: int) -> str:
+    v = v if isinstance(v, str) else ""
+    return v if len(v) <= n else v[:n - 1].rstrip() + "…"
+
+
+def _envios(doc: dict, evs: list) -> list:
+    """Sob o LOCK, depois de gravar: os eventos ligados na configuração viram itens da fila, com uma foto dos dados
+    (a thread de envio nunca lê o banco)."""
+    if not evs:
+        return []
+    cfg = mail.config()
+    if not cfg["ligado"]:
+        return []
+    out = []
+    for e in evs:
+        d = _find(doc["demandas"], e["dem"]) if cfg["eventos"].get(e["ev"]) else None
+        if d is None:   # evento desligado, ou a demanda foi para o arquivo morto nesta gravação
+            continue
+        para, cc = _destinos(doc, d, e, cfg)
+        out.append({"dem": d["id"], "ev": e["ev"], "para": para, "cc": cc, "dados": {
+            "titulo": d.get("titulo"), "de": _ponta_txt(doc, d["de"]), "para": _ponta_txt(doc, d["para"], " (fila do setor)"),
+            "prio": PRIO.get(d.get("prio")), "prazo": calc.prazo(d), "motivo": d.get("motivo"),
+            "tipo": TIPO_NOME.get(d.get("tipo")), "quem": e["quem"], "nota": _corta(e["nota"], mail.DESC_MAX),
+            "desc": _corta(d.get("desc"), mail.DESC_MAX) if cfg["descricao"] else ""}})
+    return out
+
+
 def _gravar(doc: dict, ator, t: int, acao, body: dict) -> tuple:
-    """Sob o LOCK: aplica a ação, marca atrasos e grava se algo mudou. Devolve (vista, depois)."""
+    """Sob o LOCK: aplica a ação, marca atrasos e grava se algo mudou. Devolve (vista, depois). Os e-mails dos
+    eventos gravados entram na fila no depois (fora do LOCK): ação que falhou ou não gravou não avisa ninguém."""
     _RV[0] = doc["rev"] + 1
+    del _EVS[:]
     r = acao(doc, ator, body, t)
+    depois = r if callable(r) else None
     if marcar_atrasos(doc, t) or r is not False:
         ds.commit(doc)
-    return _vista_de(doc, ator, t), r if callable(r) else None
+        envios = _envios(doc, list(_EVS))
+        if envios:
+            antes = depois
+
+            def depois():
+                if antes is not None:
+                    antes()
+                mail.enfileirar(envios, t)
+    return _vista_de(doc, ator, t), depois
 
 
 def _entrar(body: dict, t: int) -> dict:
