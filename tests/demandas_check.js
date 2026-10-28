@@ -29,8 +29,8 @@ function killTree(p){if(!p||p.exitCode!==null)return;if(process.platform==='win3
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
 // papel: finge o /api/eu de um aparelho da rede (a trava do servidor tem teste próprio em tests/test_servidor.py)
-async function boot(papel){
-  const dom=await JSDOM.fromURL('http://127.0.0.1:'+PORT+'/',{runScripts:'dangerously',resources:'usable',pretendToBeVisual:true,beforeParse(w){
+async function boot(papel,hash=''){
+  const dom=await JSDOM.fromURL('http://127.0.0.1:'+PORT+'/'+hash,{runScripts:'dangerously',resources:'usable',pretendToBeVisual:true,beforeParse(w){
     w.fetch=(u,o)=>(u==='/api/rev'&&REVS++,0)||FORA&&String(u).startsWith('/api/')?Promise.reject(new TypeError('Failed to fetch')):papel&&u==='/api/eu'?Promise.resolve(new Response(JSON.stringify({papel}),{headers:{'Content-Type':'application/json'}}))
       :fetch(new URL(u,'http://127.0.0.1:'+PORT).href,o);   // jsdom não tem fetch: o do Node, com a origem do servidor
     w.matchMedia=w.matchMedia||(q=>({matches:false,media:q,onchange:null,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){},dispatchEvent(){return false}}));
@@ -70,6 +70,24 @@ async function aparelhoOperador(){
   $('[data-act=mclose]').click();await sleep(30);$('.dm-hdnew').click();
   ok(await until(()=>$('#dm-fm-title')&&$('#dm-fm-title').value===''&&!$('#dm-fm-rasc'))&&!erros.length,'localStorage que lança erro não quebra o formulário '+erros.join(' | '));
   $('[data-act=mclose]').click();
+  w.close();
+}
+// O link do e-mail (…/#SOL-1001) abre a demanda depois de entrar; o ADM vê as linhas ✉ do registro de envio.
+async function linkDoEmail(){
+  fs.writeFileSync(path.join(data,'email-log.json'),JSON.stringify({v:1,itens:[{t:Date.now(),dem:'SOL-1001',ev:'created',para:['corte@empresa.com'],status:'ok',tent:1,erro:''}]}));
+  const w=await boot(undefined,'#SOL-1001'),d=w.document,$=s=>d.querySelector(s);
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')&&/SOL-1001/.test($('#dm-drawer .dm-hsub').textContent)),'o link #SOL-1001 abre a gaveta da demanda');
+  ok(w.location.hash==='','o # sai do endereço (recarregar não reabre)');
+  const mail=$('#dm-drawer .dm-tl li[data-ev=email]');
+  ok(mail&&/✉ E-mail enviado/.test(mail.textContent)&&/corte@empresa\.com/.test(mail.textContent)&&/criada/.test(mail.textContent),'histórico do ADM mostra o e-mail enviado: '+(mail&&mail.textContent));
+  $('#dm-drawer [data-act=close]').click();await sleep(30);
+  w.location.hash='#SOL-1001';
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')),'mudar o # com a tela aberta também abre');
+  $('#dm-drawer [data-act=close]').click();
+  w.location.hash='#SOL-9999';
+  ok(await until(()=>/não encontrada/.test(($('#dm-toast')||{}).textContent||'')),'demanda que não existe: avisa');
   w.close();
 }
 // Restaurar pela tela a cópia feita no começo (antes dos setores): confirmação, RESTAURAR digitado, dados voltam.
@@ -290,6 +308,7 @@ async function restaurarPelaTela(){
     ok(await until(()=>$$('.dm-ocard h3').some(h=>h.textContent==='Pedido feito em outro aparelho'),8000),'mudança de outro aparelho aparece sozinha');
     w.close();
     await aparelhoOperador();
+    await linkDoEmail();
     await restaurarPelaTela();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso
     try{fs.rmSync(base,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch(e){console.log('aviso: pasta temporária ficou em '+base)}}

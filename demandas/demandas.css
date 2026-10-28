@@ -269,6 +269,7 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-tl li[data-ev=created]{--dm-ec:var(--dm-s-new)}#dmboard .dm-tl li[data-ev=started],#dmboard .dm-tl li[data-ev=resumed]{--dm-ec:var(--dm-s-prog)}
 #dmboard .dm-tl li[data-ev=paused],#dmboard .dm-tl li[data-ev=nudge],#dmboard .dm-tl li[data-ev=deadline]{--dm-ec:var(--dm-s-pause)}#dmboard .dm-tl li[data-ev=done]{--dm-ec:var(--dm-s-done)}
 #dmboard .dm-tl li[data-ev=late]{--dm-ec:var(--dm-s-late)}
+#dmboard .dm-tl li[data-ev=email]{--dm-ec:var(--dm-s-new)}
 #dmboard .dm-tl time{color:var(--dm-muted);font-size:11.5px;margin-left:6px}
 #dmboard .dm-tl small{display:block;color:var(--dm-muted);font-size:11.5px;overflow-wrap:anywhere}
 #dmboard .dm-cmts{display:grid;gap:6px;margin:6px 0}

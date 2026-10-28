@@ -873,6 +873,7 @@ def _vista_de(doc: dict, ator, t: int) -> dict:
         return calc.vista(doc, t, ator)
     v = calc.vista(doc, t, None, ds.uso_anexos())
     v["backup"] = bk.resumo(t)   # só o aviso e a frase curta, sem caminho de pasta: o ADM pela rede também vê
+    v["emails"] = mail.do_log([d["id"] for d in v["demandas"]])   # linhas ✉ na gaveta (só o ADM)
     return v
 
 

@@ -186,6 +186,7 @@ function apply(v){
   renderBell();
   bkAlert();
   restCheck();
+  if(firstLoad) setTimeout(abrirHash, 0);   // depois do render que vem logo em seguida
 }
 async function loadPub(){
   try{
@@ -636,12 +637,26 @@ function actionsHtml(r){
   }
   return h ? `<div class="dm-dact">${h}</div>` : '';
 }
+/* e-mails da demanda (registro do envio; só o ADM recebe), como linhas ✉ do histórico */
+const MAIL_TL = {ok: '✉ E-mail enviado', falhou: '✉ E-mail não enviado', sem_destinatario: '✉ E-mail sem destinatário', descartado: '✉ E-mail descartado'};
+function mailsDe(r){
+  const lista = isAdm() && D.v && D.v.emails && Array.isArray(D.v.emails[r.id]) ? D.v.emails[r.id] : [];
+  return lista.map(x => ({t: num(x.t), ev: 'email', rotulo: MAIL_TL[x.status] || '✉ E-mail',
+    quem: (Array.isArray(x.para) && x.para.length ? x.para.join(', ') : 'ninguém com e-mail cadastrado'), nota: MAIL_EVN[x.ev] || ''}));
+}
+/* link do e-mail: …/#SOL-n abre a gaveta da demanda (depois de entrar; quem não vê a demanda recebe o aviso) */
+function abrirHash(){
+  const m = /^#(SOL-\d{1,9})$/.exec(location.hash || '');
+  if(!m || !D.v || !root) return;
+  try{history.replaceState(null, '', location.pathname + location.search)}catch(_){/* sem history: fica o # */}
+  openDrawer(m[1]);
+}
 function renderDrawer(){
   const el = $('dm-drawer'), r = byId(D.open);
   if(!r){closePanels(); return}
   const ci = $('dm-cmt'), keep = ci ? {v: ci.value, f: document.activeElement === ci} : null, sc = el.scrollTop;
   const ds = dispSt(r), m = mets(r), id = esc(r.id);
-  const logs = r.eventos.slice().sort((a, b) => num(a.t) - num(b.t));
+  const logs = r.eventos.concat(mailsDe(r)).sort((a, b) => num(a.t) - num(b.t));
   el.innerHTML = `<button type="button" class="dm-btn dm-x" data-act="close" aria-label="Fechar">✕</button>
    <div class="dm-dtags">${pill(ds)}${pb(r.prio)}<span class="dm-tg" data-k="mut">${typ(r.tipo)}</span></div>
    <h2>${esc(r.titulo)}</h2><div class="dm-hsub">${id} · aberta ${fDT(r.criado)} por ${esc(deName(r))} (${esc(r.de.s)})</div>
@@ -654,7 +669,7 @@ function renderDrawer(){
    <div class="dm-secx">Descrição</div><div class="dm-desc">${esc(r.desc || 'Sem descrição adicional.')}</div>
    <div class="dm-secx">Anexos</div><div class="dm-files">${r.anexos.map(a => `<span class="dm-file"><button type="button" class="dm-fo" data-act="aopen" data-aid="${esc(a.id)}" title="${esc(a.nome)} · enviado por ${esc(a.por)}">${a.tipo === 'pdf' ? '📄' : '🖼️'} ${esc(a.nome)} · ${fBytes(a.bytes)}</button>${canDelAttach(r, a) ? `<button type="button" class="dm-fx" data-act="adel" data-id="${id}" data-aid="${esc(a.id)}" aria-label="Remover anexo">✕</button>` : ''}</span>`).join('')}${!r.anexos.length ? '<span class="dm-note">Nenhum anexo.</span>' : ''}${canAttach(r) ? `<button type="button" class="dm-btn dm-sm" data-act="aadd" data-id="${id}">＋ Adicionar foto/arquivo</button>` : ''}</div>
    ${r.pausas.length ? `<div class="dm-secx">Pausas registradas</div>${r.pausas.map(p => `<div class="dm-pcard"><b>${esc(p.motivo)}</b><div class="dm-note" style="margin:2px 0 0">${fT(p.ini)} → ${p.fim ? fT(p.fim) + ' (' + dur((num(p.fim) - num(p.ini)) / MIN) + ')' : 'em andamento'} · por ${esc(p.por)}${p.obs ? ' · ' + esc(p.obs) : ''}</div></div>`).join('')}` : ''}
-   <div class="dm-secx">Histórico</div><ul class="dm-tl">${logs.map(e => `<li data-ev="${esc(e.ev)}"><i></i><b>${esc(EVL[e.ev] || e.ev)}</b><time>${fDT(e.t)}</time><small>${esc(e.quem)}${e.nota ? ' · ' + esc(e.nota) : ''}</small></li>`).join('')}</ul>
+   <div class="dm-secx">Histórico</div><ul class="dm-tl">${logs.map(e => `<li data-ev="${esc(e.ev)}"><i></i><b>${esc(e.rotulo || EVL[e.ev] || e.ev)}</b><time>${fDT(e.t)}</time><small>${esc(e.quem)}${e.nota ? ' · ' + esc(e.nota) : ''}</small></li>`).join('')}</ul>
    <div class="dm-secx">Comentários</div><div class="dm-cmts">${r.comentarios.map(c => `<div class="dm-cmt"><small>${esc(c.quem)} · ${fDT(c.t)}</small>${esc(c.texto)}</div>`).join('') || '<div class="dm-note">Nenhum comentário ainda.</div>'}</div>
    ${canComment(r) ? `<div class="dm-cmtf"><input type="text" id="dm-cmt" maxlength="1000" placeholder="Escreva um comentário" aria-label="Comentário"><button type="button" class="dm-btn dm-primary" data-act="comment" data-id="${id}">Enviar</button></div>` : ''}`;
   const ci2 = $('dm-cmt');
@@ -1677,6 +1692,7 @@ const SKELETON = '<div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">'
   root.addEventListener('change', onChange);
   root.addEventListener('submit', onSubmit);
   document.addEventListener('keydown', onKey);
+  window.addEventListener('hashchange', abrirHash);
   setInterval(tick, 1000);
   window.NestLocal = window.NestLocal || {views: {}};
   window.NestLocal.views = window.NestLocal.views || {};

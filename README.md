@@ -60,6 +60,22 @@ trocar, o programa faz uma cópia "antes de restaurar" do estado atual (dá para
 se repetem e as pessoas nos aparelhos digitam o código de novo. Sem o programa: feche-o e descompacte o zip dentro de
 `data/`.
 
+## Aviso por e-mail
+1. Em **Administração**, ponha o e-mail (opcional) das pessoas e dos setores que devem receber avisos. Só o
+   escritório vê e edita esse campo.
+2. Em **⚙ Configurações → E-mail** (só no computador principal): servidor SMTP, porta, segurança, usuário, senha e
+   remetente. Peça os dados ao TI. Gmail e Google Workspace: use uma **senha de app**. Microsoft 365: a senha simples
+   deixa de funcionar por padrão no fim de 2026 (o TI pode precisar liberar o "SMTP AUTH"). Use **Enviar teste**,
+   ligue e salve.
+3. Por padrão só "demanda criada" avisa (quem vai fazer; fila do setor: o e-mail do setor ou, sem ele, as pessoas do
+   setor). Aceita, concluída, cobrada, atrasada, comentário e cancelada podem ser ligadas na mesma tela.
+
+A tela nunca espera o envio: o e-mail entra numa fila (`data/email-fila.json`) e sai em até um minuto, com novas
+tentativas (1, 5, 15, 60 e 180 min). Senha recusada para a fila até alguém clicar em **Retomar**. O resultado fica em
+`data/email-log.json` e aparece na gaveta da demanda para o escritório. A senha fica em `data/email.json`, protegida
+pelo Windows: só abre neste computador e com este usuário (num PC reserva, digite de novo). Todos os e-mails de uma
+demanda ficam no mesmo fio, `[SOL-n] título`, e o botão "Abrir a demanda" só funciona dentro da rede da fábrica.
+
 Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.json` e `demandas-anexos/` para esta
 `data/` com o programa fechado. O formato é o mesmo do módulo Demandas do CutFlow, de onde este programa saiu.
 
@@ -68,6 +84,7 @@ Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.jso
 |---|---|
 | `servidor.py` | servidor HTTP: página, arquivos do módulo, API, PIN, sessões e defesas (Host, Origin, CSP) |
 | `store.py` | gravação segura dos JSON |
+| `email_envio.py` | aviso por e-mail: configuração (senha protegida pelo Windows), fila, envio SMTP e registro |
 | `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
 | `web/` | a página (`index.html`) e a casca (`app.js`: `api()`, avisos, atualização e o botão ⚙ Configurações) |
 | `tests/` | testes Python e o teste de tela em jsdom |

@@ -490,6 +490,16 @@ class AvisoPorEmail(Base):
         self.assertFalse(list((self.dir / "demandas-anexos").glob(aid + ".*")))
         self.assertEqual([i["ev"] for i in self.fila()], ["late"])
 
+    def test_vista_do_adm_traz_o_registro_dos_emails(self):
+        d = self.nova()
+        (self.dir / "email-log.json").write_text(json.dumps({"itens": [
+            {"t": 5, "dem": d["id"], "ev": "created", "para": ["corte@x.com"], "status": "ok", "item": {"segredo": 1}},
+            {"t": 6, "dem": "SOL-999", "ev": "created", "para": ["x@x.com"], "status": "ok"}]}), encoding="utf-8")
+        for ctx in (ADM, {"papel": "completo"}):
+            self.assertEqual(self.get(ctx=ctx)["emails"], {d["id"]: [{"t": 5, "ev": "created", "para": ["corte@x.com"], "status": "ok"}]})
+        self.assertNotIn("emails", self.pes(self.tk_c, "vista"))
+        self.assertNotIn("emails", self.get(ctx=OP))
+
     def test_ponta_de_setor_que_nao_existe_mais(self):
         self.assertEqual(api._ponta_txt(self.disco(), {"s": "ZZZ", "p": None}, " (fila)"), "ZZZ (fila)")
 

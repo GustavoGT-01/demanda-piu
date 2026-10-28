@@ -18,10 +18,12 @@ Estado em 28/10/2026 (fim do dia):
 - Feito: Etapa 0 (`0d2b8e8`); Etapa 1 fases 1, 2 e 4 — backup, ⚙ Configurações com Rede e Backup, aviso no Painel,
   restaurar pela tela (`8672d44`, `4dd25e6`, `91448da`); Etapa 2 inteira — ligar sozinho com o Windows e religar
   (`10f7410`), sessão da pessoa que sobrevive ao reinício (`5638378`), rascunho e `cid` (`301101a`), faixa "Sem
-  conexão" e só leitura (`152f766`) e seção Servidor (commit seguinte).
-- Próximo: Etapa 3 (e-mail). A fase 3 da Etapa 1 (destino extra) fica para quando houver destino (o dono
-  respondeu "nenhum por enquanto"). A tarefa agendada ainda precisa ser instalada pelo dono (`instalar-inicio.bat`
-  como administrador).
+  conexão" e só leitura (`152f766`) e seção Servidor (`da6a1a7`); Etapa 3 (e-mail) — campo `email` (`719e60d`),
+  `email_envio.py` com fila, envio e gancho (`de05203`), seção E-mail (`0e4f666`) e linhas ✉ na gaveta e link
+  `#SOL-n` (commit seguinte).
+- Próximo: Etapa 4 (avisos sem HTTPS). Pendências que dependem do dono: instalar a tarefa agendada
+  (`instalar-inicio.bat` como administrador); configurar a conta de e-mail quando o TI definir; a fase 3 da Etapa 1
+  (destino extra do backup) e a fase 5 do estudo 04 (OAuth2 do Microsoft 365), se a conta for M365.
 - O diálogo ⚙ Configurações é do módulo (`openCfg`/`renderCfg` em `demandas/demandas.js`, classes `.dm-cfg*`); a
   casca só tem o botão `#cx-cfg`. Seções novas (E-mail, Avisos, Servidor) entram ali.
 - **`brag-output/` não deve ir para o Git** (decisão do dono).
