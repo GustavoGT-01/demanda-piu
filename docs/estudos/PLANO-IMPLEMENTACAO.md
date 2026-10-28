@@ -14,9 +14,14 @@
 | Mockups **aprovados** (referência visual) | `docs/estudos/mockups/index.html` (abre no navegador, sem servidor) |
 | Este plano | `docs/estudos/PLANO-IMPLEMENTACAO.md` |
 
-Estado em 28/10/2026:
-- Nada foi implementado. O último commit é `00adaca`.
-- `docs/estudos/` e `brag-output/` não estão no Git. **`brag-output/` não deve ir para o Git** (decisão do dono).
+Estado em 28/10/2026 (fim do dia):
+- Feito: Etapa 0 (`0d2b8e8`), Etapa 1 fase 1 — backup e thread de fundo (`8672d44`) — e fase 2 — ⚙ Configurações com
+  Rede e Backup, aviso no Painel (`4dd25e6`).
+- Próximo: Etapa 1 fase 4 (restaurar pela tela). A fase 3 (destino extra) fica para quando houver destino (o dono
+  respondeu "nenhum por enquanto").
+- O diálogo ⚙ Configurações é do módulo (`openCfg`/`renderCfg` em `demandas/demandas.js`, classes `.dm-cfg*`); a
+  casca só tem o botão `#cx-cfg`. Seções novas (E-mail, Avisos, Servidor) entram ali.
+- **`brag-output/` não deve ir para o Git** (decisão do dono).
 
 ## 2. Regras que valem para toda etapa
 
