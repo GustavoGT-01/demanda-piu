@@ -1109,6 +1109,40 @@ class Atrasos(Base):
         self.assertEqual(self.evs(d["id"]).count("late"), 1)
         self.assertEqual([n[1] for n in self.notas()].count("late"), 2)
 
+    def test_tick_marca_atraso_sem_ninguem_gravar(self):
+        d = self.nova(est=1)
+        r0 = self.rev()
+        self.assertFalse(api.tick(self.t + MIN), "no prazo exato ainda não")
+        self.assertEqual(self.rev(), r0, "nada mudou: não grava")
+        self.assertTrue(api.tick(self.t + MIN + 1))
+        self.assertEqual(self.rev(), r0 + 1)
+        self.assertTrue(self.dem(d["id"])["atraso_avisado"])
+        self.assertEqual(self.dem(d["id"])["_rv"], r0 + 1, "a tela aberta vê que a demanda mudou")
+        self.assertEqual(self.notas()[-2:], [("adm", "late", d["id"]), ("CNC", "late", d["id"])])
+        self.assertFalse(api.tick(self.t + 10 * MIN), "uma vez só")
+        self.assertEqual(self.rev(), r0 + 1)
+        self.assertEqual(self.dem(d["id"])["eventos"][-1]["t"], self.t + MIN + 1)
+
+    def test_tick_manda_o_email_do_atraso(self):
+        (self.dir / "email.json").write_text(json.dumps({"ligado": True, "host": "smtp.x.com", "remetente": "c@x.com",
+                                                         "eventos": {"created": False, "late": True}}), encoding="utf-8")
+        self.adm("setor/salvar", {"modo": "editar", "id": "CNC", "nome": "Corte CNC", "icone": "⚙️", "cor": "#3B82F6",
+                                  "rev": next(s["_rv"] for s in self.disco()["setores"] if s["id"] == "CNC"), "email": "corte@x.com"})
+        d = self.nova(est=1)
+        visto = []
+        with mock.patch.object(api.mail, "enfileirar", side_effect=lambda e, t: visto.append((api.LOCK.locked(), [x["ev"] for x in e], t))):
+            api.tick(self.t + 2 * MIN)
+            api.tick(self.t + 3 * MIN)
+        self.assertEqual(visto, [(False, ["late"], self.t + 2 * MIN)], "fora do LOCK e uma vez só")
+        self.assertEqual(d["id"], "SOL-1001")
+
+    def test_tick_sem_email_e_relogio_padrao(self):
+        self.nova(est=1)
+        self.t += 2 * MIN
+        with mock.patch.object(api.mail, "enfileirar") as enf:
+            self.assertTrue(api.tick())   # usa api._agora (o relógio dos testes)
+        enf.assert_not_called()
+
     def test_leitura_nao_marca(self):
         d = self.nova(est=1)
         self.t += 5 * MIN

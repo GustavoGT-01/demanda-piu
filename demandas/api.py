@@ -1000,6 +1000,23 @@ def _gravar(doc: dict, ator, t: int, acao, body: dict) -> tuple:
     return _vista_de(doc, ator, t), depois
 
 
+def tick(agora: int | None = None) -> bool:
+    """Uma rodada da thread de fundo (a cada minuto): marca os atrasos sem esperar alguém gravar algo. Só grava se
+    alguma demanda passou do prazo agora (o rev muda e as telas avisam); os e-mails dos atrasos vão para a fila."""
+    t = _agora() if agora is None else agora
+    with LOCK:
+        doc = ds.load()
+        _RV[0] = doc["rev"] + 1
+        del _EVS[:]
+        if not marcar_atrasos(doc, t):
+            return False
+        ds.commit(doc)
+        envios = _envios(doc, list(_EVS))
+    if envios:
+        mail.enfileirar(envios, t)
+    return True
+
+
 def _entrar(body: dict, t: int) -> dict:
     conferido = _codigo_fora(body)
     with LOCK:

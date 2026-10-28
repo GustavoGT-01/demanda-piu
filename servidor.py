@@ -711,7 +711,7 @@ def main(argv=None) -> None:
         print(f"Já existe um servidor na porta {PORT}: use a janela aberta ou feche-a")
         sys.exit(1)
     # só depois de abrir a porta: um segundo servidor não faz backup nem manda e-mail
-    iniciar_fundo([backup_mod().tarefa, email_mod().tarefa])
+    iniciar_fundo([backup_mod().tarefa, api_mod().tick, email_mod().tarefa])   # atraso antes do e-mail: sai na mesma rodada
     print(f"Central de demandas aberta em http://{HOST}:{PORT}")
     if NET_ON:
         print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))

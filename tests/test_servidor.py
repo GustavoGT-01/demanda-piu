@@ -768,6 +768,12 @@ class Email(Base):
 class Saude(Base):
     """/api/servidor (seção Servidor das Configurações): só o computador principal; números da pasta de dados."""
 
+    def setUp(self):
+        super().setUp()
+        self.data = self.data / "data"   # a pasta padrão do backup fica ao lado de data/: nunca a %TEMP%\backup comum
+        self.data.mkdir()
+        os.environ["DEMANDAS_DATA"] = str(self.data)
+
     def test_saude_no_computador_principal(self):
         (self.data / "servidor.log").write_text("\n".join("linha %d" % i for i in range(20)) + "\n", encoding="utf-8")
         self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
@@ -955,6 +961,14 @@ class Sempre(unittest.TestCase):
             self.assertFalse(servidor.ligado(porta))
 
     def test_main_ligado_e_sempre(self):
+        # nenhum mutante do main() pode ligar servidor nem processo de verdade daqui (já houve uma cadeia de processos)
+        nao = AssertionError("não devia ligar servidor nem processo")
+        with mock.patch.multiple(servidor, Server=mock.Mock(side_effect=nao), iniciar_fundo=mock.Mock(side_effect=nao),
+                                 _roda_filho=mock.Mock(side_effect=nao), sempre=mock.Mock(side_effect=nao),
+                                 ligado=mock.Mock(side_effect=nao)):
+            self._main_ligado_e_sempre()
+
+    def _main_ligado_e_sempre(self):
         with mock.patch.object(servidor, "ligado", return_value=True), self.assertRaises(SystemExit) as cm:
             servidor.main(["--ligado"])
         self.assertEqual(cm.exception.code, 0)
@@ -1036,6 +1050,57 @@ class Fundo(unittest.TestCase):
         parar.set()
         t.join(5)
         self.assertFalse(t.is_alive())
+
+    def sem_processos(self):
+        """Trava os caminhos do main() que criam processos de verdade: um mutante que troca o --sempre não pode
+        ligar uma cadeia de servidores."""
+        nao = AssertionError("não devia criar processo")
+        return mock.patch.multiple(servidor, sempre=mock.Mock(side_effect=nao), ligado=mock.Mock(side_effect=nao),
+                                   _roda_filho=mock.Mock(side_effect=nao))
+
+    def roda_main(self, rede, server=None, lan=("10.0.0.5",)):
+        srv = mock.Mock()
+        srv.serve_forever.side_effect = KeyboardInterrupt
+        with self.sem_processos(), mock.patch.object(servidor, "net_config", return_value={"on": rede}), \
+                mock.patch.object(servidor, "sessions_load") as sl, \
+                mock.patch.object(servidor, "Server", side_effect=server, return_value=srv) as cls, \
+                mock.patch.object(servidor, "lan_addresses", return_value=list(lan)), \
+                mock.patch.object(servidor, "iniciar_fundo") as fundo, \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            try:
+                servidor.main([])
+            except (KeyboardInterrupt, SystemExit) as exc:
+                fim = exc
+        net = servidor.NET_ON
+        servidor.NET_ON = False
+        return cls, fundo, out.getvalue(), fim, net, sl
+
+    def test_main_com_e_sem_rede(self):
+        cls, fundo, out, fim, net, sl = self.roda_main(False)
+        self.assertEqual(cls.call_args.args, (("127.0.0.1", servidor.PORT), servidor.Handler))
+        self.assertEqual((out, net, type(fim)), ("Central de demandas aberta em http://127.0.0.1:%d\n" % servidor.PORT, False, KeyboardInterrupt))
+        sl.assert_called_once_with()
+        cls, fundo, out, fim, net, sl = self.roda_main(True, lan=("10.0.0.5", "10.0.0.6"))
+        self.assertEqual((cls.call_args.args[0], net), (("0.0.0.0", servidor.PORT), True))
+        self.assertEqual(out.splitlines()[1], "Acesso pela rede ligado (com PIN): http://10.0.0.5:%d, http://10.0.0.6:%d"
+                         % (servidor.PORT, servidor.PORT))
+
+    def test_main_porta_ocupada_nao_liga_nada(self):
+        cls, fundo, out, fim, net, sl = self.roda_main(False, server=OSError("em uso"))
+        self.assertEqual((type(fim), fim.code), (SystemExit, 1))
+        self.assertEqual(out, "Já existe um servidor na porta %d: use a janela aberta ou feche-a\n" % servidor.PORT)
+        fundo.assert_not_called()
+
+    def test_main_liga_as_tres_tarefas_depois_de_abrir_a_porta(self):
+        srv = mock.Mock()
+        srv.serve_forever.side_effect = KeyboardInterrupt
+        with self.sem_processos(), mock.patch.object(servidor, "net_config", return_value={"on": False}), \
+                mock.patch.object(servidor, "sessions_load"), mock.patch.object(servidor, "Server", return_value=srv), \
+                mock.patch.object(servidor, "iniciar_fundo") as fundo, mock.patch("builtins.print"), \
+                self.assertRaises(KeyboardInterrupt):
+            servidor.main([])
+        tarefas = fundo.call_args.args[0]
+        self.assertEqual(tarefas, [servidor.backup_mod().tarefa, servidor.api_mod().tick, servidor.email_mod().tarefa])
 
     def test_backup_mod_usa_o_mesmo_banco_do_api(self):
         bk = servidor.backup_mod()
