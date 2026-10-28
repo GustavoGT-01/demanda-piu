@@ -40,6 +40,9 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
  "cids": [["3f2a…-uuid", "SOL-1001"]]}
 ```
 - `de.p = null` quando quem pediu foi o Escritório (ADM). `para.p = null` = fila do setor.
+- `email` (opcional) em pessoa e setor: quem recebe o aviso por e-mail. Só o ADM edita (`setor/salvar`,
+  `pessoa/salvar`; campo ausente = não mexe, `""` = apaga) e só a vista do ADM o recebe. Minúsculas, até 254
+  caracteres, `^[^@\s,;<>"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$`.
 - `cids` (opcional; arquivo antigo sem ele = vazio): as últimas 500 chaves de pedido de `demanda/criar` e
   `demanda/comentar` (`cid`, `^[A-Za-z0-9_-]{8,64}$`, gerado pela tela) com o que gravaram. Chave repetida = a
   resposta anterior se perdeu e a tela mandou de novo: devolve a vista sem gravar.

@@ -114,14 +114,21 @@ def publica(d: dict, agora: int) -> dict:
     return out
 
 
-def pessoa_publica(p: dict) -> dict:
-    return {"id": p["id"], "nome": p.get("nome"), "setor": p.get("setor"), "mat": p.get("mat"),
-            "ativo": p.get("ativo", True), "_rv": p.get("_rv", 0)}
+def _com_email(out: dict, row: dict, adm: bool) -> dict:
+    """O e-mail só vai para a tela do ADM: a lista de pessoas e setores também chega aos operadores."""
+    if adm and isinstance(row.get("email"), str):
+        out["email"] = row["email"]
+    return out
 
 
-def setor_publico(s: dict) -> dict:
-    return {"id": s["id"], "nome": s.get("nome"), "icone": s.get("icone"), "cor": s.get("cor"),
-            "ativo": s.get("ativo", True), "_rv": s.get("_rv", 0)}
+def pessoa_publica(p: dict, adm: bool = False) -> dict:
+    return _com_email({"id": p["id"], "nome": p.get("nome"), "setor": p.get("setor"), "mat": p.get("mat"),
+                       "ativo": p.get("ativo", True), "_rv": p.get("_rv", 0)}, p, adm)
+
+
+def setor_publico(s: dict, adm: bool = False) -> dict:
+    return _com_email({"id": s["id"], "nome": s.get("nome"), "icone": s.get("icone"), "cor": s.get("cor"),
+                       "ativo": s.get("ativo", True), "_rv": s.get("_rv", 0)}, s, adm)
 
 
 def ve(d: dict, pessoa: dict) -> bool:
@@ -157,8 +164,8 @@ def vista(doc: dict, agora: int, pessoa: dict | None = None, anexos_uso: dict | 
                    key=lambda n: (n.get("t") or 0, n.get("id") or 0), reverse=True)
     out = {"rev": doc["rev"], "agora": agora, "papel": "adm" if pessoa is None else "pessoa",
            "eu": None if pessoa is None else {k: pessoa.get(k) for k in ("id", "nome", "setor", "mat")},
-           "setores": [setor_publico(s) for s in doc["setores"]],
-           "pessoas": [pessoa_publica(p) for p in doc["pessoas"]],
+           "setores": [setor_publico(s, pessoa is None) for s in doc["setores"]],
+           "pessoas": [pessoa_publica(p, pessoa is None) for p in doc["pessoas"]],
            "demandas": [publica(d, agora) for d in dems],
            "notas": notas, "feed": feed(dems)}
     if pessoa is None:

@@ -185,6 +185,90 @@ class Contrato(Base):
             self.assertNotIn('"hash"', txt)
 
 
+class Email(Base):
+    """Campo email opcional de pessoa e setor: só o ADM edita e vê; validado contra cabeçalho injetado."""
+
+    def rv(self, chave, rid):
+        return next(r["_rv"] for r in self.disco()[chave] if r["id"] == rid)
+
+    def edita_setor(self, sid="CNC", **kw):
+        body = {"modo": "editar", "id": sid, "nome": "Corte CNC", "icone": "⚙️", "cor": "#3B82F6", "rev": self.rv("setores", sid)}
+        body.update(kw)
+        return self.adm("setor/salvar", body)
+
+    def edita_pessoa(self, pid=None, **kw):
+        pid = pid or self.carlos
+        p = next(r for r in self.disco()["pessoas"] if r["id"] == pid)
+        body = {"modo": "editar", "id": pid, "nome": p["nome"], "setor": p["setor"], "rev": p["_rv"]}
+        body.update(kw)
+        return self.adm("pessoa/salvar", body)
+
+    def test_grava_minusculas_mantem_e_apaga(self):
+        self.edita_setor(email="  Corte@Empresa.COM.br ")
+        self.assertEqual(next(s for s in self.disco()["setores"] if s["id"] == "CNC")["email"], "corte@empresa.com.br")
+        self.edita_setor(nome="Corte CNC 2")   # tela antiga, sem o campo: não mexe
+        self.assertEqual(next(s for s in self.disco()["setores"] if s["id"] == "CNC")["email"], "corte@empresa.com.br")
+        for vazio in ("", "   ", None):
+            self.edita_setor(email="x@y.com")
+            self.edita_setor(email=vazio)
+            self.assertNotIn("email", next(s for s in self.disco()["setores"] if s["id"] == "CNC"), repr(vazio))
+        self.edita_pessoa(email="carlos.souza@empresa.com.br")
+        self.assertEqual(next(p for p in self.disco()["pessoas"] if p["id"] == self.carlos)["email"], "carlos.souza@empresa.com.br")
+        self.edita_pessoa(email="")
+        self.assertNotIn("email", next(p for p in self.disco()["pessoas"] if p["id"] == self.carlos))
+
+    def test_novos_com_e_sem_email(self):
+        self.adm("setor/salvar", {"modo": "novo", "id": "PIN", "nome": "Pintura", "icone": "⚙️", "cor": "#3B82F6",
+                                  "rev": 0, "email": "pintura@empresa.com"})
+        self.adm("pessoa/salvar", {"modo": "novo", "nome": "Joana", "setor": "PIN", "codigo": "5555", "rev": 0,
+                                   "email": "joana@empresa.com"})
+        self.adm("pessoa/salvar", {"modo": "novo", "nome": "Rui", "setor": "PIN", "codigo": "6666", "rev": 0, "email": ""})
+        d = self.disco()
+        self.assertEqual(next(s for s in d["setores"] if s["id"] == "PIN")["email"], "pintura@empresa.com")
+        self.assertEqual({p["nome"]: p.get("email") for p in d["pessoas"] if p["setor"] == "PIN"},
+                         {"Joana": "joana@empresa.com", "Rui": None})
+        self.assertNotIn("email", next(s for s in d["setores"] if s["id"] == "PCP"))
+
+    def test_recusa_invalidos_sem_gravar(self):
+        rev = self.disco()["rev"]
+        ruins = ["sem-arroba", "a@@b.com", "a@b", "a@b.c", "com espaco@x.com", "a@x.com\r\nBcc: z@x.com", "a@x\n.com",
+                 "a,b@x.com", "a;b@x.com", "<a@x.com>", '"a"@x.com', "a@x_y.com", "@x.com", "a@.com" + "x",
+                 "x" * 65 + "@x.com", "a@" + "b" * 249 + ".com", 5, ["a@x.com"], True]
+        for e in ruins:
+            with self.subTest(e=e):
+                self.assertEqual(self.erro(self.edita_setor, email=e), 400)
+                self.assertEqual(self.erro(self.edita_pessoa, email=e), 400)
+        self.assertEqual(self.disco()["rev"], rev)
+        self.assertEqual(self.msg(self.edita_setor, email="ruim"), "E-mail inválido: use algo como nome@empresa.com.br.")
+        self.assertEqual(self.msg(self.edita_setor, email=5), "E-mail inválido.")
+        self.edita_setor(email=" a@x.com\n")   # espaço e quebra só nas pontas: saem antes de gravar
+        self.assertEqual(next(s for s in self.disco()["setores"] if s["id"] == "CNC")["email"], "a@x.com")
+
+    def test_limite_de_254(self):
+        local = "a" * 64
+        dominio = "b" * (254 - 64 - 1 - 4) + ".com"
+        self.edita_setor(email=local + "@" + dominio)   # exatamente 254
+        self.assertEqual(len(next(s for s in self.disco()["setores"] if s["id"] == "CNC")["email"]), 254)
+        self.assertEqual(self.erro(self.edita_setor, email=local + "@b" + dominio), 400, "255")
+        self.edita_setor(email="a@b.co")   # o menor razoável
+        self.assertEqual(self.erro(self.edita_setor, email="a" * 65 + "@b.co"), 400, "parte local acima de 64")
+
+    def test_so_o_adm_ve(self):
+        self.edita_setor(email="corte@empresa.com")
+        self.edita_pessoa(email="carlos@empresa.com")
+        for ctx in (ADM, {"papel": "completo"}):
+            v = self.get(ctx=ctx)
+            self.assertEqual(next(s for s in v["setores"] if s["id"] == "CNC")["email"], "corte@empresa.com")
+            self.assertEqual(next(p for p in v["pessoas"] if p["id"] == self.carlos)["email"], "carlos@empresa.com")
+            self.assertNotIn("email", next(p for p in v["pessoas"] if p["id"] == self.bruno))
+        for v in (self.pes(self.tk_c, "vista"), self.pes(self.tk_h, "vista"), self.get(ctx=OP)):
+            self.assertNotIn("@empresa.com", json.dumps(v), "operador não vê e-mail de ninguém")
+
+    def test_operador_nao_edita(self):
+        self.assertEqual(self.erro(self.pes, self.tk_c, "setor/salvar", {"modo": "editar", "id": "CNC", "nome": "Corte CNC",
+                                                                        "icone": "⚙️", "cor": "#3B82F6", "email": "a@b.com"}), 403)
+
+
 class Identidade(Base):
     def test_esquecer_pessoas_depois_de_restaurar(self):
         self.pes(self.tk_c, "vista")

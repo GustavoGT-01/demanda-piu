@@ -51,6 +51,9 @@ async function aparelhoOperador(){
   $$('.dm-lguser').find(b=>b.textContent.includes('Carlos')).click();
   const cod=$('#dm-lg-code');cod.value='1234';cod.dispatchEvent(new w.Event('input',{bubbles:true}));$('.dm-lgbtn').click();
   ok(await until(()=>$('#dm-login').hidden&&/Olá, Carlos/.test($('#dmboard').textContent)),'Carlos entra com o código dele');
+  const pub=await fetch('http://127.0.0.1:'+PORT+'/api/local/demandas/vista',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.text());
+  ok(/corte@empresa/.test(pub),'(conferência: o ADM pelo próprio PC recebe os e-mails)');
+  ok(!/@empresa\.com/.test(d.documentElement.innerHTML),'aparelho de operador: nenhum e-mail na tela');
   // aparelho com armazenamento bloqueado: o formulário funciona, só não guarda rascunho
   const erros=[];w.addEventListener('error',e=>erros.push(e.message));
   Object.defineProperty(w,'localStorage',{configurable:true,get(){throw new Error('armazenamento bloqueado')}});
@@ -153,8 +156,20 @@ async function restaurarPelaTela(){
     ok(await novoSetor('Corte CNC','CNC'),'cria setor CNC '+toast());
     ok(await novoSetor('Almoxarifado','ALM'),'cria setor ALM (fica sem demanda) '+toast());
     // pessoa
-    click('[data-act=newuser]');type('#dm-uf-name','Carlos');type('#dm-uf-sec','CNC','change');await sleep(50);type('#dm-uf-code','1234');click('[data-act=uf-save]');
+    click('[data-act=newuser]');type('#dm-uf-name','Carlos');type('#dm-uf-sec','CNC','change');await sleep(50);type('#dm-uf-code','1234');
+    type('#dm-uf-email','carlos@');click('[data-act=uf-save]');await sleep(50);
+    ok($('#dm-modal').classList.contains('dm-on')&&$('#dm-uf-email').closest('.dm-fld').classList.contains('dm-err'),'e-mail inválido: o campo avisa e nada é enviado');
+    type('#dm-uf-email',' Carlos.Souza@Empresa.com ');click('[data-act=uf-save]');
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')&&/Carlos/.test(toast())),'cria pessoa Carlos (CNC) com código '+toast());
+    const carlosDisco=JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).pessoas.find(p=>p.nome==='Carlos');
+    ok(carlosDisco.email==='carlos.souza@empresa.com','e-mail gravado em minúsculas: '+carlosDisco.email);
+    click('[data-act=tab][data-v=admin]');await until(()=>$('[data-act=editsector][data-v=CNC]'));click('[data-act=editsector][data-v=CNC]');
+    ok(await until(()=>$('#dm-sf-email')&&$('#dm-sf-email').value===''),'setor sem e-mail: campo vazio');
+    type('#dm-sf-email','corte@empresa.com');click('[data-act=sf-save]');
+    ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')),'setor salvo com e-mail');
+    click('[data-act=editsector][data-v=CNC]');
+    ok(await until(()=>$('#dm-sf-email')&&$('#dm-sf-email').value==='corte@empresa.com'),'o ADM vê o e-mail do setor ao editar');
+    click('[data-act=mclose]');
     // demanda com tentativa de XSS no título
     const XSS='<img src=x onerror="window.__xss=1"> Corte de chapas';
     // rascunho: fechar o formulário não perde o texto; Descartar limpa

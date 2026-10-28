@@ -30,6 +30,8 @@ SAL_RE = re.compile(r"^[0-9a-f]{32}$")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 CTRL_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")   # descrição e comentário aceitam \n
 CID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")          # chave do pedido gerada pela tela (UUID)
+EMAIL_RE = re.compile(r"^[^@\s,;<>\"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$")   # sem espaço/quebra: nada de cabeçalho extra
+EMAIL_MAX = 254
 TIPOS = ("dem", "alt", "set", "man", "mat")
 MOTIVOS = ("Falta de material", "Quebra de máquina", "Defeito de qualidade", "Mudança de projeto",
            "Ajuste de planejamento", "Retrabalho", "Solicitação do cliente", "Outro")
@@ -683,12 +685,38 @@ def _usado(doc: dict, chave: str, valor: str) -> bool:
     return any(d["de"][chave] == valor or d["para"][chave] == valor for d in _todas(doc))
 
 
+def _email(body: dict):
+    """E-mail opcional de pessoa ou setor (quem recebe o aviso): "" ou espaços = sem e-mail; guardado em minúsculas.
+    Campo ausente no pedido = não mexe (tela antiga). Devolve (veio?, e-mail ou None)."""
+    if "email" not in body:
+        return False, None
+    v = body["email"]
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return True, None
+    if not isinstance(v, str):
+        raise ApiError(400, "E-mail inválido.")
+    e = v.strip().lower()
+    if len(e) > EMAIL_MAX or not EMAIL_RE.fullmatch(e):
+        raise ApiError(400, "E-mail inválido: use algo como nome@empresa.com.br.")
+    return True, e
+
+
+def _poe_email(row: dict, veio: bool, e) -> None:
+    if not veio:
+        return
+    if e:
+        row["email"] = e
+    else:
+        row.pop("email", None)
+
+
 def _setor_salvar(doc: dict, ator, body: dict, t: int):
     _so_adm(ator)
     modo = _de(body.get("modo"), ("novo", "editar"), "Modo")
     nome = _texto(body.get("nome"), "Nome do setor", 3, 40)
     icone = _de(body.get("icone"), ICONES, "Ícone")
     cor = _de(body.get("cor"), CORES, "Cor")
+    veio, email = _email(body)
     sid = body.get("id")
     if modo == "novo":
         if not isinstance(sid, str) or not ds.SETOR_RE.fullmatch(sid):
@@ -698,13 +726,16 @@ def _setor_salvar(doc: dict, ator, body: dict, t: int):
             raise ApiError(400, "Esta sigla já está em uso.")
         if len(doc["setores"]) >= ds.MAX["setores"]:
             raise ApiError(400, "Limite de setores atingido.")
-        doc["setores"].append(_stamp({"id": sid, "nome": nome, "icone": icone, "cor": cor, "ativo": True}))
+        s = {"id": sid, "nome": nome, "icone": icone, "cor": cor, "ativo": True}
+        _poe_email(s, veio, email)
+        doc["setores"].append(_stamp(s))
         return
     s = _find(doc["setores"], sid)
     if s is None:
         raise ApiError(404, "Setor não encontrado.")
     _rev(body, s)
     s.update(nome=nome, icone=icone, cor=cor)
+    _poe_email(s, veio, email)
     _stamp(s)
 
 
@@ -758,6 +789,7 @@ def _pessoa_salvar(doc: dict, ator, body: dict, t: int):
     modo = _de(body.get("modo"), ("novo", "editar"), "Modo")
     nome = _texto(body.get("nome"), "Nome", 2, 60)
     setor = body.get("setor")
+    veio, email = _email(body)
     if modo == "novo":
         _rev(body, None)
         setor = _setor_ok(doc, setor, "Setor")
@@ -765,6 +797,7 @@ def _pessoa_salvar(doc: dict, ator, body: dict, t: int):
             raise ApiError(400, "Limite de pessoas atingido.")
         n = max([doc["seq"]["pessoa"]] + [_pessoa_num(p) + 1 for p in doc["pessoas"]])
         p = {"id": "p%d" % n, "nome": nome, "setor": setor, "mat": "M%d" % (100 + n), "ativo": True}
+        _poe_email(p, veio, email)
         _novo_codigo(p, body.get("codigo"))
         doc["pessoas"].append(_stamp(p))
         doc["seq"]["pessoa"] = n + 1
@@ -779,6 +812,7 @@ def _pessoa_salvar(doc: dict, ator, body: dict, t: int):
     if body.get("codigo") not in (None, ""):
         _novo_codigo(p, body.get("codigo"))
     p.update(nome=nome, setor=setor)
+    _poe_email(p, veio, email)
     _stamp(p)
 
 

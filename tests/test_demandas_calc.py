@@ -165,6 +165,31 @@ class Vista(unittest.TestCase):
         self.assertEqual(calc.vista(doc, T0)["notas"], [{"aud": "adm", "t": T0}, {"aud": "adm", "id": 5}])
 
 
+class Email(unittest.TestCase):
+    """O e-mail de pessoa e setor só vai para a tela do ADM."""
+    P = {"id": "p1", "nome": "Ana", "setor": "CNC", "mat": "M101", "ativo": True, "_rv": 3, "email": "ana@x.com"}
+    S = {"id": "CNC", "nome": "Corte", "icone": "⚙️", "cor": "#3B82F6", "ativo": True, "_rv": 2, "email": "corte@x.com"}
+
+    def test_publica_com_e_sem_adm(self):
+        self.assertEqual(calc.pessoa_publica(self.P, True)["email"], "ana@x.com")
+        self.assertEqual(calc.setor_publico(self.S, True)["email"], "corte@x.com")
+        for f, row in ((calc.pessoa_publica, self.P), (calc.setor_publico, self.S)):
+            self.assertNotIn("email", f(row))
+            self.assertNotIn("email", f(row, False))
+            self.assertNotIn("email", f(dict(row, email=None), True))
+            self.assertNotIn("email", f({k: v for k, v in row.items() if k != "email"}, True))
+            self.assertEqual(set(f(row, True)) - set(f(row)), {"email"})
+
+    def test_vista(self):
+        doc = {"rev": 1, "setores": [self.S], "pessoas": [self.P], "demandas": [], "notas": []}
+        adm = calc.vista(doc, T0)
+        self.assertEqual((adm["setores"][0]["email"], adm["pessoas"][0]["email"]), ("corte@x.com", "ana@x.com"))
+        eu = {"id": "p1", "nome": "Ana", "setor": "CNC", "mat": "M101"}
+        pes = calc.vista(doc, T0, eu)
+        self.assertNotIn("email", pes["setores"][0])
+        self.assertNotIn("email", pes["pessoas"][0])
+
+
 class Feed(unittest.TestCase):
     def test_ordem_tipo_e_texto(self):
         a = dem(1, eventos=[{"t": T0, "ev": "created", "quem": "H", "nota": ""},

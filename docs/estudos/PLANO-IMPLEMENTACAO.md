@@ -169,11 +169,14 @@ estudo correspondente inteiro**. Ele tem os detalhes, formatos JSON, rotas e a l
   `instalar-inicio.bat` como administrador. Sem atalho em Inicializar.
 - Conta da tarefa: **a do usuário atual** (o instalador pede a senha uma vez). Nem SYSTEM nem conta própria.
 
-**Etapa 3 (e-mail)**
-- Qual conta de envio (SMTP da empresa, Microsoft 365, Google Workspace ou Brevo/SES)?
-- Quais eventos além de "criada" mandam e-mail? O solicitante recebe cópia?
-- Fila do setor vai para o e-mail do setor ou para todas as pessoas?
-- A descrição vai no e-mail?
+**Etapa 3 (e-mail)**: respondidas pelo dono em 28/10/2026
+- Conta de envio: **ainda não definida**. Fazer com usuário e senha (SMTP comum, serve para SMTP da empresa, Google
+  Workspace e Gmail com senha de app). OAuth2 do Microsoft 365 (fase 5 do estudo 04) fica para quando a conta for
+  definida.
+- Eventos: **só "criada" ligado por padrão**; os outros como caixinhas desligadas. Cópia ao solicitante: desligada.
+- Fila do setor: **e-mail do setor; sem ele, as pessoas ativas do setor com e-mail** (no máximo 20).
+- Descrição: **vai, cortada em 400 caracteres**, com opção de desligar.
+- Envio pela thread de fundo comum (a cada 60 s): um e-mail sai em até 1 minuto. "Enviar teste" é na hora.
 
 **Etapa 4 (avisos)**
 - No tablet compartilhado, o aviso é do setor ou da pessoa?

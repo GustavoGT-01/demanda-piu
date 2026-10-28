@@ -850,7 +850,7 @@ function suggestId(name){
 }
 function openSF(mode, id){
   const s = id ? sec(id) : null, n = setores().length;
-  D.sform = mode === 'edit' ? {mode, id, name: s.nome, icon: s.icone, color: col(s.cor), idTouched: true, err: {}} : {mode, id: '', name: '', icon: ICONS[n % ICONS.length], color: COLORS[n % COLORS.length], idTouched: false, err: {}};
+  D.sform = mode === 'edit' ? {mode, id, name: s.nome, icon: s.icone, color: col(s.cor), email: s.email || '', idTouched: true, err: {}} : {mode, id: '', name: '', icon: ICONS[n % ICONS.length], color: COLORS[n % COLORS.length], email: '', idTouched: false, err: {}};
   D.mod = {kind: 'sector'};
   renderSF();
 }
@@ -864,6 +864,7 @@ function renderSF(){
    <div class="dm-fld${e.name ? ' dm-err' : ''}"><label for="dm-sf-name">Nome do setor</label><input type="text" id="dm-sf-name" maxlength="40" value="${esc(f.name)}" placeholder="Ex.: Pintura"><span class="dm-em">Informe o nome (3 a 40 caracteres).</span></div>
    <div class="dm-two"><div class="dm-fld${e.id ? ' dm-err' : ''}"><label for="dm-sf-id">Sigla (2 a 4 caracteres)</label><input type="text" id="dm-sf-id" maxlength="4" value="${esc(f.id)}"${edit ? ' disabled' : ''} style="text-transform:uppercase" placeholder="Ex.: PIN"><span class="dm-em">${esc(e.idMsg || 'Sigla inválida.')}</span></div>
     <div class="dm-fld"><span class="dm-lbl">Pré-visualização</span><div class="dm-fixed" id="dm-sf-prev"></div></div></div>
+   ${emailFld('sf', f, 'E-mail do setor (opcional)', 'Ex.: corte@empresa.com.br', 'Recebe o aviso de demanda nova quando ela vai para a fila do setor.')}
    <div class="dm-fld"><span class="dm-lbl">Ícone</span><div class="dm-opts">${ICONS.map(i => `<button type="button" class="dm-opt dm-eo" data-act="sf-icon" data-v="${i}" aria-pressed="${f.icon === i}">${i}</button>`).join('')}</div></div>
    <div class="dm-fld"><span class="dm-lbl">Cor do setor</span><div class="dm-opts">${COLORS.map(c => `<button type="button" class="dm-sw" style="--dm-sc:${c}" data-act="sf-color" data-v="${c}" aria-pressed="${f.color === c}" aria-label="Cor ${c}"></button>`).join('')}</div></div>
    ${edit ? `<div class="dm-note"><b>${st.on}</b> usuário(s) ativo(s) · <b>${st.open}</b> solicitação(ões) em aberto · status: <b>${s.ativo ? 'ativo' : 'inativo'}</b></div>
@@ -871,6 +872,11 @@ function renderSF(){
    <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="sf-save">${edit ? 'Salvar alterações' : 'Criar setor'}</button></div>`);
   updateSFPrev();
 }
+
+/* e-mail opcional de setor e pessoa (só o ADM vê e edita); a mesma regra do servidor, que confere de novo */
+const EMAIL_RE = /^[^@\s,;<>"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$/;
+const emailOk = v => !v.trim() || (v.trim().length <= 254 && EMAIL_RE.test(v.trim()));
+const emailFld = (p, f, rot, ph, nota) => `<div class="dm-fld${f.err.email ? ' dm-err' : ''}"><label for="dm-${p}-email">${rot}</label><input type="email" id="dm-${p}-email" maxlength="254" value="${esc(f.email)}" placeholder="${esc(ph)}" autocomplete="off" spellcheck="false"><span class="dm-em">E-mail inválido: use algo como nome@empresa.com.br.</span><div class="dm-note" style="margin:3px 0 0">${nota}</div></div>`;
 
 /* pessoa (código de 4 dígitos no lugar da senha) */
 function genCode(){
@@ -880,7 +886,7 @@ function genCode(){
 }
 function openUF(mode, id, setor){
   const p = id ? per(id) : null;
-  D.uform = mode === 'edit' ? {mode, id, name: p.nome, setor: p.setor, code: '', show: false, err: {}} : {mode, id: null, name: '', setor: setor || '', code: genCode(), show: true, err: {}};
+  D.uform = mode === 'edit' ? {mode, id, name: p.nome, setor: p.setor, email: p.email || '', code: '', show: false, err: {}} : {mode, id: null, name: '', setor: setor || '', email: '', code: genCode(), show: true, err: {}};
   D.mod = {kind: 'user'};
   renderUF();
 }
@@ -890,6 +896,7 @@ function renderUF(){
   openModal(`<h2>${edit ? 'Editar usuário' : 'Novo usuário'}</h2><div class="dm-note" style="margin-top:0">${edit ? 'Matrícula ' + esc(p.mat) : 'A pessoa entra pelo “Quem é você?” escolhendo o setor, o nome e digitando o código. Só vê o que é do setor dela e o que ela pediu.'}</div>
    <div class="dm-fld${e.name ? ' dm-err' : ''}"><label for="dm-uf-name">Nome do usuário</label><input type="text" id="dm-uf-name" maxlength="60" value="${esc(f.name)}" placeholder="Ex.: Roberto"><span class="dm-em">Informe o nome (2 a 60 caracteres).</span></div>
    <div class="dm-fld${e.setor ? ' dm-err' : ''}"><label for="dm-uf-sec">Setor</label><select id="dm-uf-sec">${opt('', 'Selecione o setor', f.setor)}${secOpts(f.setor)}</select><span class="dm-em">Escolha o setor do usuário.</span></div>
+   ${emailFld('uf', f, 'E-mail (opcional)', 'Ex.: joao.pereira@empresa.com.br', 'Recebe por e-mail as demandas atribuídas a esta pessoa. Só o escritório vê este campo.')}
    <div class="dm-fld${e.code ? ' dm-err' : ''}"><label for="dm-uf-code">${edit ? 'Novo código (opcional)' : 'Código de 4 dígitos'}</label><div class="dm-row"><div class="dm-pwrap" style="flex:1"><input type="${f.show ? 'text' : 'password'}" id="dm-uf-code" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" value="${esc(f.code)}" placeholder="${edit ? 'Deixe em branco para manter' : '••••'}"><button type="button" class="dm-eye" data-act="uf-eye" aria-label="Mostrar ou ocultar o código">${f.show ? '🙈' : '👁'}</button></div><button type="button" class="dm-btn" data-act="uf-gen">Gerar</button></div><span class="dm-em">O código tem exatamente 4 números.</span></div>
    ${moving ? '<div class="dm-note">⚠️ Ao mudar de setor, as solicitações em aberto atribuídas a ' + esc(p.nome) + ' voltam para a fila do setor atual.</div>' : ''}
    ${edit ? `<div class="dm-note"><b>${st.open}</b> em aberto · <b>${st.done}</b> concluídas (7d) · desempenho: <b>${st.sla == null ? 'sem dados' : st.sla + '% no prazo'}</b> · status: <b>${p.ativo ? 'ativo' : 'inativo'}</b></div>
@@ -1386,10 +1393,11 @@ function act(a, d, el, ev){
       const f = D.sform, e = {}, name = f.name.trim(), id = f.id.trim().toUpperCase(), edit = f.mode === 'edit';
       if(name.length < 3 || name.length > 40) e.name = 1;
       if(!edit){if(!/^[A-Z0-9]{2,4}$/.test(id)){e.id = 1; e.idMsg = 'Use de 2 a 4 letras ou números.'} else if(setores().some(s => s.id === id)){e.id = 1; e.idMsg = 'Esta sigla já está em uso.'}}
+      if(!emailOk(f.email)) e.email = 1;
       f.err = e;
       if(Object.keys(e).length){renderSF(); return}
       const s = edit ? sec(f.id) : null;
-      run(el, 'setor/salvar', {modo: edit ? 'editar' : 'novo', id: edit ? f.id : id, nome: name, icone: f.icon, cor: f.color, rev: s ? num(s._rv) : 0}, edit ? 'Setor atualizado' : '✅ Setor ' + id + ' criado. Agora cadastre os usuários dele.', closeModal);
+      run(el, 'setor/salvar', {modo: edit ? 'editar' : 'novo', id: edit ? f.id : id, nome: name, icone: f.icon, cor: f.color, email: f.email.trim(), rev: s ? num(s._rv) : 0},edit ? 'Setor atualizado' : '✅ Setor ' + id + ' criado. Agora cadastre os usuários dele.', closeModal);
       break;
     }
     case 'sf-toggle': {const s = sec(D.sform.id); run(el, 'setor/ativar', {id: s.id, rev: num(s._rv)}, s.ativo ? 'Setor desativado' : 'Setor reativado', closeModal); break}
@@ -1407,9 +1415,10 @@ function act(a, d, el, ev){
       if(name.length < 2 || name.length > 60) e.name = 1;
       if(!f.setor || !setores().some(s => s.id === f.setor)) e.setor = 1;
       if(edit ? f.code && !/^[0-9]{4}$/.test(f.code) : !/^[0-9]{4}$/.test(f.code)) e.code = 1;
+      if(!emailOk(f.email)) e.email = 1;
       f.err = e;
       if(Object.keys(e).length){renderUF(); return}
-      const p = edit ? per(f.id) : null, body = {modo: edit ? 'editar' : 'novo', nome: name, setor: f.setor, rev: p ? num(p._rv) : 0};
+      const p = edit ? per(f.id) : null, body = {modo: edit ? 'editar' : 'novo', nome: name, setor: f.setor, email: f.email.trim(), rev: p ? num(p._rv) : 0};
       if(edit) body.id = f.id;
       if(f.code) body.codigo = f.code;
       const msg = edit ? (f.code ? 'Dados e código atualizados' : 'Usuário atualizado') : '✅ ' + name + ' cadastrado(a) em ' + sec(f.setor).nome + ' · código ' + f.code;
@@ -1446,6 +1455,11 @@ function onInput(e){
   else if(id === 'dm-sf-name' && D.sform){const f = D.sform; f.name = v; if(f.mode === 'new' && !f.idTouched){f.id = suggestId(v); $('dm-sf-id').value = f.id} f.err.name = 0; e.target.closest('.dm-fld').classList.remove('dm-err'); updateSFPrev()}
   else if(id === 'dm-sf-id' && D.sform){const f = D.sform; f.id = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); e.target.value = f.id; f.idTouched = true; updateSFPrev()}
   else if(id === 'dm-uf-name' && D.uform) D.uform.name = v;
+  else if((id === 'dm-uf-email' && D.uform) || (id === 'dm-sf-email' && D.sform)){
+    const f = id === 'dm-uf-email' ? D.uform : D.sform;
+    f.email = v;
+    if(f.err.email && emailOk(v)){f.err.email = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}
+  }
   else if(id === 'dm-rs-c'){const b = $('dm-rs-ok'); if(b) b.disabled = v.trim().toUpperCase() !== 'RESTAURAR'}
   else if(id === 'dm-uf-code' && D.uform){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.uform.code = c}
 }
