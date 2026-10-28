@@ -51,6 +51,14 @@ async function aparelhoOperador(){
   $$('.dm-lguser').find(b=>b.textContent.includes('Carlos')).click();
   const cod=$('#dm-lg-code');cod.value='1234';cod.dispatchEvent(new w.Event('input',{bubbles:true}));$('.dm-lgbtn').click();
   ok(await until(()=>$('#dm-login').hidden&&/Olá, Carlos/.test($('#dmboard').textContent)),'Carlos entra com o código dele');
+  // aparelho com armazenamento bloqueado: o formulário funciona, só não guarda rascunho
+  const erros=[];w.addEventListener('error',e=>erros.push(e.message));
+  Object.defineProperty(w,'localStorage',{configurable:true,get(){throw new Error('armazenamento bloqueado')}});
+  $('.dm-hdnew').click();await until(()=>$('#dm-fm-title'));
+  const tt=$('#dm-fm-title');tt.value='Sem armazenamento';tt.dispatchEvent(new w.Event('input',{bubbles:true}));
+  $('[data-act=mclose]').click();await sleep(30);$('.dm-hdnew').click();
+  ok(await until(()=>$('#dm-fm-title')&&$('#dm-fm-title').value===''&&!$('#dm-fm-rasc'))&&!erros.length,'localStorage que lança erro não quebra o formulário '+erros.join(' | '));
+  $('[data-act=mclose]').click();
   w.close();
 }
 // Restaurar pela tela a cópia feita no começo (antes dos setores): confirmação, RESTAURAR digitado, dados voltam.
@@ -144,11 +152,29 @@ async function restaurarPelaTela(){
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')&&/Carlos/.test(toast())),'cria pessoa Carlos (CNC) com código '+toast());
     // demanda com tentativa de XSS no título
     const XSS='<img src=x onerror="window.__xss=1"> Corte de chapas';
+    // rascunho: fechar o formulário não perde o texto; Descartar limpa
     click('.dm-hdnew');await until(()=>$('#dm-fm-title'));
+    ok(!$('#dm-fm-rasc'),'formulário novo, sem rascunho');
+    type('#dm-fm-title','Rascunho que não pode sumir');type('#dm-fm-toS','CNC','change');await sleep(30);type('#dm-fm-desc','detalhe');
+    click('[data-act=mclose]');await until(()=>!$('#dm-modal').classList.contains('dm-on'));
+    const rasc=JSON.parse(w.localStorage.getItem('dm-rascunho:adm')||'{}');
+    ok(rasc.titulo==='Rascunho que não pode sumir'&&rasc.desc==='detalhe'&&rasc.toS==='CNC'&&typeof rasc.cid==='string'&&/^[A-Za-z0-9_-]{8,64}$/.test(rasc.cid)&&!('tk' in rasc),'rascunho guardado no aparelho (até o último campo digitado), com a chave do pedido e sem tk');
+    click('.dm-hdnew');await until(()=>$('#dm-fm-title'));
+    ok($('#dm-fm-rasc')&&$('#dm-fm-title').value==='Rascunho que não pode sumir'&&$('#dm-fm-desc').value==='detalhe'&&$('#dm-fm-toS').value==='CNC','reabrir recupera o rascunho');
+    click('[data-act=m-draft-x]');await sleep(30);
+    ok(!$('#dm-fm-rasc')&&$('#dm-fm-title').value===''&&w.localStorage.getItem('dm-rascunho:adm')===null,'Descartar limpa o formulário e o aparelho');
+    w.localStorage.setItem('dm-rascunho:adm',JSON.stringify({t:Date.now()-25*3600000,titulo:'velho'}));
+    click('[data-act=mclose]');await sleep(30);click('.dm-hdnew');await until(()=>$('#dm-fm-title'));
+    ok(!$('#dm-fm-rasc')&&$('#dm-fm-title').value==='','rascunho de mais de 24 h não volta');
     ok($('[data-act=m-est][data-v="480"]').textContent==='8 h','atalho de 480 min diz "8 h": o prazo conta tempo corrido, não dia útil');
     type('#dm-fm-title',XSS);type('#dm-fm-fromS','PCP','change');type('#dm-fm-toS','CNC','change');await sleep(50);
-    click('[data-act=m-reason]');await sleep(30);click('[data-act=m-est][data-v="30"]');await sleep(30);click('[data-act=m-submit]');
+    click('[data-act=m-reason]');await sleep(30);click('[data-act=m-est][data-v="30"]');await sleep(30);
+    const cidEnviado=JSON.parse(w.localStorage.getItem('dm-rascunho:adm')||'{}').cid;
+    click('[data-act=m-submit]');
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')),'demanda criada '+toast());
+    const cids=JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).cids||[];
+    ok(typeof cidEnviado==='string'&&cids.length===1&&cids[0][0]===cidEnviado,'o pedido levou a mesma chave do rascunho: reenviar não duplica');
+    ok(w.localStorage.getItem('dm-rascunho:adm')===null,'enviada com sucesso: o rascunho sai do aparelho');
     click('[data-act=tab][data-v=sol]');
     ok(await until(()=>$$('.dm-card').some(c=>c.querySelector('.dm-nm').textContent===XSS)),'título aparece como texto');
     ok(!$('#dmboard img')&&w.__xss===undefined,'o <img onerror> não virou elemento nem rodou');

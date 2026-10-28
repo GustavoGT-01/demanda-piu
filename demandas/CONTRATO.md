@@ -36,9 +36,13 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
                "comentarios": [{"quem": "Helena", "t": 0, "texto": "..."}],
                "anexos": [{"id": "a0123456789abcdef", "nome": "foto.jpg", "tipo": "jpg", "bytes": 1234, "por": "Helena", "t": 0}],
                "_rv": 0}],
- "notas": [{"id": 1, "aud": "CNC", "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0, "lida": false}]}
+ "notas": [{"id": 1, "aud": "CNC", "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0, "lida": false}],
+ "cids": [["3f2a…-uuid", "SOL-1001"]]}
 ```
 - `de.p = null` quando quem pediu foi o Escritório (ADM). `para.p = null` = fila do setor.
+- `cids` (opcional; arquivo antigo sem ele = vazio): as últimas 500 chaves de pedido de `demanda/criar` e
+  `demanda/comentar` (`cid`, `^[A-Za-z0-9_-]{8,64}$`, gerado pela tela) com o que gravaram. Chave repetida = a
+  resposta anterior se perdeu e a tela mandou de novo: devolve a vista sem gravar.
 - `data/demandas-arquivo.json`: `{"v": 1, "demandas": [...]}` com concluídas/canceladas antigas tiradas do
   principal quando ele passa do teto (mesmo formato de demanda). Nunca volta ao principal.
 - Ambos são `*.json` no topo de `data/`, então entram sozinhos no backup `.cfbak`.

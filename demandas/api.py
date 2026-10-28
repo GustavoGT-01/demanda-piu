@@ -29,6 +29,7 @@ CODE_RE = re.compile(r"^[0-9]{4}$")
 SAL_RE = re.compile(r"^[0-9a-f]{32}$")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 CTRL_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")   # descrição e comentário aceitam \n
+CID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")          # chave do pedido gerada pela tela (UUID)
 TIPOS = ("dem", "alt", "set", "man", "mat")
 MOTIVOS = ("Falta de material", "Quebra de máquina", "Defeito de qualidade", "Mudança de projeto",
            "Ajuste de planejamento", "Retrabalho", "Solicitação do cliente", "Outro")
@@ -389,7 +390,26 @@ def _todas(doc: dict) -> list:
 
 # ---------- demandas ----------
 
+def _cid(doc: dict, body: dict):
+    """(chave, já feito?). A tela gera a chave ao abrir o formulário e a repete se a resposta se perder; repetida = o
+    pedido já foi gravado e não grava de novo. Sem chave (tela antiga): None."""
+    cid = body.get("cid")
+    if cid is None:
+        return None, False
+    if not isinstance(cid, str) or not CID_RE.fullmatch(cid):
+        raise ApiError(400, "Chave do pedido inválida.")
+    return cid, any(c[0] == cid for c in doc["cids"])
+
+
+def _anota_cid(doc: dict, cid, oque: str) -> None:
+    if cid is not None:
+        doc["cids"] = (doc["cids"] + [[cid, oque]])[-ds.MAX["cids"]:]
+
+
 def _criar(doc: dict, ator, body: dict, t: int):
+    cid, feito = _cid(doc, body)
+    if feito:
+        return False
     titulo = _texto(body.get("titulo"), "Título", 5, 140)
     tipo = _de(body.get("tipo"), TIPOS, "Tipo")
     motivo = _de(body.get("motivo"), MOTIVOS, "Motivo")
@@ -415,6 +435,7 @@ def _criar(doc: dict, ator, body: dict, t: int):
         _evento(d, "assigned", quem, "Responsável: " + _nome_pessoa(doc, p), t)
     doc["demandas"].append(_stamp(d))
     doc["seq"]["demanda"] = n
+    _anota_cid(doc, cid, d["id"])
     _nota(doc, s, "new", d["id"], "", quem, t)
     if prio == "urg":
         _nota(doc, "adm", "urg", d["id"], "", quem, t)
@@ -557,10 +578,14 @@ def _comentar(doc: dict, ator, body: dict, t: int):
     d = _dem(doc, body)
     if ator is not None and ator["setor"] not in (d["de"]["s"], d["para"]["s"]):
         raise ApiError(403, "Só os setores da demanda podem comentar.")
+    cid, feito = _cid(doc, body)
+    if feito:
+        return False
     texto = _texto(body.get("texto"), "Comentário", 1, 1000, nl=True)
     if len(d["comentarios"]) >= ds.MAX["comentarios"]:
         raise ApiError(400, "Limite de comentários desta demanda atingido.")
     d["comentarios"].append({"quem": _quem(ator), "t": t, "texto": texto})
+    _anota_cid(doc, cid, d["id"])
     _stamp(d)
 
 

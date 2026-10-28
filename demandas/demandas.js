@@ -748,11 +748,38 @@ function modalCancel(r){
 }
 
 /* nova solicitação */
-function openNew(){
+/* rascunho da nova solicitação: neste aparelho, por pessoa, por 24 h; sobrevive à queda da conexão e ao "Identifique-se
+   de novo". Nunca guarda o tk. O cid (chave do pedido) vai junto: reenviar depois de uma resposta perdida não duplica. */
+const RASC_VIDA = 24 * 3600000, CID_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const novoCid = () => window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+const rascKey = () => 'dm-rascunho:' + (D.role === 'adm' ? 'adm' : meId());
+function rascLe(){
+  try{const r = JSON.parse(localStorage.getItem(rascKey()) || 'null'); return r && typeof r === 'object' && num(r.t) > Date.now() - RASC_VIDA ? r : null}
+  catch(_){return null}
+}
+function rascGrava(){
+  const f = D.form;
+  if(!f || !D.role) return;
+  try{
+    if(!f.titulo.trim() && !f.desc.trim()) localStorage.removeItem(rascKey());
+    else localStorage.setItem(rascKey(), JSON.stringify({t: Date.now(), cid: f.cid, tipo: f.tipo, titulo: f.titulo, desc: f.desc, fromS: f.fromS, toS: f.toS, toP: f.toP, motivo: f.motivo, prio: f.prio, est: f.est, anexos: f.files.length}));
+  }catch(_){/* sem armazenamento no aparelho: o rascunho só não sobrevive */}
+}
+function rascApaga(){try{localStorage.removeItem(rascKey())}catch(_){/* idem */}}
+function openNew(fresh){
   if(!D.role) return;
-  const act = activeSectors(), adm = D.role === 'adm';
+  const act = activeSectors(), adm = D.role === 'adm', sids = act.map(s => s.id);
   const fromS = adm ? ((act.find(s => s.id === 'PCP') || act[0] || {}).id || '') : meSec();
-  D.form = {tipo: 'dem', titulo: '', desc: '', fromS, toS: '', toP: '', motivo: '', prio: 'norm', est: 60, files: [], err: {}};
+  D.form = {tipo: 'dem', titulo: '', desc: '', fromS, toS: '', toP: '', motivo: '', prio: 'norm', est: 60, files: [], err: {}, cid: novoCid()};
+  const r = fresh ? null : rascLe();
+  if(r){   // o que veio do aparelho passa pelas mesmas listas da tela
+    const est = num(r.est), toS = sids.includes(r.toS) ? r.toS : '';
+    Object.assign(D.form, {tipo: TYPE[r.tipo] ? r.tipo : 'dem', titulo: String(r.titulo || '').slice(0, 140), desc: String(r.desc || '').slice(0, 2000),
+      fromS: adm && sids.includes(r.fromS) ? r.fromS : fromS, toS, toP: toS && peopleOf(toS).some(p => p.id === r.toP) ? r.toP : '',
+      motivo: REASONS.includes(r.motivo) ? r.motivo : '', prio: PRIO[r.prio] ? r.prio : 'norm', est: est >= 1 && est <= 43200 ? est : 60,
+      recup: num(r.t), semAnexos: num(r.anexos) > 0});
+    if(typeof r.cid === 'string' && CID_RE.test(r.cid)) D.form.cid = r.cid;
+  }
   D.mod = {kind: 'new'};
   renderForm();
 }
@@ -761,6 +788,7 @@ function renderForm(){
   const cu = f.est % 60 === 0 && f.est >= 60 ? 'h' : 'm', cv = cu === 'h' ? f.est / 60 : f.est;
   const me = per(meId());
   openModal(`<h2>Nova solicitação</h2><div class="dm-note" style="margin-top:0">Preencha os dados. O setor responsável é avisado na hora e você acompanha o andamento em tempo real.</div>
+   ${f.recup ? `<div class="dm-rasc" id="dm-fm-rasc"><span>📝 Rascunho recuperado de ${fD(f.recup)} ${fT(f.recup)}${f.semAnexos ? ' · refaça os anexos' : ''}</span><button type="button" class="dm-btn dm-sm" data-act="m-draft-x">Descartar</button></div>` : ''}
    <div class="dm-fld"><span class="dm-lbl">Tipo</span><div class="dm-opts">${Object.entries(TYPE).map(([k, v]) => `<button type="button" class="dm-opt" data-act="m-type" data-v="${k}" aria-pressed="${f.tipo === k}">${v[0]} ${v[1]}</button>`).join('')}</div></div>
    <div class="dm-fld${e.titulo ? ' dm-err' : ''}"><label for="dm-fm-title">Título</label><input type="text" id="dm-fm-title" maxlength="140" placeholder="Ex.: Corte de 8 chapas de MDF 15mm" value="${esc(f.titulo)}"><span class="dm-em">Descreva a solicitação com 5 a 140 caracteres.</span></div>
    <div class="dm-fld"><label for="dm-fm-desc">Descrição (opcional)</label><textarea id="dm-fm-desc" rows="3" maxlength="2000" placeholder="Detalhes, medidas, referências...">${esc(f.desc)}</textarea></div>
@@ -776,6 +804,7 @@ function renderForm(){
     <div class="dm-prev" id="dm-fm-prev">${prevTxt(f.est)}</div><span class="dm-em">Informe um tempo entre 1 minuto e 30 dias.</span></div>
    <div class="dm-fld"><span class="dm-lbl">Anexos (JPG, PNG ou PDF, até 5 MB, no máximo 5)</span><div class="dm-files">${f.files.map((x, i) => `<span class="dm-file">📎 ${esc(x.name)} · ${fBytes(x.size)}<button type="button" class="dm-fx" data-act="m-rmfile" data-v="${i}" aria-label="Remover">✕</button></span>`).join('')}${f.files.length < ANX.n ? '<button type="button" class="dm-btn dm-sm" data-act="m-addfile">＋ Adicionar foto/arquivo</button>' : ''}</div></div>
    <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="m-submit">Enviar solicitação</button></div>`);
+  rascGrava();
 }
 const prevTxt = est => est > 0 ? `Prazo final: <b>${fDT(now() + est * MIN)}</b> (${dur(est)} a partir de agora)` : 'Informe o tempo estipulado.';
 function setEstFromInputs(rerender){
@@ -792,7 +821,7 @@ async function submitNew(el){
   if(D.role === 'adm' && !f.fromS) err.fromS = 1;
   f.err = err;
   if(Object.keys(err).length){renderForm(); const e1 = $('dm-mbox').querySelector('.dm-fld.dm-err'); if(e1 && e1.scrollIntoView) e1.scrollIntoView({block: 'center'}); return}
-  const body = {titulo: t, tipo: f.tipo, motivo: f.motivo, prio: f.prio, est: Math.round(f.est), para: {s: f.toS, p: f.toP || null}, desc: f.desc.trim().slice(0, 2000)};
+  const body = {titulo: t, tipo: f.tipo, motivo: f.motivo, prio: f.prio, est: Math.round(f.est), para: {s: f.toS, p: f.toP || null}, desc: f.desc.trim().slice(0, 2000), cid: f.cid};
   if(D.role === 'adm') body.de_s = f.fromS;
   const before = new Set(reqs().map(r => r.id)), files = f.files.slice(), to = f.toS;
   el.disabled = true;
@@ -800,6 +829,7 @@ async function submitNew(el){
   if(el.isConnected) el.disabled = false;
   if(!r) return;
   const nid = reqs().map(x => x.id).filter(id => !before.has(id)).sort((a, b) => sidNum(a) - sidNum(b)).pop();
+  rascApaga();   // só depois de o servidor confirmar
   closeModal();
   toast('✅ Solicitação enviada para ' + sec(to).nome);
   if(D.role === 'pessoa' && !D.imp){D.opTab = 'sent'; D.opF = 'pend'}
@@ -1231,7 +1261,8 @@ function act(a, d, el, ev){
     case 'comment': {
       const inp = $('dm-cmt'), text = inp ? inp.value.trim() : '';
       if(!r || !text) return;
-      run(el, 'demanda/comentar', {id: r.id, texto: text.slice(0, 1000)}, '', () => {const b = $('dm-cmt'); if(b) b.value = ''});
+      if(!D.cmt || D.cmt.id !== r.id || D.cmt.texto !== text) D.cmt = {id: r.id, texto: text, cid: novoCid()};   // mesmo texto reenviado = mesma chave
+      run(el, 'demanda/comentar', {id: r.id, texto: text.slice(0, 1000), cid: D.cmt.cid}, '', () => {D.cmt = null; const b = $('dm-cmt'); if(b) b.value = ''});
       break;
     }
     case 'aopen': openAnexo(d.aid); break;
@@ -1262,6 +1293,7 @@ function act(a, d, el, ev){
     }); break;
     case 'm-rmfile': D.form.files.splice(num(d.v), 1); renderForm(); break;
     case 'm-submit': submitNew(el); break;
+    case 'm-draft-x': openNew(true); break;   // o formulário vazio apaga o rascunho ao desenhar
     case 'm-pause-ok': {
       const id = D.mod && D.mod.id, s = root.querySelector('input[name=dm-pr]:checked');
       if(!id || !s) return;
@@ -1336,8 +1368,8 @@ function onInput(e){
   else if(id === 'dm-hq'){D.hq = v; renderView()}
   else if(id === 'dm-uq'){D.uq = v; renderView()}
   else if(id === 'dm-lg-code'){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.lg.code = c; if(D.lg.err){D.lg.err = ''; const f = $('dm-lg-fld'); if(f) f.classList.remove('dm-err')}}
-  else if(id === 'dm-fm-title' && D.form){D.form.titulo = v; if(D.form.err.titulo && v.trim().length >= 5){D.form.err.titulo = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}}
-  else if(id === 'dm-fm-desc' && D.form) D.form.desc = v;
+  else if(id === 'dm-fm-title' && D.form){D.form.titulo = v; rascGrava(); if(D.form.err.titulo && v.trim().length >= 5){D.form.err.titulo = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}}
+  else if(id === 'dm-fm-desc' && D.form){D.form.desc = v; rascGrava()}
   else if(id === 'dm-fm-estN' && D.form) setEstFromInputs();
   else if(id === 'dm-sf-name' && D.sform){const f = D.sform; f.name = v; if(f.mode === 'new' && !f.idTouched){f.id = suggestId(v); $('dm-sf-id').value = f.id} f.err.name = 0; e.target.closest('.dm-fld').classList.remove('dm-err'); updateSFPrev()}
   else if(id === 'dm-sf-id' && D.sform){const f = D.sform; f.id = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); e.target.value = f.id; f.idTouched = true; updateSFPrev()}
@@ -1358,9 +1390,9 @@ function onChange(e){
   else if(id === 'dm-uSec'){D.uSec = v; renderView()}
   else if(id === 'dm-uSt'){D.uSt = v; renderView()}
   else if(id === 'dm-dr-prio'){const r = byId(e.target.dataset.id); if(r) run(null, 'demanda/prioridade', {id: r.id, prio: v}, 'Prioridade: ' + (PRIO[v] || [v])[0])}
-  else if(id === 'dm-fm-fromS' && D.form){D.form.fromS = v; D.form.err.fromS = 0}
+  else if(id === 'dm-fm-fromS' && D.form){D.form.fromS = v; D.form.err.fromS = 0; rascGrava()}
   else if(id === 'dm-fm-toS' && D.form){D.form.toS = v; D.form.toP = ''; D.form.err.toS = 0; renderForm()}
-  else if(id === 'dm-fm-toP' && D.form) D.form.toP = v;
+  else if(id === 'dm-fm-toP' && D.form){D.form.toP = v; rascGrava()}
   else if(id === 'dm-fm-estU' && D.form) setEstFromInputs(true);
   else if(id === 'dm-ra-s'){$('dm-ra-p').innerHTML = peopleOpts(v, '')}
   else if(id === 'dm-uf-sec' && D.uform){D.uform.setor = v; D.uform.err.setor = 0; renderUF()}

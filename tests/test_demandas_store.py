@@ -64,7 +64,7 @@ class Carga(Base):
         doc = ds.load()
         self.assertEqual(doc, ds.empty())
         self.assertEqual(doc, {"v": 1, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
-                               "setores": [], "pessoas": [], "demandas": [], "notas": []})
+                               "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": []})
         self.assertFalse(ds.path().exists())
         self.assertEqual(ds.load(cache=False), ds.empty())
         self.assertIsNot(ds.empty()["seq"], ds.empty()["seq"])
@@ -73,6 +73,19 @@ class Carga(Base):
         for raw in ("[1, 2]", "null", '"texto"', "7"):
             self.grava(raw)
             self.assertEqual(ds.load(cache=False), ds.empty(), raw)
+
+    def test_cids(self):
+        boas = [["c%07d" % i, "SOL-%d" % i] for i in range(ds.MAX["cids"] + 2)]
+        ruins = ["x", ["so-um"], ["a", "b", "c"], ["a", 1], [1, "b"], {"a": "b"}]
+        self.grava({"v": 1, "cids": ruins + boas})
+        self.assertEqual(ds.load()["cids"], boas[-ds.MAX["cids"]:], "as mais novas, só pares de texto")
+        ds._CACHE.update(key=None, texto=None)
+        self.grava({"v": 1, "cids": [boas[0]] + ruins + [boas[1]]})
+        self.assertEqual(ds.load()["cids"], boas[:2], "linha estranha sai mesmo longe do teto")
+        for raw in ({"v": 1}, {"v": 1, "cids": "x"}, {"v": 1, "cids": {"a": "b"}}):
+            ds._CACHE.update(key=None, texto=None)
+            self.grava(raw)
+            self.assertEqual(ds.load()["cids"], [])
 
     def test_normaliza_tipos_e_descarta_linhas(self):
         boa = dem(1001, est="60", criado=True, iniciado=5, fim="x", atraso_avisado=1, _rv=None,
@@ -444,7 +457,7 @@ class Arquivo(Base):
         self.assertEqual(self._max["demandas"], 5000)
         self.assertEqual(self._max["arquivo"], 50000)
         self.assertEqual(self._max, {"setores": 60, "pessoas": 500, "demandas": 5000, "arquivo": 50000,
-                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 120})
+                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 120, "cids": 500})
 
     def test_num_sem_id_valido(self):
         self.assertEqual(ds._num({"id": "SOL-42"}), 42)

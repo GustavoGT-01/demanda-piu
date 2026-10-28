@@ -682,6 +682,48 @@ class Transicoes(Base):
         self.adm("demanda/estender", {"id": d["id"], "minutos": 1})   # prazo == agora: ainda conta como passado
         self.assertTrue(self.dem(d["id"])["atraso_avisado"])
 
+    def test_cid_nao_cria_duas_vezes(self):
+        cid = "3f2a9c1e-0b7d-4c55-9e21-7a1b2c3d4e5f"
+        a = self.nova(self.tk_h, cid=cid)
+        rev = self.disco()["rev"]
+        b = self.nova(self.tk_h, cid=cid, titulo="Reenvio da mesma tela")   # a resposta se perdeu: a tela manda de novo
+        self.assertEqual(b["id"], a["id"])
+        self.assertEqual(self.disco()["rev"], rev, "repetido não grava")
+        self.assertEqual([d["id"] for d in self.disco()["demandas"]].count(a["id"]), 1)
+        self.assertEqual(self.disco()["cids"], [[cid, a["id"]]])
+        c = self.nova(self.tk_h, cid="outra-chave-1")
+        self.assertNotEqual(c["id"], a["id"])
+        self.nova(self.tk_h)   # sem chave (tela antiga) continua valendo e não anota nada
+        self.assertEqual([x[0] for x in self.disco()["cids"]], [cid, "outra-chave-1"])
+        for ruim in ("curto", "x" * 65, "com espaço!", 12345678, True, ["a" * 8]):
+            self.assertEqual(self.msg(self.adm, "demanda/criar", {"cid": ruim}), "Chave do pedido inválida.", ruim)
+            self.assertEqual(self.erro(self.adm, "demanda/criar", {"cid": ruim}), 400, ruim)
+        self.assertEqual(self.nova(cid="a" * 8)["id"], "SOL-1004", "8 caracteres: o mínimo aceito")
+        self.nova(cid="b" * 64)
+
+    def test_cid_teto(self):
+        with mock.patch.dict(ds.MAX, {"cids": 2}):
+            for i in range(3):
+                self.nova(cid="chave-%03d" % i)
+        self.assertEqual([x[0] for x in self.disco()["cids"]], ["chave-001", "chave-002"])
+        with mock.patch.dict(ds.MAX, {"cids": 2}):
+            n = len(self.disco()["demandas"])
+            self.nova(cid="chave-000")   # saiu da lista: vale como nova
+        self.assertEqual(len(self.disco()["demandas"]), n + 1)
+
+    def test_cid_no_comentario(self):
+        d = self.nova(self.tk_h)
+        self.pes(self.tk_h, "demanda/comentar", {"id": d["id"], "texto": "uma vez só", "cid": "coment-0001"})
+        rev = self.disco()["rev"]
+        self.pes(self.tk_h, "demanda/comentar", {"id": d["id"], "texto": "uma vez só", "cid": "coment-0001"})
+        self.assertEqual(self.disco()["rev"], rev, "repetido não grava")
+        self.assertEqual([c["texto"] for c in self.dem(d["id"])["comentarios"]], ["uma vez só"])
+        self.assertEqual(self.disco()["cids"][-1], ["coment-0001", d["id"]])
+        self.assertEqual(self.erro(self.pes, self.tk_f, "demanda/comentar", {"id": d["id"], "texto": "x", "cid": "coment-0001"}),
+                         403, "a permissão vem antes da chave")
+        self.assertEqual(self.msg(self.pes, self.tk_h, "demanda/comentar", {"id": d["id"], "texto": "x", "cid": "ruim"}),
+                         "Chave do pedido inválida.")
+
     def test_comentar(self):
         d = self.nova(self.tk_h)
         self.adm("demanda/comentar", {"id": d["id"], "texto": " olá\nmundo "})

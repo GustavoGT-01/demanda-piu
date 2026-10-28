@@ -431,6 +431,9 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-ustat{display:grid;gap:1px;font-size:12px;color:var(--dm-muted)}
 #dmboard .dm-uact{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
+/* rascunho recuperado no formulário de nova solicitação */
+#dmboard .dm-rasc{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 2px;padding:8px 11px;border-radius:12px;border:1px dashed var(--dm-s-new);background:color-mix(in srgb,var(--dm-s-new) 8%,var(--dm-surface));font-size:12.5px}
+
 /* ⚙ Configurações (só no computador principal): menu de seções à esquerda, conteúdo à direita */
 #dmboard .dm-mbox.dm-cfgbox{width:min(780px,100%);padding:0;overflow:hidden}
 #dmboard .dm-cfg{display:grid;grid-template-columns:170px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}

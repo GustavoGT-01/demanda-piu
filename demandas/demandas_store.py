@@ -20,7 +20,7 @@ import store
 V = 1
 LOCK = threading.Lock()
 MAX = {"setores": 60, "pessoas": 500, "demandas": 5000, "arquivo": 50000,
-       "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 120}
+       "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 120, "cids": 500}
 ANEXO_MAX = 5 * 1024 * 1024
 ANEXOS_POR_DEMANDA = 5
 COTA = 300 * 1024 * 1024
@@ -55,7 +55,7 @@ def anexos_dir() -> Path:
 
 def empty() -> dict:
     return {"v": V, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
-            "setores": [], "pessoas": [], "demandas": [], "notas": []}
+            "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": []}
 
 
 # ---------- normalização ----------
@@ -131,6 +131,10 @@ def _normaliza(raw: dict) -> dict:
     for n in _unicos(raw.get("notas"), lambda v: _int(v, None) is not None):
         n["lida"] = _bool(n.get("lida"), False)
         doc["notas"].append(n)
+    # [chave do pedido, o que ele gravou]: pedido repetido pela tela (resposta perdida) não grava duas vezes
+    cids = raw.get("cids") if isinstance(raw.get("cids"), list) else []
+    doc["cids"] = [c for c in cids if isinstance(c, list) and len(c) == 2 and all(isinstance(x, str) for x in c)
+                   ][-MAX["cids"]:]
     return doc
 
 
