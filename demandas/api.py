@@ -1,7 +1,8 @@
 """Demandas: rotas, autorização e regras (porte de DEMANDA/src/models/requests.js e factory.js).
 
 Contrato em CONTRATO.md. Banco em demandas_store (o LOCK dele é segurado aqui em toda leitura+escrita);
-cálculos de tempo e vista em demandas_calc. Pessoa age com um token (tk) que só existe em memória.
+cálculos de tempo e vista em demandas_calc. Pessoa age com um token (tk); o servidor guarda só o sha256 dele, em
+memória e em data/pessoas-sessoes.json (o reinício do servidor não derruba ninguém). A página guarda o tk só em memória.
 """
 
 from __future__ import annotations
@@ -10,8 +11,10 @@ import base64
 import binascii
 import hashlib
 import hmac
+import json
 import re
 import secrets
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -19,6 +22,7 @@ from collections import OrderedDict
 import demandas_backup as bk
 import demandas_calc as calc
 import demandas_store as ds
+import store
 
 LOCK = ds.LOCK
 CODE_RE = re.compile(r"^[0-9]{4}$")
@@ -58,8 +62,10 @@ def _agora() -> int:
     return int(time.time() * 1000)
 
 
-# Relógio do bloqueio e dos tokens; os testes trocam.
+# Relógios que os testes trocam: o do bloqueio (monotônico) e o da validade do tk (de parede: ela vai para o disco e
+# precisa valer depois de reiniciar o PC).
 _clock = time.monotonic
+_parede = time.time
 
 
 # ---------- entradas ----------
@@ -145,41 +151,98 @@ def _check_code(pid: str, sal: str, hsh: str, codigo) -> None:
         raise ApiError(403, "Código errado.")
 
 
-_TK: OrderedDict = OrderedDict()   # tk -> (pessoa, vence); o mais antigo sai primeiro
+_TK: OrderedDict = OrderedDict()   # sha256(tk) -> (pessoa, vence); o mais antigo sai primeiro
 _TK_LOCK = threading.Lock()
+_TK_ARQ: list = [None]             # de que arquivo _TK veio (outra pasta de dados = outro arquivo)
+_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _tk_h(tk: str) -> str:
+    return hashlib.sha256(tk.encode("utf-8")).hexdigest()
+
+
+def _tk_path():
+    return store.data_dir() / "pessoas-sessoes.json"
+
+
+def _tk_carrega() -> None:
+    """Com _TK_LOCK. Lê data/pessoas-sessoes.json na primeira vez (ou se a pasta de dados mudou). Linha estranha ou
+    vencida fica de fora; arquivo ruim = ninguém identificado."""
+    p = _tk_path()
+    if _TK_ARQ[0] == p:
+        return
+    _TK_ARQ[0] = p
+    _TK.clear()
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    rows = raw.get("sessoes") if isinstance(raw, dict) else None
+    agora, validas = _parede(), []
+    for h, v in rows.items() if isinstance(rows, dict) else ():
+        if (isinstance(h, str) and _HASH_RE.fullmatch(h) and isinstance(v, list) and len(v) == 2 and isinstance(v[0], str)
+                and isinstance(v[1], (int, float)) and not isinstance(v[1], bool) and v[1] > agora):
+            validas.append((v[1], h, v[0]))
+    for vence, h, pid in sorted(validas)[-TK_MAX:]:   # o mais antigo primeiro: é o que sai quando passa do teto
+        _TK[h] = (pid, vence)
+
+
+def _tk_grava() -> None:
+    """Com _TK_LOCK. Falha ao gravar não derruba a entrada da pessoa: ela só não sobrevive a um reinício."""
+    try:
+        store.atomic_write(_tk_path(), json.dumps({"v": 1, "sessoes": {h: list(v) for h, v in _TK.items()}}))
+    except OSError as exc:
+        print("[sessões] não gravou: %r" % exc, file=sys.stderr)
 
 
 def _tk_novo(pid: str) -> str:
     tk = secrets.token_urlsafe(24)
     with _TK_LOCK:
-        _TK[tk] = (pid, _clock() + TK_VIDA_S)
+        _tk_carrega()
+        _TK[_tk_h(tk)] = (pid, _parede() + TK_VIDA_S)
         while len(_TK) > TK_MAX:
             _TK.popitem(last=False)
+        _tk_grava()
     return tk
 
 
 def _tk_pessoa(tk):
+    if not isinstance(tk, str):
+        return None
     with _TK_LOCK:
-        hit = _TK.get(tk) if isinstance(tk, str) else None
+        _tk_carrega()
+        h = _tk_h(tk)
+        hit = _TK.get(h)
         if hit is None:
             return None
-        if hit[1] <= _clock():
-            del _TK[tk]
+        if hit[1] <= _parede():
+            del _TK[h]   # no disco ele fica até a próxima gravação; vencido não volta na leitura
             return None
         return hit[0]
+
+
+def _tk_tira(hs) -> None:
+    """Com _TK_LOCK: tira estes hashes e grava se algum existia."""
+    tirou = False
+    for h in hs:
+        if _TK.pop(h, None) is not None:
+            tirou = True
+    if tirou:
+        _tk_grava()
 
 
 def esquecer_pessoas() -> None:
     """Depois de restaurar um backup: todo mundo se identifica de novo (a pessoa pode não existir na cópia, ou ter
     outro código)."""
     with _TK_LOCK:
-        _TK.clear()
+        _tk_carrega()
+        _tk_tira(list(_TK))
 
 
 def _tk_revoga(pid: str) -> None:
     with _TK_LOCK:
-        for k in [k for k, v in _TK.items() if v[0] == pid]:
-            del _TK[k]
+        _tk_carrega()
+        _tk_tira([h for h, v in _TK.items() if v[0] == pid])
 
 
 def _setor_ok(doc: dict, sid, nome: str) -> str:
@@ -845,9 +908,10 @@ def _handle(method: str, rest: str, body: dict, ctx: dict) -> dict:
     if rest == "entrar":
         return _entrar(body, t)
     if rest == "sair":
-        with _TK_LOCK:
-            if isinstance(body.get("tk"), str):
-                _TK.pop(body["tk"], None)
+        if isinstance(body.get("tk"), str):
+            with _TK_LOCK:
+                _tk_carrega()
+                _tk_tira([_tk_h(body["tk"])])
         return {"ok": True}
     if rest == "anexo/enviar":
         return _anexo_enviar(body, papel, t)

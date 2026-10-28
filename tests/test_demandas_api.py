@@ -5,6 +5,7 @@ Dados num diretório temporário (DEMANDAS_DATA) por teste; relógio e pbkdf2 tr
 
 import base64
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -46,6 +47,7 @@ class Base(unittest.TestCase):
         self.clk = 1000.0
         self.t = T0
         api._clock = lambda: self.clk
+        api._parede = lambda: self.clk
         api._agora = lambda: self.t
         api.ITER = 1000   # o real (100 000) é conferido em test_constantes
         fs = mock.patch("os.fsync", lambda fd: None)   # durabilidade é do store (testada lá); aqui só atrasa
@@ -263,7 +265,86 @@ class Identidade(Base):
         self.pes(self.tk_c, "vista")
         self.clk += 1
         self.assertEqual(self.erro(self.pes, self.tk_c, "vista"), 401)
-        self.assertNotIn(self.tk_c, api._TK)   # vencido sai da memória
+        self.assertNotIn(api._tk_h(self.tk_c), api._TK)   # vencido sai da memória
+
+    def reinicia(self):
+        """Como se o servidor tivesse reiniciado: a memória some, o arquivo fica."""
+        api._TK.clear()
+        api._TK_ARQ[0] = None
+
+    def sessoes(self):
+        return json.loads((self.dir / "pessoas-sessoes.json").read_text(encoding="utf-8"))
+
+    def test_sessao_sobrevive_ao_reinicio(self):
+        self.reinicia()
+        self.assertEqual(self.pes(self.tk_c, "vista")["eu"]["id"], self.carlos)
+        disco = self.sessoes()
+        self.assertEqual(disco["v"], 1)
+        self.assertEqual(disco["sessoes"][api._tk_h(self.tk_c)], [self.carlos, self.clk + api.TK_VIDA_S])
+        txt = (self.dir / "pessoas-sessoes.json").read_text(encoding="utf-8")
+        for tk in (self.tk_c, self.tk_b, self.tk_h, self.tk_f):
+            self.assertNotIn(tk, txt, "no disco só o hash")
+        self.clk += api.TK_VIDA_S
+        self.reinicia()
+        self.assertEqual(self.erro(self.pes, self.tk_c, "vista"), 401, "vencido não volta do disco")
+
+    def test_revogado_e_sair_valem_depois_do_reinicio(self):
+        api._tk_revoga(self.carlos)
+        self.adm("sair", {"tk": self.tk_b}, ctx=OP)
+        self.reinicia()
+        self.assertEqual(self.erro(self.pes, self.tk_c, "vista"), 401)
+        self.assertEqual(self.erro(self.pes, self.tk_b, "vista"), 401)
+        self.pes(self.tk_h, "vista")
+        api.esquecer_pessoas()
+        self.reinicia()
+        self.assertEqual(self.erro(self.pes, self.tk_h, "vista"), 401)
+        self.assertEqual(self.sessoes()["sessoes"], {})
+
+    def test_sair_e_revogar_sem_nada_nao_regrava(self):
+        antes = (self.dir / "pessoas-sessoes.json").stat().st_mtime_ns
+        with mock.patch.object(api.store, "atomic_write") as aw:
+            self.adm("sair", {"tk": "inventado"}, ctx=OP)
+            api._tk_revoga("p999")
+        aw.assert_not_called()
+        self.assertEqual((self.dir / "pessoas-sessoes.json").stat().st_mtime_ns, antes)
+
+    def test_arquivo_de_sessoes_ruim_ou_estranho(self):
+        h = "a" * 64
+        casos = ["{x", "[]", '{"sessoes": []}',
+                 json.dumps({"sessoes": {"curto": ["p1", 9e9], h.upper(): ["p1", 9e9], h + "0": ["p1", 9e9]}}),
+                 json.dumps({"sessoes": {h: ["p1"]}}), json.dumps({"sessoes": {h: [1, 9e9]}}),
+                 json.dumps({"sessoes": {h: ["p1", True]}}), json.dumps({"sessoes": {h: ["p1", "9e9"]}}),
+                 json.dumps({"sessoes": {h: ["p1", self.clk]}}), json.dumps({"sessoes": {h: ("p1", 9e9, 0)}})]
+        for c in casos:
+            (self.dir / "pessoas-sessoes.json").write_text(c, encoding="utf-8")
+            self.reinicia()
+            self.assertEqual(self.erro(self.pes, self.tk_c, "vista"), 401, c)
+            self.assertEqual(len(api._TK), 0, c)
+        (self.dir / "pessoas-sessoes.json").write_text(json.dumps({"sessoes": {h: ["p1", self.clk + 1]}}), encoding="utf-8")
+        self.reinicia()
+        api._tk_pessoa("x")
+        self.assertEqual(dict(api._TK), {h: ("p1", self.clk + 1)})
+
+    def test_teto_e_ordem_ao_ler(self):
+        hs = {("%064x" % i): ["p1", self.clk + 100 + i] for i in range(api.TK_MAX + 3)}
+        (self.dir / "pessoas-sessoes.json").write_text(json.dumps({"sessoes": hs}), encoding="utf-8")
+        self.reinicia()
+        api._tk_pessoa("x")
+        self.assertEqual(len(api._TK), api.TK_MAX)
+        self.assertEqual(next(iter(api._TK)), "%064x" % 3, "ficam as que vencem por último; a mais antiga primeiro")
+
+    def test_falha_ao_gravar_nao_impede_entrar(self):
+        with mock.patch.object(api.store, "atomic_write", side_effect=PermissionError("travado")), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            tk = self.entrar(self.fer, "4444")
+        self.assertEqual(self.pes(tk, "vista")["eu"]["id"], self.fer)
+        self.assertEqual(err.getvalue(), "[sessões] não gravou: PermissionError('travado')\n")
+
+    def test_outra_pasta_de_dados_outro_arquivo(self):
+        outra = Path(tempfile.mkdtemp(prefix="dem-api-outra-"))
+        with mock.patch.dict(os.environ, {"DEMANDAS_DATA": str(outra)}):
+            self.assertIsNone(api._tk_pessoa(self.tk_c))
+        self.assertEqual(api._tk_pessoa(self.tk_c), self.carlos)
 
     def test_sem_tk(self):
         self.assertEqual(self.erro(self.adm, "vista", ctx=OP), 403)
