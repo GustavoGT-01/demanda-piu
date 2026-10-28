@@ -213,8 +213,70 @@ function notesCheck(firstLoad){
     }else if(n.tipo === 'accepted') dtoast(n.dem + ' iniciada por ' + (n.quem || 'o setor'));
     else if(n.tipo === 'done') dtoast('✅ ' + n.dem + ' foi concluída');
     else if(n.tipo === 'comment') dtoast('💬 ' + (n.quem || 'Alguém') + ' comentou em ' + n.dem);
+    avisar(n);
   });
   if(ring) ringBell();
+}
+
+/* ---------- avisos da camada 1 (página aberta, funciona em http): som, vibração e título da aba ----------
+   Som e vibração valem por aparelho (localStorage; o tablet do chão pode tocar alto e o celular pessoal não).
+   Avisos da mesma demanda dentro de 10 min tocam uma vez; no máximo um som a cada 20 s. */
+const AV_AGRUPA = 10 * MIN, AV_SOM_MIN = 20000;
+function aparelho(){   // preferências deste aparelho
+  let p = null;
+  try{p = JSON.parse(localStorage.getItem('dm-avisos-aparelho') || 'null')}catch(_){/* sem armazenamento: o padrão */}
+  p = p && typeof p === 'object' ? p : {};
+  return {som: ['curto', 'alto', 'desligado'].includes(p.som) ? p.som : 'curto', vibrar: p.vibrar !== false};
+}
+let AUDIO = null;
+function audio(){   // o navegador só deixa tocar depois de um toque na página: o contexto nasce (ou volta) nesse toque
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AUDIO && AC) AUDIO = new AC();
+    if(AUDIO && AUDIO.state === 'suspended' && AUDIO.resume) AUDIO.resume();
+  }catch(_){AUDIO = null}
+  return AUDIO;
+}
+function tocar(urgente, alto){
+  const ctx = audio();
+  if(!ctx) return false;
+  const t0 = ctx.currentTime || 0, notas = urgente ? [988, 784, 988] : [880, 660];
+  notas.forEach((f, i) => {
+    const o = ctx.createOscillator(), g = ctx.createGain(), ini = t0 + i * 0.16;
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(alto ? 0.5 : 0.18, ini); g.gain.exponentialRampToValueAtTime(0.001, ini + 0.14);
+    o.connect(g); g.connect(ctx.destination); o.start(ini); o.stop(ini + 0.15);
+  });
+  return true;
+}
+function avisar(n){
+  const agora = Date.now(), urg = n.tipo === 'urg' || n.tipo === 'late' || (byId(n.dem) || {}).prio === 'urg';
+  D.avDem = D.avDem || {};
+  const ultimo = D.avDem[n.dem];
+  D.avDem[n.dem] = agora;
+  piscar(n);
+  if(ultimo && agora - ultimo < AV_AGRUPA && !urg) return;   // a mesma demanda há pouco: só o contador sobe
+  const ap = aparelho();
+  if(ap.som !== 'desligado' && (!D.avSom || agora - D.avSom >= AV_SOM_MIN) && tocar(urg, ap.som === 'alto')) D.avSom = agora;
+  if(ap.vibrar && navigator.vibrate) try{navigator.vibrate(urg ? [200, 100, 200, 100, 200] : [200, 100, 200])}catch(_){/* sem vibração */}
+}
+/* título da aba: "(3) Central de demandas"; com a aba escondida, pisca com o aviso até a pessoa voltar */
+const TITULO = 'Central de demandas';
+function titulo(){
+  const n = unread();
+  return (n ? '(' + (n > 99 ? '99+' : n) + ') ' : '') + TITULO;
+}
+function piscar(n){
+  if(!document.hidden) return;
+  const t = NT[n.tipo] || ['🔔', 'Aviso'];
+  D.avTexto = t[0] + ' ' + t[1] + ' · ' + n.dem;
+  if(D.avPisca) return;
+  let lig = false;
+  D.avPisca = setInterval(() => {lig = !lig; document.title = (lig ? '(' + unread() + ') ' + D.avTexto : titulo())}, 1000);
+}
+function paraDePiscar(){
+  if(D.avPisca){clearInterval(D.avPisca); D.avPisca = null}
+  document.title = titulo();
 }
 const unread = () => D.role && D.v ? D.v.notas.filter(n => !n.lida).length : 0;
 function renderBell(){
@@ -223,6 +285,7 @@ function renderBell(){
   b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
   // contador no botão do rail e na aba "Demandas" do tablet do chão (app.js)
   for(const nb of document.querySelectorAll('[data-local="demandas"] .dm-navbadge')){nb.hidden = !n; nb.textContent = n > 99 ? '99+' : String(n)}
+  if(!D.avPisca) document.title = titulo();
 }
 function ringBell(){const bt = $('dm-bell'); if(!bt) return; bt.classList.remove('dm-ring'); void bt.offsetWidth; bt.classList.add('dm-ring')}
 function showAlert(n){
@@ -693,18 +756,44 @@ function closePanels(){
   $('dm-drawer').classList.remove('dm-on'); $('dm-notif').classList.remove('dm-on'); $('dm-scrim').classList.remove('dm-on');
   if(had && D.dirty && !modalOn()) render();
 }
+/* gaveta do sino (mockup 02-central-avisos): filtros, grupos por período e por demanda, ação direta */
+const avUrg = n => n.tipo === 'urg' || n.tipo === 'late' || (byId(n.dem) || {}).prio === 'urg';
+function periodo(t){
+  const agora = now();
+  return agora - t < 15 * MIN ? 'Agora' : sameDay(t, agora) ? 'Hoje' : sameDay(t, agora - DAY) ? 'Ontem' : 'Antes';
+}
+function grupos(lista){   // [{per, dem, notas}] na ordem das notas (mais novas primeiro)
+  const out = [];
+  for(const n of lista){
+    const per = periodo(num(n.t));
+    let g = out.find(x => x.per === per && x.dem === n.dem);
+    if(!g){g = {per, dem: n.dem, notas: []}; out.push(g)}
+    g.notas.push(n);
+  }
+  return out;
+}
+function notifCard(g){
+  const n0 = g.notas[0], r = byId(g.dem), t = NT[n0.tipo] || ['🔔', 'Aviso'], resto = g.notas.slice(1);
+  const nova = g.notas.some(n => !n.lida), fala = n => n.texto ? `<span>· ${n.tipo === 'comment' ? '“' + esc(n.texto) + '”' : `<b>${n.tipo === 'pause' ? 'Motivo:' : 'Obs.:'}</b> ${esc(n.texto)}`}</span>` : '';
+  const aceita = !isAdm() && !D.imp && r.status === 'new' && r.para.s === meSec();
+  return `<div class="dm-pcard${nova ? ' dm-new' : ''}" data-grupo="${esc(g.dem)}"><div class="dm-nfh"><b>${t[0]} ${t[1]}${g.notas.length > 1 ? `<span class="dm-nfcnt">${g.notas.length}</span>` : ''}</b><span class="dm-note" style="margin:0">${g.per === 'Agora' || g.per === 'Hoje' ? fT(n0.t) : fDT(n0.t)}</span></div>
+   <div style="margin:4px 0;font-weight:600">${esc(r.id)} · ${esc(r.titulo)}</div>
+   <div class="dm-al-m">${chip(r.de.s)}→${chip(r.para.s)}<span>${esc(pname(r.para.p))}</span>${fala(n0)}${n0.quem ? `<span>· por ${esc(n0.quem)}</span>` : ''}</div>
+   ${resto.length ? `<details class="dm-nfmais"><summary>Mais ${resto.length} ${resto.length === 1 ? 'aviso' : 'avisos'} desta demanda</summary>${resto.map(n => `<div class="dm-note">${fT(n.t)} · ${(NT[n.tipo] || ['🔔', 'Aviso']).join(' ')}${n.quem ? ' · ' + esc(n.quem) : ''}${n.texto ? ': ' + esc(n.texto) : ''}</div>`).join('')}</details>` : ''}
+   <div class="dm-acts2" style="margin-top:8px">${aceita ? `<button type="button" class="dm-btn dm-sm dm-go" data-act="accept" data-id="${esc(r.id)}">▶ Aceitar e iniciar</button>` : ''}<button type="button" class="dm-btn dm-sm dm-primary" data-act="noteopen" data-id="${esc(r.id)}">Ver solicitação</button></div></div>`;
+}
 function renderNotif(){
-  const list = (D.v ? D.v.notas : []).slice(0, 40), un = list.filter(n => !n.lida).length;
-  $('dm-notif').innerHTML = `<button type="button" class="dm-btn dm-x" data-act="close" aria-label="Fechar">✕</button><h2>Notificações</h2><div class="dm-hsub">${un} não lidas</div>
-   <div class="dm-acts2"><button type="button" class="dm-btn dm-sm" data-act="noteall"${un ? '' : ' disabled'}>Marcar todas como lidas</button></div>
-   ${list.map(n => {
-     const r = byId(n.dem), t = NT[n.tipo] || ['🔔', 'Aviso'];
-     if(!r) return '';
-     return `<div class="dm-pcard${n.lida ? '' : ' dm-new'}"><div style="display:flex;justify-content:space-between;gap:8px"><b>${t[0]} ${t[1]}</b><span class="dm-note" style="margin:0">${fDT(n.t)}</span></div>
-      <div style="margin:4px 0;font-weight:600">${esc(r.id)} · ${esc(r.titulo)}</div>
-      <div class="dm-al-m">${chip(r.de.s)}→${chip(r.para.s)}<span>${esc(pname(r.para.p))}</span>${n.texto ? `<span>· <b>${n.tipo === 'pause' ? 'Motivo:' : 'Obs.:'}</b> ${esc(n.texto)}</span>` : ''}${n.quem ? `<span>· por ${esc(n.quem)}</span>` : ''}</div>
-      <div class="dm-acts2" style="margin-top:8px"><button type="button" class="dm-btn dm-sm dm-primary" data-act="noteopen" data-id="${esc(r.id)}" data-n="${esc(n.id)}">Ver solicitação</button></div></div>`;
-   }).join('') || '<div class="dm-empty" style="margin-top:14px">Nenhuma notificação.</div>'}`;
+  const todas = D.v ? D.v.notas : [], un = todas.filter(n => !n.lida).length, f = D.nf || 'todos';
+  const desde = D.nfAntigos ? -Infinity : now() - 7 * DAY;
+  const lista = todas.filter(n => num(n.t) >= desde && byId(n.dem) && (f === 'nao' ? !n.lida : f === 'urg' ? avUrg(n) : true));
+  const gs = grupos(lista), pers = [...new Set(gs.map(g => g.per))];
+  const quem = isAdm() ? '' : ` · só os seus e os da fila do ${esc((sec(meSec()) || {}).nome || 'setor')}`;
+  const seg = [['todos', 'Todos'], ['nao', 'Não lidos'], ['urg', 'Urgentes']].map(([k, l]) => `<button type="button" data-act="nf" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join('');
+  $('dm-notif').innerHTML = `<button type="button" class="dm-btn dm-x" data-act="close" aria-label="Fechar">✕</button><h2>Avisos</h2><div class="dm-hsub" id="dm-nf-sub">${un} ${un === 1 ? 'não lido' : 'não lidos'}${quem}</div>
+   <div class="dm-nfbar"><div class="dm-seg" role="group" aria-label="Filtro dos avisos">${seg}</div><button type="button" class="dm-btn dm-sm" data-act="noteall"${un ? '' : ' disabled'}>✓ Marcar todos como lidos</button></div>
+   ${pers.map(p => `<div class="dm-secx">${p}</div>${gs.filter(g => g.per === p).map(notifCard).join('')}`).join('')
+     || `<div class="dm-empty" style="margin-top:14px">${f === 'todos' ? 'Nenhum aviso.' : f === 'nao' ? 'Nada novo.' : 'Nenhum aviso urgente.'}</div>`}
+   ${D.nfAntigos ? '' : '<p class="dm-note">Mostrando os últimos 7 dias · <button type="button" class="dm-btn dm-sm" data-act="nfantigos">ver mais antigos</button></p>'}`;
 }
 function openNotif(){
   if(!D.role) return;
@@ -1412,9 +1501,11 @@ function act(a, d, el, ev){
     case 'close': closePanels(); break;
     case 'bell': openNotif(); break;
     case 'noteall': run(el, 'nota/todas', {}, '', () => {}).then(() => {if(D.notif) renderNotif()}); break;
-    case 'noteopen': call('nota/lida', {nid: num(d.n)}, {quiet: true}).then(() => {renderBell(); openDrawer(d.id)}); break;
+    case 'noteopen': openDrawer(d.id); break;   // abrir marca como lidos todos os avisos da demanda
+    case 'nf': D.nf = d.v; renderNotif(); break;
+    case 'nfantigos': D.nfAntigos = true; renderNotif(); break;
     case 'alertview': {const al = el.closest('.dm-alert'); if(al) al.remove(); openDrawer(d.id); break}
-    case 'ax': {const al = el.closest('.dm-alert'); if(al){const nid = al.dataset.n; al.remove(); if(nid) call('nota/lida', {nid: num(nid)}, {quiet: true}).then(renderBell)} break}
+    case 'ax': {const al = el.closest('.dm-alert'); if(al){const nid = al.dataset.n; al.remove(); if(nid) call('nota/lida', {nid: num(nid)}, {quiet: true}).then(() => {renderBell(); if(D.notif) renderNotif()})} break}
     case 'new': if(!D.role) return; openNew(); break;
     case 'theme': root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; break;
     case 'who': if(D.role) openWho(); else{const f = $('dm-login').querySelector('button'); if(f) f.focus({preventScroll: true})} break;
@@ -1694,6 +1785,8 @@ const SKELETON = '<div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">'
   root.addEventListener('submit', onSubmit);
   document.addEventListener('keydown', onKey);
   window.addEventListener('hashchange', abrirHash);
+  document.addEventListener('visibilitychange', () => {if(!document.hidden) paraDePiscar()});
+  document.addEventListener('pointerdown', audio, {passive: true});   // libera o som no primeiro toque
   setInterval(tick, 1000);
   window.NestLocal = window.NestLocal || {views: {}};
   window.NestLocal.views = window.NestLocal.views || {};

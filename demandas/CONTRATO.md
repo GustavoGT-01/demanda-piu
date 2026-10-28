@@ -36,13 +36,17 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
                "comentarios": [{"quem": "Helena", "t": 0, "texto": "..."}],
                "anexos": [{"id": "a0123456789abcdef", "nome": "foto.jpg", "tipo": "jpg", "bytes": 1234, "por": "Helena", "t": 0}],
                "_rv": 0}],
- "notas": [{"id": 1, "aud": "CNC", "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0, "lida": false}],
+ "notas": [{"id": 1, "aud": "CNC", "pid": null, "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0,
+            "lida": false, "lidas": []}],
  "cids": [["3f2a…-uuid", "SOL-1001"]]}
 ```
 - `de.p = null` quando quem pediu foi o Escritório (ADM). `para.p = null` = fila do setor.
 - `email` (opcional) em pessoa e setor: quem recebe o aviso por e-mail. Só o ADM edita (`setor/salvar`,
   `pessoa/salvar`; campo ausente = não mexe, `""` = apaga) e só a vista do ADM o recebe. Minúsculas, até 254
   caracteres, `^[^@\s,;<>"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$`.
+- Nota (aviso do sino): `aud` = setor ou `"adm"`; `pid` = só esta pessoa do setor (`null` = o setor todo). `lida`
+  é a leitura do ADM; cada pessoa lê por si (`lidas` = ids de quem já leu). Nota antiga sem `pid` vale para o
+  setor todo e conta como lida se `lida` já era `true`.
 - `cids` (opcional; arquivo antigo sem ele = vazio): as últimas 500 chaves de pedido de `demanda/criar` e
   `demanda/comentar` (`cid`, `^[A-Za-z0-9_-]{8,64}$`, gerado pela tela) com o que gravaram. Chave repetida = a
   resposta anterior se perdeu e a tela mandou de novo: devolve a vista sem gravar.
@@ -61,7 +65,7 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
   (Atrasada é derivado: ativa e `agora > prazo`; ativa = new/prog/pause)
 - eventos: created, assigned, started, paused, resumed, done, canc, reassigned, prio, deadline, nudge, late, comment(não), attach
   (`attach` = anexo enviado; comentário não vira evento, como no DEMANDA)
-- tipos de nota: new, urg, accepted, pause, done, canc, nudge, late
+- tipos de nota: new, urg, accepted, pause, done, canc, nudge, late, comment
 - ícones de setor: 🗂️ ⚙️ 🔩 🪵 🪚 🧽 🛠️ 🧵 ✂️ 🪡 📦 ✅ 🔧 🏷️ 🚚 🎨 🧪 🖥️ 🧰 🏭
 - cores de setor: #6366F1 #3B82F6 #0EA5E9 #06B6D4 #0D9488 #10B981 #65A30D #D97706 #E4572E #EC4899 #8B5CF6 #64748B
 
@@ -74,7 +78,7 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
 | nome pessoa / setor | 2 a 60 / 3 a 40 |
 | `est` (min) | 1 a 43200 · estender: 1 a 1440 por vez |
 | código da pessoa | `^[0-9]{4}$`, pbkdf2-sha256 100 000 iterações com sal de 16 bytes (igual à Produção) |
-| tetos | setores 60 · pessoas 500 · demandas no principal 5000 (acima disso arquiva concluídas/canceladas mais antigas) · arquivo morto 50000 · pausas 200, eventos 500, comentários 300 por demanda · notas 120 (as mais antigas saem) |
+| tetos | setores 60 · pessoas 500 · demandas no principal 5000 (acima disso arquiva concluídas/canceladas mais antigas) · arquivo morto 50000 · pausas 200, eventos 500, comentários 300 por demanda · notas 1000 (as mais antigas saem) · `cids` 500 |
 | anexos | JPG/PNG/PDF pelos bytes iniciais (`FF D8 FF`, `89 50 4E 47 0D 0A 1A 0A`, `%PDF-`) · até 5 MB cada · até 5 por demanda · cota total de 300 MB em `data/demandas-anexos/` |
 | texto | sem caractere de controle (`[\x00-\x1f\x7f]`, exceto `\n` em descrição/comentário) |
 
@@ -135,8 +139,8 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `GET anexo/<aid>` | — | ADM → `{id, nome, tipo, dados}` (base64) |
 | `POST anexo/ler` | `{tk, aid}` | pessoa que vê a demanda → `{id, nome, tipo, dados}` |
 | `POST anexo/apagar` | `{id, aid}` | ADM ou quem enviou, demanda ativa |
-| `POST nota/lida` | `{nid}` | dono da audiência (ADM = "adm", pessoa = setor dela) |
-| `POST nota/todas` | `{}` | idem, marca todas da audiência |
+| `POST nota/lida` | `{nid}` | quem vê a nota (ADM: as "adm"; pessoa: as do setor dela para o setor todo ou só para ela); marca só para quem pediu |
+| `POST nota/todas` | `{}` | idem, marca todas as que o ator vê |
 | `POST setor/salvar` | `{modo: "novo"\|"editar", id, nome, icone, cor, rev}` | ADM |
 | `POST setor/ativar` | `{id, rev}` (alterna) | ADM; desativar recusa com demanda aberta (400 com `abertas`) |
 | `POST setor/apagar` | `{id, rev}` | ADM; recusa se há histórico (principal ou arquivo) |
@@ -148,11 +152,20 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 Pessoa usa `tk` em todas as rotas de ação; ADM não manda `tk`. As regras de negócio são as de
 `DEMANDA/src/models/requests.js` e `factory.js` (ver plano), com autorização acrescentada.
 
-Notificações geradas (aud = setor ou "adm"): criar → `new` para o destino (+ `urg` para adm se urgente);
-aceitar → `accepted` para a origem (se setores diferentes); pausar → `pause` para adm e origem;
-concluir → `done` para a origem; cancelar → `canc` para o destino; reatribuir de setor → `new` para o novo;
-cobrar → `nudge` para o destino; prioridade urgente → `nudge`; atraso → `late` para adm e destino
-(gerado em qualquer gravação por `marcar_atrasos(doc, agora)`, uma vez por demanda, `atraso_avisado`).
+Avisos gerados (tabela 6.1 do estudo 02). "Ponta" = a pessoa dela (`pid`) ou, sem pessoa, o setor; a origem
+sem pessoa (pedido do Escritório) = "adm":
+criar → `new` para o destino (+ `urg` para adm se urgente); aceitar → `accepted` para a origem; pausar → `pause`
+para adm e, se quem pediu foi uma pessoa, para ela; concluir → `done` para a origem; cancelar → `canc` para o
+destino; reatribuir → `new` para o destino quando muda o setor ou a pessoa escolhida; cobrar → `nudge` para o
+destino (+ adm se quem cobrou foi uma pessoa); prioridade urgente → `nudge` para o destino; comentar → `comment`
+(até 120 caracteres) para o outro lado (quem atende comentou → origem; senão → destino); atraso → `late` para adm e
+destino, uma vez por demanda (`atraso_avisado`), em qualquer gravação e a cada minuto pela thread de fundo
+(`api.tick(agora)`, que só grava se alguma demanda passou do prazo).
+
+Na tela (camada 1, `demandas.js`): aviso novo de outra pessoa toca um som curto (urgente: três notas), vibra
+onde há `navigator.vibrate` e, com a aba escondida, faz o título piscar até a pessoa voltar; o título fica
+"(N) Central de demandas". Avisos da mesma demanda em 10 min tocam uma vez; no máximo um som a cada 20 s. Som
+(`curto`/`alto`/`desligado`) e vibração valem por aparelho, em `localStorage["dm-avisos-aparelho"]`.
 
 ## Vista (resposta)
 Ver `contrato.json`. Campos:
@@ -161,7 +174,7 @@ rev, agora, papel ("adm"|"pessoa"), eu (null | {id, nome, setor, mat}),
 setores [{id, nome, icone, cor, ativo, _rv}],
 pessoas [{id, nome, setor, mat, ativo, _rv}]        # nunca sal/hash
 demandas [{...campos gravados sem _interno, + prazo, atrasada, espera, execucao, pausado, total, sla}]
-notas [{id, aud, tipo, dem, texto, quem, t, lida}]  # só da audiência do ator
+notas [{id, aud, pid, tipo, dem, texto, quem, t, lida}]  # só as que o ator vê; lida = a dele; sem "lidas"
 feed [{t, tipo: "warn"|"ok"|"", dem, msg}]          # 14 eventos mais recentes, sem "assigned"
 anexos_uso {bytes, cota}                            # só ADM
 ```

@@ -37,6 +37,12 @@ async function boot(papel,hash=''){
     w.Element.prototype.scrollIntoView=w.Element.prototype.scrollIntoView||function(){};
     Object.defineProperty(w,'crypto',{value:require('crypto').webcrypto});
     w.addEventListener('error',e=>console.log('PAGE ERROR',e.message));
+    // som e vibração falsos (contam o que tocou); __dt adianta o relógio da página
+    w.__sons=[];w.__vib=[];w.__ctxs=[];w.__dt=0;const dn=w.Date.now;w.Date.now=()=>dn.call(w.Date)+w.__dt;
+    w.AudioContext=class{constructor(){this.state='suspended';this.currentTime=0;this.destination={};w.__ctxs.push(this)}resume(){this.state='running'}
+      createOscillator(){const o={type:'',frequency:{},connect(){},start(){},stop(){}};w.__sons.push(o);return o}
+      createGain(){return{gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}}}};
+    Object.defineProperty(w.navigator,'vibrate',{configurable:true,value:p=>{w.__vib.push(p);return true}});
   }});
   const w=dom.window;
   for(let t0=Date.now();Date.now()-t0<30000;await sleep(100))try{if(w.NestLocal.views.demandas&&w.document.getElementById('dmboard'))break}catch(e){}
@@ -52,6 +58,9 @@ async function aparelhoOperador(){
   const semAdm=()=>!$('[data-act=lgk][data-v=adm]')&&!/Administrador/.test($('#dm-login').textContent);
   ok(semAdm(),'sem a opção Administrador'+(semAdm()?'':' (ainda aparece: '+$('#dm-login').textContent.slice(0,120)+')'));
   ok($('#cx-cfg').hidden,'sem o botão ⚙ Configurações');
+  ok(!w.__ctxs.length,'(conferência: nenhum som preparado antes de tocar na tela)');
+  d.dispatchEvent(new w.Event('pointerdown'));
+  ok(w.__ctxs.length===1&&w.__ctxs[0].state==='running','o primeiro toque na tela libera o som');
   w.NestLocal.views.demandas.config('backup');await sleep(300);
   ok(!$('.dm-cfg'),'nem pela função: o diálogo não abre fora do computador principal');
   ok(await until(()=>$('[data-act=lgs][data-v=CNC]')),'a lista de setores chega na tela de entrada');
@@ -71,6 +80,76 @@ async function aparelhoOperador(){
   ok(await until(()=>$('#dm-fm-title')&&$('#dm-fm-title').value===''&&!$('#dm-fm-rasc'))&&!erros.length,'localStorage que lança erro não quebra o formulário '+erros.join(' | '));
   $('[data-act=mclose]').click();
   w.close();
+}
+// Camada 1 dos avisos (Carlos, CNC, com a tela aberta): som, vibração, título da aba e a gaveta do sino.
+async function avisosDaTela(w,until,click){
+  const d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  const badge=()=>$('#dm-badge').hidden?0:+$('#dm-badge').textContent;
+  const idDe=async t=>{const j=await direto('vista',{});return(j.demandas||(j.v||{}).demandas||[]).find(x=>x.titulo===t)};
+  const pede=(titulo,prio='high')=>direto('demanda/criar',{titulo,tipo:'mat',motivo:'Falta de material',prio,est:60,para:{s:'CNC',p:null},desc:'',de_s:'PCP'});
+  ok(await until(()=>w.__sons.length===2&&w.__vib.length===1),'aviso novo toca (2 notas) e vibra: '+w.__sons.length+' / '+JSON.stringify(w.__vib));
+  ok(JSON.stringify(w.__vib[0])==='[200,100,200]','vibração normal [200,100,200]');
+  ok(badge()>0&&d.title==='('+badge()+') Central de demandas','título da aba com o número de não lidos: '+d.title);
+  const P=(await idDe('Pedido feito em outro aparelho')).id,b0=badge();
+  await direto('demanda/comentar',{id:P,texto:'Tem pressa'});
+  ok(await until(()=>badge()===b0+1)&&w.__sons.length===2&&w.__vib.length===1,'segundo aviso da mesma demanda em 10 min: só o contador sobe');
+  await pede('Urgente de outro aparelho','urg');
+  ok(await until(()=>w.__vib.length===2)&&JSON.stringify(w.__vib[1])==='[200,100,200,100,200]','urgente vibra mais forte: '+JSON.stringify(w.__vib[1]));
+  ok(w.__sons.length===2,'mas não toca de novo antes de 20 s: '+w.__sons.length);
+  const U=(await idDe('Urgente de outro aparelho')).id;
+  w.__dt=25000;w.localStorage.setItem('dm-avisos-aparelho',JSON.stringify({som:'desligado',vibrar:false}));
+  let b1=badge();await pede('Terceiro pedido');
+  ok(await until(()=>badge()===b1+1)&&w.__sons.length===2&&w.__vib.length===2,'aparelho com som e vibração desligados fica quieto');
+  w.localStorage.setItem('dm-avisos-aparelho',JSON.stringify({som:'alto'}));
+  b1=badge();await pede('Quarto pedido');
+  ok(await until(()=>w.__sons.length===4)&&w.__vib.length===3,'passados 20 s, toca de novo: '+w.__sons.length);
+  w.localStorage.removeItem('dm-avisos-aparelho');
+  const Q=(await idDe('Quarto pedido')).id;await direto('demanda/prioridade',{id:Q,prio:'urg'});
+  ok(await until(()=>w.__vib.length===4)&&JSON.stringify(w.__vib[3])==='[200,100,200,100,200]','urgente fura o agrupamento da mesma demanda: '+JSON.stringify(w.__vib[3]));
+  // aba escondida: o título pisca com o aviso e para quando a pessoa volta
+  Object.defineProperty(d,'hidden',{configurable:true,get:()=>true});
+  await pede('Quinto pedido');
+  ok(await until(()=>/^\(\d+\) 📥 Nova solicitação · SOL-\d+$/.test(d.title),10000),'aba escondida: o título mostra o aviso: '+d.title);
+  ok(await until(()=>/^\(\d+\) Central de demandas$/.test(d.title),3000),'e alterna com o normal (pisca)');
+  Object.defineProperty(d,'hidden',{configurable:true,get:()=>false});d.dispatchEvent(new w.Event('visibilitychange'));
+  await sleep(1300);
+  ok(d.title==='('+badge()+') Central de demandas','voltou para a aba: para de piscar: '+d.title);
+  // a gaveta do sino
+  click('#dm-bell');
+  ok(await until(()=>$('#dm-notif').classList.contains('dm-on')&&$('#dm-notif h2').textContent==='Avisos'),'o sino abre "Avisos"');
+  ok(new RegExp('^'+badge()+' não lidos · só os seus e os da fila do ').test($('#dm-nf-sub').textContent),'subtítulo com o número e de quem são: '+$('#dm-nf-sub').textContent);
+  const al=$$('.dm-alert').find(a=>/Quinto pedido/.test(a.textContent)),u0=badge();
+  ok(al,'(conferência: o alerta do quinto pedido está na tela)');click(al.querySelector('[data-act=ax]'));
+  ok(await until(()=>badge()===u0-1&&$('#dm-nf-sub').textContent.startsWith((u0-1)+' ')),'dispensar um alerta com a gaveta aberta atualiza a gaveta: '+$('#dm-nf-sub').textContent);
+  ok($$('#dm-notif .dm-secx').map(e=>e.textContent).join()==='Agora','agrupado por período: '+$$('#dm-notif .dm-secx').map(e=>e.textContent).join());
+  const gP=()=>$('#dm-notif [data-grupo="'+P+'"]');
+  ok(gP()&&gP().querySelector('.dm-nfcnt').textContent==='2'&&/Mais 1 aviso desta demanda/.test(gP().textContent)&&/“Tem pressa”/.test(gP().textContent),'dois avisos da mesma demanda num cartão só, o comentário entre aspas');
+  ok($$('#dm-notif [data-grupo]').length===6,'um cartão por demanda: '+$$('#dm-notif [data-grupo]').length);
+  click('[data-act=nf][data-v=urg]');
+  ok($$('#dm-notif [data-grupo]').map(g=>g.dataset.grupo).sort().join()===[U,Q].sort().join(),'filtro Urgentes: só as urgentes');
+  ok($('[data-act=nf][data-v=urg]').getAttribute('aria-pressed')==='true','o filtro escolhido fica marcado');
+  click('#dm-notif [data-grupo="'+U+'"] [data-act=accept]');
+  ok(await until(()=>!$('#dm-notif [data-grupo="'+U+'"] [data-act=accept]')),'"Aceitar e iniciar" direto da gaveta');
+  ok((await idDe('Urgente de outro aparelho')).status==='prog','a urgente ficou em andamento');
+  ok(!$('#dm-drawer').classList.contains('dm-on'),'aceitar pela gaveta não abre a demanda');
+  click('[data-act=nf][data-v=nao]');
+  ok($$('#dm-notif [data-grupo]').length&&$$('#dm-notif [data-grupo]').every(g=>g.classList.contains('dm-new')),'filtro Não lidos: só os novos');
+  click('[data-act=nf][data-v=todos]');
+  const b2=badge();click(gP().querySelector('[data-act=noteopen]'));
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')&&badge()===b2-2),'"Ver solicitação" abre e marca os 2 avisos da demanda como lidos: '+b2+' → '+badge());
+  click('#dm-drawer [data-act=close]');click('#dm-bell');
+  ok(await until(()=>gP()&&!gP().classList.contains('dm-new')),'o cartão dela deixa de ser novo');
+  ok($('[data-act=nfantigos]'),'mostra os últimos 7 dias, com "ver mais antigos"');
+  w.__dt=8*86400000;click('[data-act=nf][data-v=todos]');   // 8 dias depois: tudo ficou antigo
+  ok(!$$('#dm-notif [data-grupo]').length&&/Nenhum aviso\./.test($('#dm-notif').textContent),'aviso com mais de 7 dias sai da lista');
+  click('[data-act=nfantigos]');
+  ok(!$('[data-act=nfantigos]')&&$$('#dm-notif [data-grupo]').length===6,'"ver mais antigos" mostra tudo');
+  w.__dt=25000;
+  click('#dm-notif [data-act=noteall]');
+  ok(await until(()=>badge()===0&&!$('#dm-notif .dm-new')&&d.title==='Central de demandas'),'"Marcar todos como lidos": sino e título zeram: '+d.title);
+  click('[data-act=nf][data-v=nao]');
+  ok(/Nada novo/.test($('#dm-notif').textContent),'Não lidos vazio: "Nada novo."');
+  click('[data-act=nf][data-v=todos]');click('#dm-notif [data-act=close]');
 }
 // O link do e-mail (…/#SOL-1001) abre a demanda depois de entrar; o ADM vê as linhas ✉ do registro de envio.
 async function linkDoEmail(){
@@ -306,6 +385,7 @@ async function restaurarPelaTela(){
     await direto('demanda/criar',{titulo:'Pedido feito em outro aparelho',tipo:'mat',motivo:'Falta de material',prio:'high',est:60,para:{s:'CNC',p:null},desc:'',de_s:'PCP'});
     click('[data-act=opf][data-v=pend]');
     ok(await until(()=>$$('.dm-ocard h3').some(h=>h.textContent==='Pedido feito em outro aparelho'),8000),'mudança de outro aparelho aparece sozinha');
+    await avisosDaTela(w,until,click);
     w.close();
     await aparelhoOperador();
     await linkDoEmail();

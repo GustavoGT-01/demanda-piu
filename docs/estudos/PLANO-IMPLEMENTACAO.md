@@ -20,8 +20,11 @@ Estado em 28/10/2026 (fim do dia):
   (`10f7410`), sessão da pessoa que sobrevive ao reinício (`5638378`), rascunho e `cid` (`301101a`), faixa "Sem
   conexão" e só leitura (`152f766`) e seção Servidor (`da6a1a7`); Etapa 3 (e-mail) — campo `email` (`719e60d`),
   `email_envio.py` com fila, envio e gancho (`de05203`), seção E-mail (`0e4f666`) e linhas ✉ na gaveta e link
-  `#SOL-n` (commit seguinte).
-- Próximo: Etapa 4 (avisos sem HTTPS). Pendências que dependem do dono: instalar a tarefa agendada
+  `#SOL-n` (`f5eaa88`); Etapa 4 fases a (avisos e leitura por pessoa, aviso de comentário, `3f6d76b`), b (atraso
+  marcado pela thread de fundo, `5f09e2c`) e c (som, vibração, título da aba piscando, agrupamento e gaveta nova
+  do sino, commit seguinte).
+- Próximo: Etapa 4, fases d (preferências e "Meus avisos") e e (Notification API e Wake Lock no PC principal).
+  Pendências que dependem do dono: instalar a tarefa agendada
   (`instalar-inicio.bat` como administrador); configurar a conta de e-mail quando o TI definir; a fase 3 da Etapa 1
   (destino extra do backup) e a fase 5 do estudo 04 (OAuth2 do Microsoft 365), se a conta for M365.
 - O diálogo ⚙ Configurações é do módulo (`openCfg`/`renderCfg` em `demandas/demandas.js`, classes `.dm-cfg*`); a
