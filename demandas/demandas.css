@@ -431,6 +431,20 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-ustat{display:grid;gap:1px;font-size:12px;color:var(--dm-muted)}
 #dmboard .dm-uact{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 
+/* faixa "Sem conexão com a central" (mockup 03-servidor-fora): presa no topo da área rolável; dados só para leitura */
+#dmboard .dm-conn{position:sticky;top:0;z-index:15;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid var(--dm-s-pause);background:color-mix(in srgb,var(--dm-s-pause) 16%,var(--dm-surface));color:var(--dm-ink);font-size:13px;box-shadow:var(--dm-shadow)}
+#dmboard .dm-conndot{width:10px;height:10px;border-radius:50%;background:var(--dm-s-pause);flex:0 0 auto;animation:dm-connpisca 1.2s infinite}
+#dmboard .dm-conntxt{flex:1 1 220px;min-width:0}
+#dmboard .dm-conntxt b{display:block}
+#dmboard .dm-conntxt small{color:var(--dm-muted);font-size:12px}
+@keyframes dm-connpisca{50%{opacity:.25}}
+#dmboard[data-offline] .dm-ocard,#dmboard[data-offline] .dm-card{filter:saturate(.6)}
+#dmboard[data-offline] [data-act=accept],#dmboard[data-offline] [data-act=resume],#dmboard[data-offline] [data-act=pause],
+#dmboard[data-offline] [data-act=finish],#dmboard[data-offline] [data-act=reassign],#dmboard[data-offline] [data-act=cancel],
+#dmboard[data-offline] [data-act=nudge],#dmboard[data-offline] [data-act=extend],#dmboard[data-offline] [data-act=comment],
+#dmboard[data-offline] [data-act=aadd],#dmboard[data-offline] [data-act=adel],#dmboard[data-offline] [data-act=noteall],
+#dmboard[data-offline] [data-act=m-submit]{opacity:.45;cursor:not-allowed}
+
 /* rascunho recuperado no formulário de nova solicitação */
 #dmboard .dm-rasc{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:8px 0 2px;padding:8px 11px;border-radius:12px;border:1px dashed var(--dm-s-new);background:color-mix(in srgb,var(--dm-s-new) 8%,var(--dm-surface));font-size:12.5px}
 

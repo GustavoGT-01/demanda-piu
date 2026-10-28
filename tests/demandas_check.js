@@ -8,7 +8,7 @@ const REPO=path.resolve(__dirname,'..');
 const base=fs.mkdtempSync(path.join(os.tmpdir(),'dem-check-')),data=path.join(base,'data');   // o backup vai para <base>/backup
 fs.mkdirSync(data);
 const PY=process.env.PYTHON||(process.platform==='win32'?'py':'python3');
-let PORT=0;
+let PORT=0,FORA=false,REVS=0;   // FORA: o fetch da página falha como se a central tivesse caído; REVS conta /api/rev
 function startServer(){return new Promise((res,rej)=>{
   const code=`import sys;sys.path.insert(0,${JSON.stringify(REPO)});import servidor;s=servidor.Server(('127.0.0.1',0),servidor.Handler);print(s.server_address[1],flush=True);s.serve_forever()`;
   const p=spawn(PY,[...(PY==='py'?['-3']:[]),'-c',code],{env:{...process.env,DEMANDAS_DATA:data}});
@@ -23,7 +23,7 @@ const ok=(c,m)=>{console.log((c?'PASS ':'FAIL ')+m);if(!c)process.exitCode=1};
 // papel: finge o /api/eu de um aparelho da rede (a trava do servidor tem teste próprio em tests/test_servidor.py)
 async function boot(papel){
   const dom=await JSDOM.fromURL('http://127.0.0.1:'+PORT+'/',{runScripts:'dangerously',resources:'usable',pretendToBeVisual:true,beforeParse(w){
-    w.fetch=(u,o)=>papel&&u==='/api/eu'?Promise.resolve(new Response(JSON.stringify({papel}),{headers:{'Content-Type':'application/json'}}))
+    w.fetch=(u,o)=>(u==='/api/rev'&&REVS++,0)||FORA&&String(u).startsWith('/api/')?Promise.reject(new TypeError('Failed to fetch')):papel&&u==='/api/eu'?Promise.resolve(new Response(JSON.stringify({papel}),{headers:{'Content-Type':'application/json'}}))
       :fetch(new URL(u,'http://127.0.0.1:'+PORT).href,o);   // jsdom não tem fetch: o do Node, com a origem do servidor
     w.matchMedia=w.matchMedia||(q=>({matches:false,media:q,onchange:null,addListener(){},removeListener(){},addEventListener(){},removeEventListener(){},dispatchEvent(){return false}}));
     w.Element.prototype.scrollIntoView=w.Element.prototype.scrollIntoView||function(){};
@@ -205,6 +205,24 @@ async function restaurarPelaTela(){
     ok(await until(()=>$('.dm-ophead')&&/Carlos/.test($('.dm-ophead h2').textContent)),'Carlos entra pelo código');
     click('[data-act=opf][data-v=pend]');await until(()=>$('.dm-ocard'));
     const oc=()=>$('.dm-ocard'),st=()=>oc()&&oc().dataset.st;
+    // central fora do ar: faixa, só leitura, "Tentar agora" com espera crescente, e a volta
+    const faixa=()=>(($('.dm-conn b')||{}).textContent||'');
+    FORA=true;
+    ok(await until(()=>/Sem conexão com a central/.test(faixa()),15000),'2 falhas seguidas: faixa "Sem conexão" '+faixa());
+    ok($('#dmboard').hasAttribute('data-offline')&&/tentando de novo em [1-5] s|tentando agora/.test(faixa())&&/Última atualização às \d\d:\d\d/.test($('.dm-conn').textContent),'só leitura, espera curta e hora da última atualização: '+faixa());
+    click(oc().querySelector('[data-act=accept]'));await sleep(30);
+    ok(/tente quando ela voltar/.test(toast())&&st()==='new','aceitar não sai sem conexão '+toast());
+    click('.dm-hdnew');await until(()=>$('#dm-fm-title'));click('[data-act=m-submit]');await sleep(30);
+    ok(/rascunho fica guardado/.test(toast())&&$('#dm-modal').classList.contains('dm-on'),'abrir o formulário pode; enviar não, e o rascunho fica');
+    click('[data-act=mclose]');
+    click('[data-act=conn-retry]');
+    ok(await until(()=>/tentando de novo em (6|7|8|9|10) s/.test(faixa())),'"Tentar agora" pergunta na hora e a espera cresce: '+faixa());
+    const n1=+(/em (\d+) s/.exec(faixa())||[])[1];await sleep(2200);const n2=+(/em (\d+) s/.exec(faixa())||[])[1];
+    ok(n2<n1,'a contagem da faixa anda sozinha: '+n1+' → '+n2);
+    const r0=REVS;w.NestLocal.tentarAgora();w.NestLocal.tentarAgora();w.NestLocal.tentarAgora();await sleep(50);
+    ok(REVS-r0===1,'"Tentar agora" repetido não abre perguntas em paralelo: '+(REVS-r0));
+    FORA=false;click('[data-act=conn-retry]');
+    ok(await until(()=>!$('.dm-conn')&&!$('#dmboard').hasAttribute('data-offline')&&/Conexão restabelecida/.test(toast())),'voltou: a faixa some e avisa '+toast());
     click(oc().querySelector('[data-act=accept]'));
     await sleep(30);ok(!$('#dm-drawer').classList.contains('dm-on'),'botão do cartão não abre a gaveta');
     ok(await until(()=>st()==='prog'||st()==='late'),'aceitar: em andamento '+toast());

@@ -24,16 +24,32 @@ function toast(text){
 }
 window.toast = toast;
 
-/* atualização entre aparelhos: uma pergunta leve a cada 3 s */
-let REV = null;
+/* atualização entre aparelhos: uma pergunta leve a cada 3 s. Da 2ª falha seguida em diante o módulo mostra a faixa
+   "Sem conexão" (só leitura) e a espera cresce até 30 s; "Tentar agora" pergunta na hora. Voltou: atualiza sempre. */
+const ESPERAS = [3, 5, 10, 20, 30];
+let REV = null, FALHAS = 0, ULTIMA = Date.now(), TIMER = null, PERGUNTANDO = false;
+const modulo = () => window.NestLocal.views.demandas;
 async function vigia(){
+  if(PERGUNTANDO) return;
+  PERGUNTANDO = true; clearTimeout(TIMER);
+  let espera = ESPERAS[0];
   try{
-    const r = await api('/api/rev');
-    const v = window.NestLocal.views.demandas;
-    if(REV !== null && r.rev !== REV && v && v.rev() !== r.rev) await Promise.resolve(v.refresh()).catch(() => {});
+    const r = await api('/api/rev'), v = modulo(), caiu = FALHAS >= 2;
+    FALHAS = 0; ULTIMA = Date.now();
+    if(caiu && v){if(v.conexao) v.conexao(null); await Promise.resolve(v.refresh()).catch(() => {})}
+    else if(REV !== null && r.rev !== REV && v && v.rev() !== r.rev) await Promise.resolve(v.refresh()).catch(() => {});
     REV = r.rev;
-  }catch(_){/* servidor fora do ar: tenta de novo no próximo ciclo */}
+  }catch(_){
+    FALHAS++;
+    espera = ESPERAS[Math.min(FALHAS, ESPERAS.length) - 1];
+    const v = modulo();
+    if(FALHAS >= 2 && v && v.conexao) v.conexao({ultima: ULTIMA, proxima: Date.now() + espera * 1000});
+  }finally{
+    PERGUNTANDO = false;
+    TIMER = setTimeout(vigia, espera * 1000);
+  }
 }
+window.NestLocal.tentarAgora = vigia;
 
 /* ---------- ⚙ Configurações (só no computador principal) ---------- */
 $('cx-cfg').onclick = () => {
@@ -47,6 +63,5 @@ $('cx-cfg').onclick = () => {
   // o módulo carrega logo depois e se abre sozinho (o <main> já está em data-view="demandas")
   for(let i = 0; i < 100 && !window.NestLocal.views.demandas; i++) await new Promise(r => setTimeout(r, 50));
   if(!window.NestLocal.views.demandas) toast('Não foi possível abrir a Central de demandas.');
-  vigia();
-  setInterval(vigia, 3000);
+  vigia();   // e ela mesma agenda a próxima
 })();

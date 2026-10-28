@@ -1197,6 +1197,29 @@ function bkAlert(){
   $('dm-alerts').prepend(el);
 }
 
+/* ---------- sem conexão com a central: faixa e só leitura ---------- */
+// ações que gravam: com a central fora do ar, nem saem (a tela mostra o porquê). Abrir a nova solicitação continua:
+// o rascunho fica no aparelho até a conexão voltar.
+const ESCRITA = new Set(['accept', 'resume', 'pause', 'finish', 'reassign', 'cancel', 'nudge', 'extend', 'comment', 'aadd', 'adel',
+  'noteall', 'm-submit', 'm-pause-ok', 'm-finish-ok', 'm-ra-ok', 'm-cn-ok', 'cf-ok', 'sf-save', 'sf-toggle', 'sf-del', 'uf-save',
+  'uf-toggle', 'uf-del', 'bk-agora', 'bk-salvar', 'bk-rest', 'bk-rest-ok', 'cfg-pin']);
+function conexao(st){
+  const caiu = !!st, voltou = !caiu && !!D.off;
+  D.off = caiu ? {ultima: num(st.ultima, Date.now()), proxima: num(st.proxima, Date.now())} : null;
+  if(!root) return;
+  if(caiu) root.dataset.offline = ''; else delete root.dataset.offline;
+  renderConn();
+  if(voltou) dtoast('✅ Conexão restabelecida');
+}
+function renderConn(){
+  const el = root && $('dm-conn');
+  if(!el) return;
+  if(!D.off){el.textContent = ''; return}
+  const s = Math.ceil((D.off.proxima - Date.now()) / 1000);
+  el.innerHTML = `<div class="dm-conn" role="status"><i class="dm-conndot" aria-hidden="true"></i><div class="dm-conntxt"><b>Sem conexão com a central, ${s > 0 ? 'tentando de novo em ' + s + ' s' : 'tentando agora…'}</b>
+   <small>Última atualização às ${fT(D.off.ultima)} · os dados abaixo podem estar desatualizados; nada é gravado até a conexão voltar</small></div><button type="button" class="dm-btn dm-sm" data-act="conn-retry">Tentar agora</button></div>`;
+}
+
 /* ---------- ações ---------- */
 async function run(el, rest, body, okMsg, after){
   if(el) el.disabled = true;
@@ -1210,7 +1233,13 @@ async function run(el, rest, body, okMsg, after){
 }
 function act(a, d, el, ev){
   const r = d.id ? byId(d.id) : null;
+  if(D.off && ESCRITA.has(a)){
+    toast(a === 'm-submit' ? '⚠️ Sem conexão com a central: o rascunho fica guardado neste aparelho. Envie quando a conexão voltar.'
+      : '⚠️ Sem conexão com a central: tente quando ela voltar.');
+    return;
+  }
   switch(a){
+    case 'conn-retry': if(window.NestLocal.tentarAgora) window.NestLocal.tentarAgora(); break;
     case 'tab':
       if(isAdm()){D.tab = d.v; if(d.v === 'crono' && (!D.crono || D.cronoP !== D.period)) loadCrono()}
       else{D.opTab = d.v; D.opF = d.v === 'recv' ? 'mine' : 'pend'}
@@ -1428,6 +1457,7 @@ async function refresh(){
 function tick(){
   if(!root || !visible()) return;
   clock();
+  if(D.off) renderConn();   // contagem regressiva da faixa
   if(!D.role || !D.v) return;
   patch();
   if(++D.ticks >= 30){D.ticks = 0; if(!busyUI()) render()}   // contagens e "atrasada" sem esperar gravação no servidor
@@ -1437,6 +1467,7 @@ const LIVE = {
   rev: () => D.v ? D.v.rev : null,
   refresh: () => refresh(),
   config: sec => openCfg(sec),   // botão ⚙ Configurações da casca (app.js)
+  conexao: st => conexao(st),    // a casca (app.js) avisa: {ultima, proxima} = sem conexão; null = voltou
 };
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -1463,7 +1494,7 @@ const SKELETON = '<div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">'
   + '<button type="button" class="dm-btn dm-bell" id="dm-bell" data-act="bell" aria-label="Notificações">🔔<b id="dm-badge" hidden>0</b></button>'
   + '<button type="button" class="dm-btn" data-act="theme" aria-label="Alternar tema">◐ Tema</button>'
   + '<button type="button" class="dm-btn dm-primary dm-hdnew" data-act="new">＋ Nova solicitação</button></div></header>'
-  + '<div id="dm-imp"></div><nav class="dm-tabs" id="dm-tabs" aria-label="Seções"></nav><div id="dm-view"></div></div></div>'
+  + '<div id="dm-conn"></div><div id="dm-imp"></div><nav class="dm-tabs" id="dm-tabs" aria-label="Seções"></nav><div id="dm-view"></div></div></div>'
   + '<button type="button" class="dm-fab" data-act="new" aria-label="Nova solicitação">＋</button>'
   + '<div class="dm-scrim" id="dm-scrim" data-act="close"></div><aside class="dm-drawer" id="dm-drawer" aria-label="Detalhes da solicitação"></aside><aside class="dm-drawer" id="dm-notif" aria-label="Notificações"></aside>'
   + '<div class="dm-login" id="dm-login" hidden></div><div class="dm-modal" id="dm-modal"><div class="dm-mbox" id="dm-mbox" role="dialog" aria-modal="true"></div></div>'
