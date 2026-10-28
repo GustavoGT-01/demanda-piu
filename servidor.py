@@ -14,8 +14,10 @@ import importlib.util
 import ipaddress
 import json
 import os
+import platform
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -473,6 +475,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(self._rede())
         if path == "/api/backup" or path.startswith("/api/backup/"):
             return self._backup("GET", path, b"")
+        if path == "/api/servidor":
+            if not pode(self.papel, "configurar"):
+                return self._fail(403, "Só no computador principal.")
+            return self._json(saude(self.server.server_address[1]))
         if path == "/api/local/demandas" or path.startswith("/api/local/demandas/"):
             return self._api("GET", path, b"")
         if not self._static(path):
@@ -585,6 +591,53 @@ def sempre(cmd, rodar=_roda_filho, relogio=time.monotonic, dormir=time.sleep, li
             return 1
         registra("parou (código %s) · religado em %d s" % (cod, espera))
         dormir(espera)
+
+
+TAREFA = "Central de demandas"   # nome da tarefa agendada criada pelo instalar-inicio.ps1
+
+
+def tarefa_instalada():
+    """A tarefa "iniciar com o Windows" existe? None = não deu para saber (fora do Windows, schtasks travado)."""
+    try:
+        r = subprocess.run(["schtasks", "/query", "/tn", TAREFA], capture_output=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.returncode == 0
+
+
+def _tamanho(p: Path) -> int:
+    try:
+        return p.stat().st_size
+    except OSError:
+        return 0
+
+
+def saude(porta: int, agora: float | None = None) -> dict:
+    """O que a seção Servidor das Configurações mostra (só no computador principal)."""
+    agora = time.time() if agora is None else agora
+    dados = store.data_dir()
+    ds = api_mod().ds
+    try:
+        uso = shutil.disk_usage(dados)
+        disco = {"livre": uso.free, "total": uso.total}
+    except OSError:
+        disco = None
+    try:
+        log = (dados / "servidor.log").read_text(encoding="utf-8").splitlines()[-12:]
+    except (OSError, ValueError):
+        log = []
+    bk = backup_mod()
+    ok = bk.estado()["ultimo_ok"]
+    with NET_LOCK:
+        sessoes = sum(1 for s in SESSIONS.values() if s["exp"] > agora)
+    anexos = ds.uso_anexos()
+    return {"versao": VERSAO, "inicio": INICIO_MS, "python": platform.python_version(), "sistema": platform.platform(terse=True),
+            "nome_pc": socket.gethostname(), "porta": porta, "rede": NET_ON, "sessoes_rede": sessoes,
+            "urls": ["http://%s:%d" % (a, porta) for a in lan_addresses()] if NET_ON else [],
+            "disco": disco, "dados": {"demandas": _tamanho(ds.path()), "arquivo": _tamanho(ds.arquivo_path()),
+                                      "anexos": anexos["bytes"], "cota": anexos["cota"]},
+            "backup": {"ultimo": ok["t"] if ok else None, "copias": len(bk.listar(bk.pasta_local(bk.config())))},
+            "tarefa": tarefa_instalada(), "log": log}
 
 
 def ligado(porta: int = PORT, timeout: float = 2) -> bool:

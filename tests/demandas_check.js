@@ -140,6 +140,11 @@ async function restaurarPelaTela(){
     click('[data-act=bk-agora]');
     ok(await until(()=>$$('.dm-cfgcp:not(.dm-cfgth)').length===1&&/Verificado/.test($('#dm-bk-ult').textContent),8000),'fazer backup agora: a cópia aparece verificada '+toast());
     ok(!$('[data-act=cfg-sec][data-v=backup] .dm-cfgdot')&&fs.readdirSync(path.join(base,'backup')).length===1,'o ponto vermelho some e o zip está na pasta');
+    click('[data-act=cfg-sec][data-v=servidor]');
+    ok(await until(()=>$('#dm-sv-ok')&&/Funcionando/.test($('#dm-sv-ok').textContent),8000),'seção Servidor: funcionando');
+    ok(/1\.0\.0/.test($('.dm-cfgbody').textContent)&&/Último backup/.test($('.dm-cfgbody').textContent)&&/1 cópias guardadas/.test($('.dm-cfgbody').textContent),'versão e último backup na saúde');
+    ok(/Instalado|Não instalado|Não deu para verificar/.test($('#dm-sv-tarefa').textContent)&&/instalar-inicio\.bat|remover-inicio\.bat/.test($('.dm-cfgbody').textContent),'iniciar com o Windows: estado e o que fazer: '+$('#dm-sv-tarefa').textContent);
+    ok(/http:\/\/127\.0\.0\.1:\d+/.test($('.dm-svaddr').textContent)&&/acesso pela rede desligado/.test($('.dm-svaddr').textContent),'endereços: este PC e rede desligada');
     click('[data-act=mclose]');
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')&&$('.dm-kpis')&&!$('#dm-bkav')),'fecha e o aviso do Painel some');
     // setores

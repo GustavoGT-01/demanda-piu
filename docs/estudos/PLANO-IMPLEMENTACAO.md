@@ -15,10 +15,13 @@
 | Este plano | `docs/estudos/PLANO-IMPLEMENTACAO.md` |
 
 Estado em 28/10/2026 (fim do dia):
-- Feito: Etapa 0 (`0d2b8e8`), Etapa 1 fase 1 — backup e thread de fundo (`8672d44`) —, fase 2 — ⚙ Configurações com
-  Rede e Backup, aviso no Painel (`4dd25e6`) — e fase 4 — restaurar pela tela (commit seguinte).
-- Próximo: Etapa 2 (robustez local). A fase 3 da Etapa 1 (destino extra) fica para quando houver destino (o dono
-  respondeu "nenhum por enquanto").
+- Feito: Etapa 0 (`0d2b8e8`); Etapa 1 fases 1, 2 e 4 — backup, ⚙ Configurações com Rede e Backup, aviso no Painel,
+  restaurar pela tela (`8672d44`, `4dd25e6`, `91448da`); Etapa 2 inteira — ligar sozinho com o Windows e religar
+  (`10f7410`), sessão da pessoa que sobrevive ao reinício (`5638378`), rascunho e `cid` (`301101a`), faixa "Sem
+  conexão" e só leitura (`152f766`) e seção Servidor (commit seguinte).
+- Próximo: Etapa 3 (e-mail). A fase 3 da Etapa 1 (destino extra) fica para quando houver destino (o dono
+  respondeu "nenhum por enquanto"). A tarefa agendada ainda precisa ser instalada pelo dono (`instalar-inicio.bat`
+  como administrador).
 - O diálogo ⚙ Configurações é do módulo (`openCfg`/`renderCfg` em `demandas/demandas.js`, classes `.dm-cfg*`); a
   casca só tem o botão `#cx-cfg`. Seções novas (E-mail, Avisos, Servidor) entram ali.
 - **`brag-output/` não deve ir para o Git** (decisão do dono).

@@ -701,6 +701,78 @@ class Backup(Base):
         self.assertEqual(self.req("GET", "/api/backup", headers={"Host": "mal.example:%d" % self.port})[0], 421)
 
 
+class Saude(Base):
+    """/api/servidor (seção Servidor das Configurações): só o computador principal; números da pasta de dados."""
+
+    def test_saude_no_computador_principal(self):
+        (self.data / "servidor.log").write_text("\n".join("linha %d" % i for i in range(20)) + "\n", encoding="utf-8")
+        self.ok("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️", "cor": "#6366F1", "rev": 0})
+        with mock.patch.object(servidor, "tarefa_instalada", return_value=True):
+            st, _, raw = self.req("GET", "/api/servidor")
+        self.assertEqual(st, 200)
+        s = json.loads(raw)
+        self.assertEqual((s["versao"], s["inicio"], s["porta"], s["rede"], s["tarefa"]),
+                         (servidor.VERSAO, servidor.INICIO_MS, self.port, False, True))
+        self.assertEqual(s["dados"]["demandas"], (self.data / "demandas.json").stat().st_size)
+        self.assertEqual((s["dados"]["arquivo"], s["dados"]["anexos"]), (0, 0))
+        self.assertEqual(s["dados"]["cota"], 300 * 1024 * 1024)
+        self.assertEqual(s["log"], ["linha %d" % i for i in range(8, 20)], "as 12 últimas")
+        self.assertEqual(s["backup"], {"ultimo": None, "copias": 0})
+        self.assertEqual(s["urls"], [])
+        self.assertEqual(s["sessoes_rede"], 0)
+        self.assertTrue(s["disco"]["total"] >= s["disco"]["livre"] > 0)
+        self.assertEqual((s["nome_pc"], s["python"], s["sistema"]),
+                         (socket.gethostname(), servidor.platform.python_version(), servidor.platform.platform(terse=True)))
+
+    def test_saude_detalhes(self):
+        servidor.SESSIONS.update({"a" * 64: {"exp": 2000.0, "papel": "operador"}, "b" * 64: {"exp": 500.0, "papel": "completo"},
+                                  "c" * 64: {"exp": 1000.0, "papel": "operador"}})   # vence exatamente agora: não conta
+        servidor.NET_ON = True
+        bk = servidor.backup_mod()
+        (self.data.parent / ("%s-bk" % self.data.name)).mkdir()
+        bk.salvar_config({"local": str(self.data.parent / ("%s-bk" % self.data.name))})
+        bk.fazer("manual", 1000)
+        with mock.patch.object(servidor, "tarefa_instalada", return_value=None), \
+                mock.patch.object(servidor, "lan_addresses", return_value=["10.0.0.5"]):
+            s = servidor.saude(8123, agora=1000.0)
+        self.assertEqual((s["sessoes_rede"], s["rede"], s["urls"], s["tarefa"]), (1, True, ["http://10.0.0.5:8123"], None))
+        self.assertEqual(s["backup"], {"ultimo": 1000, "copias": 1})
+        with mock.patch.object(servidor.shutil, "disk_usage", side_effect=OSError("x")):
+            self.assertIsNone(servidor.saude(8123)["disco"])
+        (self.data / "servidor.log").write_bytes(b"\xff\xfe")
+        self.assertEqual(servidor.saude(8123)["log"], [])
+
+    def test_tarefa_instalada(self):
+        with mock.patch.object(servidor.subprocess, "run", return_value=mock.Mock(returncode=0)) as r:
+            self.assertIs(servidor.tarefa_instalada(), True)
+        self.assertEqual(r.call_args.args[0], ["schtasks", "/query", "/tn", "Central de demandas"])
+        self.assertEqual(r.call_args.kwargs, {"capture_output": True, "timeout": 5})
+        with mock.patch.object(servidor.subprocess, "run", return_value=mock.Mock(returncode=1)):
+            self.assertIs(servidor.tarefa_instalada(), False)
+        for erro in (FileNotFoundError("sem schtasks"), servidor.subprocess.TimeoutExpired("schtasks", 5)):
+            with mock.patch.object(servidor.subprocess, "run", side_effect=erro):
+                self.assertIsNone(servidor.tarefa_instalada())
+
+    def test_tamanho(self):
+        self.assertEqual(servidor._tamanho(self.data / "nada.json"), 0)
+        (self.data / "x.json").write_bytes(b"12345")
+        self.assertEqual(servidor._tamanho(self.data / "x.json"), 5)
+
+    def texto(self, *args, **kw):
+        st, _, raw = self.req(*args, **kw)
+        return st, raw.decode("utf-8")
+
+    def test_saude_pela_rede_nunca(self):
+        self.precisa_rede()
+        adm = self.login(servidor.net_config()["pin"])
+        self.assertEqual(self.texto("GET", "/api/servidor", headers=adm, rede=True), (403, "Só no computador principal."))
+        self.assertEqual(self.req("GET", "/api/servidor", rede=True)[0], 401)
+        st, h, _ = self.req("POST", "/api/login", ("pin=" + servidor.net_config()["pin_op"]).encode(),
+                            {"Content-Type": "application/x-www-form-urlencoded"}, rede=True)
+        op = {"Cookie": h["Set-Cookie"].split(";")[0]}
+        self.assertEqual(self.texto("GET", "/api/servidor", headers=op, rede=True), (403, servidor.OPERADOR_MSG))
+
+
 class Sempre(unittest.TestCase):
     """Laço de reinício da tarefa agendada (--sempre), servidor.log e a checagem --ligado do iniciar.bat."""
 

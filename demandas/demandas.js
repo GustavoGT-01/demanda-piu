@@ -1052,14 +1052,18 @@ function renderCfg(){
   const c = D.cfg, box = $('dm-mbox');
   if(!c || !box) return;
   const r = c.bk.resumo, dot = r && r.alerta ? `<span class="dm-cfgdot" title="${esc(r.texto)}"></span>` : '';
-  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot]].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
+  if(c.sec === 'servidor' && !c.srv && !c.srvPedido){   // a saúde só é lida quando a seção abre
+    c.srvPedido = true;
+    sys('/api/servidor').then(s => {if(D.cfg === c){c.srv = s || {erro: true}; renderCfg()}});
+  }
+  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot], ['servidor', '🖥️ Servidor', '']].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
   const tela = c.sec + (c.rest ? ':restaurar' : '');
   const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === tela ? corpo.scrollTop : 0;   // mesma tela: não pula para o topo
   box.setAttribute('aria-labelledby', 'dm-cfg-t');
   box.dataset.sec = tela;
   box.innerHTML = `<div class="dm-cfg"><div class="dm-cfghead"><h2 id="dm-cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-sm" data-act="mclose" aria-label="Fechar">✕</button></div>
    <nav class="dm-cfgnav" aria-label="Seções das configurações">${nav}</nav>
-   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
+   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.sec === 'servidor' ? cfgServidor(c.srv) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
   box.querySelector('.dm-cfgbody').scrollTop = topo;
 }
 function cfgRede(n){
@@ -1099,6 +1103,45 @@ function cfgBackup(p){
    ${falhou ? `<p class="dm-cfgerr" id="dm-bk-falha">Última tentativa (${fQuando(falha.t)}) falhou: ${esc(falha.erro)}.</p>` : ''}</section>
   <section class="dm-cfgsec"><h3>Cópias guardadas</h3>${p.copias.length ? `<div class="dm-cfglista"><div class="dm-cfgcp dm-cfgth"><span>Cópia</span><span>Tipo</span><span>Tamanho</span><span></span></div>${p.copias.map(x => `<div class="dm-cfgcp"><span><b>${x.t ? fQuando(x.t) : ''}</b><small>${esc(x.nome)}</small></span><span class="dm-cfgtipo" data-t="${esc(x.tipo)}">${esc(BK_TIPO[x.tipo] || x.tipo)}</span><span>${gBytes(x.bytes)}</span><button type="button" class="dm-btn dm-sm" data-act="bk-rest" data-v="${esc(x.nome)}">Restaurar</button></div>`).join('')}</div>` : '<p class="dm-note">Nenhuma cópia nesta pasta.</p>'}</section>
   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="bk-salvar">Salvar</button></div>`;
+}
+/* seção Servidor (mockup 03-configuracoes-servidor): saúde, iniciar com o Windows, PC reserva e endereços */
+function cfgServidor(s){
+  if(!s) return '<section class="dm-cfgsec"><p class="dm-note" id="dm-sv-carrega">Lendo a saúde do servidor…</p></section>';
+  if(s.erro) return '<section class="dm-cfgsec"><p class="dm-cfgerr">Não foi possível ler a saúde do servidor.</p></section>';
+  const d = s.dados || {}, tot = num(d.demandas) + num(d.arquivo) + num(d.anexos), dk = s.disco, ip = (s.urls || [])[0];
+  const pct = (a, b) => b ? Math.min(100, a / b * 100) : 0, ligado = dur(Math.max(0, Math.floor((Date.now() - num(s.inicio)) / MIN)));
+  const tile = (k, b, sm, barra) => `<div class="dm-svtile"><span>${k}</span><b>${b}</b><small>${sm}</small>${barra == null ? '' : `<div class="dm-cfgbar"><span style="width:${barra.toFixed(1)}%"></span></div>`}</div>`;
+  const tarefa = s.tarefa === true ? '<span class="dm-pill" data-st="prog" id="dm-sv-tarefa">Instalado</span>'
+    : s.tarefa === false ? '<span class="dm-pill" data-st="late" id="dm-sv-tarefa">Não instalado</span>' : '<span class="dm-pill" data-st="canc" id="dm-sv-tarefa">Não deu para verificar</span>';
+  return `<section class="dm-cfgsec"><h3>Saúde</h3>
+   <div class="dm-svok" id="dm-sv-ok"><i aria-hidden="true"></i><span><b>Funcionando.</b> ${s.rede ? num(s.sessoes_rede) + (num(s.sessoes_rede) === 1 ? ' aparelho com sessão aberta' : ' aparelhos com sessão aberta') + ' pela rede.' : 'Acesso pela rede desligado: só este computador.'}</span></div>
+   <div class="dm-svgrid">
+    ${tile('Ligado há', esc(ligado), 'desde ' + fD(num(s.inicio)) + ' às ' + fT(num(s.inicio)))}
+    ${tile('Versão', esc(s.versao), 'Python ' + esc(s.python) + ' · ' + esc(s.sistema))}
+    ${tile('Último backup', s.backup && s.backup.ultimo ? fQuando(num(s.backup.ultimo)) : 'nunca', num(s.backup && s.backup.copias) + ' cópias guardadas')}
+    ${dk ? tile('Espaço em disco', gBytes(dk.livre) + ' livres', 'de ' + gBytes(dk.total), 100 - pct(dk.livre, dk.total)) : tile('Espaço em disco', '—', 'não deu para ler')}
+    ${tile('Tamanho dos dados', gBytes(tot), 'demandas ' + gBytes(d.demandas) + ' · arquivo morto ' + gBytes(d.arquivo) + ' · anexos ' + gBytes(d.anexos))}
+    ${tile('Anexos', gBytes(d.anexos) + ' de ' + gBytes(d.cota), Math.round(pct(num(d.anexos), num(d.cota))) + '% da cota', pct(num(d.anexos), num(d.cota)))}
+   </div>
+   <details class="dm-svlogw"><summary class="dm-note">Reinícios recentes (data/servidor.log)</summary><pre class="dm-svlog" id="dm-sv-log">${(s.log || []).length ? s.log.map(esc).join('\n') : 'Nada anotado ainda: o laço de reinício anota quando a Central liga pela tarefa agendada.'}</pre></details></section>
+  <section class="dm-cfgsec"><h3>Iniciar com o Windows<span class="dm-spacer"></span>${tarefa}</h3>
+   ${s.tarefa === true ? '<p class="dm-note">A tarefa agendada "Central de demandas" liga a Central quando o computador liga, antes de alguém entrar no Windows, e a religa em 5 s se ela parar. Para desfazer: <code>remover-inicio.bat</code>.</p>'
+    : '<p class="dm-note">Na pasta do programa, clique com o botão direito em <code>instalar-inicio.bat</code> → <b>Executar como administrador</b>. Ele pede a senha desta conta uma vez. Daí em diante a Central liga sozinha com o Windows (mesmo sem ninguém entrar) e volta em 5 s se parar, sem a janela preta.</p>'}
+   <p class="dm-note">Confira também: <b>suspensão desligada</b> nas opções de energia e, na BIOS, <b>ligar ao voltar a energia</b>. Um computador que "dorme" desliga a Central para todos.</p></section>
+  <section class="dm-cfgsec"><h3>PC reserva</h3>
+   <p class="dm-note">Se este computador quebrar, outro assume em 10 a 20 minutos. Perde-se só o que foi feito depois do último backup.</p>
+   <ol class="dm-rspassos">
+    <li>No PC reserva, instale o Python 3.10 ou mais novo e copie a pasta do programa.</li>
+    <li>Copie para ele o zip do último backup e restaure (⚙ Configurações → Backup → Restaurar) ou descompacte o zip dentro de <code>data\\</code>.</li>
+    <li>Dê ao PC reserva o endereço ${ip ? '<code>' + esc(ip.replace(/^http:\/\//, '').replace(/:\d+$/, '')) + '</code>' : 'de rede deste computador'} (no roteador ou nas configurações de rede), para os celulares e tablets continuarem achando a Central. Os PINs de rede não vão no backup: ligue o acesso pela rede e passe o PIN novo aos aparelhos.</li>
+    <li>Rode <code>instalar-inicio.bat</code> como administrador e reinicie o PC reserva.</li>
+    <li>Abra <code>http://127.0.0.1:${num(s.porta)}</code> e confira aqui o "Último backup" e as solicitações de hoje.</li></ol></section>
+  <section class="dm-cfgsec"><h3>Endereços</h3><div class="dm-svaddr">
+   <span>Neste PC</span><code>http://127.0.0.1:${num(s.porta)}</code>
+   <span>Pela rede</span>${(s.urls || []).length ? s.urls.map(u => `<code>${esc(u)}</code>`).join('') : '<span class="dm-note">acesso pela rede desligado</span>'}
+   <span>Nome do PC</span><code>${esc(s.nome_pc)}</code></div>
+   <p class="dm-note">Se o endereço de rede mudar, os aparelhos param de achar a Central. Peça a quem cuida do roteador para reservar este IP para este computador.</p></section>
+  <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Fechar</button></div>`;
 }
 /* confirmação antes de restaurar (mockup 01, cena 2): compara agora com a cópia e pede RESTAURAR digitado */
 function cfgRest(r){
