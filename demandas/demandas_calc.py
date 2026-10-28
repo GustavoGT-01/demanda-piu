@@ -154,14 +154,28 @@ def feed(demandas: list, n: int = FEED_N) -> list:
     return out
 
 
+def nota_lida(n: dict, pid: str) -> bool:
+    """Lida por esta pessoa. Nota de antes dos avisos por pessoa (sem "pid") que o setor já leu conta como lida."""
+    return pid in (n.get("lidas") or []) or (n.get("lida") is True and "pid" not in n)
+
+
+def notas_de(doc: dict, pessoa: dict | None) -> list:
+    """O sino de quem vê: ADM, as notas "adm"; pessoa, as do setor dela para o setor todo ou só para ela, com "lida"
+    dela. Quem mais leu ("lidas") não sai daqui. Mais novas primeiro."""
+    if pessoa is None:
+        sel = [dict(n) for n in doc["notas"] if n.get("aud") == "adm"]
+    else:
+        sel = [dict(n, lida=nota_lida(n, pessoa["id"])) for n in doc["notas"]
+               if n.get("aud") == pessoa.get("setor") and n.get("pid") in (None, pessoa["id"])]
+    for n in sel:
+        n.pop("lidas", None)
+    return sorted(sel, key=lambda n: (n.get("t") or 0, n.get("id") or 0), reverse=True)
+
+
 def vista(doc: dict, agora: int, pessoa: dict | None = None, anexos_uso: dict | None = None) -> dict:
     """pessoa=None: ADM (tudo do principal, notas "adm", uso dos anexos). Pessoa: só o que ela vê."""
-    if pessoa is None:
-        dems, aud = doc["demandas"], "adm"
-    else:
-        dems, aud = [d for d in doc["demandas"] if ve(d, pessoa)], pessoa.get("setor")
-    notas = sorted((n for n in doc["notas"] if n.get("aud") == aud),
-                   key=lambda n: (n.get("t") or 0, n.get("id") or 0), reverse=True)
+    dems = doc["demandas"] if pessoa is None else [d for d in doc["demandas"] if ve(d, pessoa)]
+    notas = notas_de(doc, pessoa)
     out = {"rev": doc["rev"], "agora": agora, "papel": "adm" if pessoa is None else "pessoa",
            "eu": None if pessoa is None else {k: pessoa.get(k) for k in ("id", "nome", "setor", "mat")},
            "setores": [setor_publico(s, pessoa is None) for s in doc["setores"]],

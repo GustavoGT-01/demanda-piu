@@ -12,7 +12,7 @@ const PAUSE_REASONS = ['Aguardando material', 'Aguardando outro setor', 'Máquin
 const PRIO = {low: ['Baixa', 0], norm: ['Normal', 1], high: ['Alta', 2], urg: ['Urgente', 3]};
 const STL = {new: 'Aberta', prog: 'Em andamento', pause: 'Pausada', late: 'Atrasada', done: 'Concluída', canc: 'Cancelada'};
 const EVL = {created: 'Solicitação criada', assigned: 'Responsável definido', started: 'Iniciada', paused: 'Pausada', resumed: 'Retomada', done: 'Concluída', canc: 'Cancelada', reassigned: 'Reatribuída', prio: 'Prioridade alterada', deadline: 'Prazo ajustado', nudge: 'Cobrança enviada', late: 'Prazo estourado', attach: 'Anexo enviado'};
-const NT = {urg: ['🚨', 'Solicitação urgente'], late: ['⏰', 'Prazo estourado'], pause: ['⏸', 'Solicitação pausada'], new: ['📥', 'Nova solicitação'], nudge: ['🔔', 'Cobrança'], canc: ['✕', 'Solicitação cancelada'], accepted: ['▶', 'Solicitação iniciada'], done: ['✅', 'Solicitação concluída']};
+const NT = {urg: ['🚨', 'Solicitação urgente'], late: ['⏰', 'Prazo estourado'], pause: ['⏸', 'Solicitação pausada'], new: ['📥', 'Nova solicitação'], nudge: ['🔔', 'Cobrança'], canc: ['✕', 'Solicitação cancelada'], accepted: ['▶', 'Solicitação iniciada'], done: ['✅', 'Solicitação concluída'], comment: ['💬', 'Novo comentário']};
 const ALERT_KINDS = ['urg', 'late', 'pause', 'new', 'nudge', 'canc'];
 const ICONS = ['🗂️', '⚙️', '🔩', '🪵', '🪚', '🧽', '🛠️', '🧵', '✂️', '🪡', '📦', '✅', '🔧', '🏷️', '🚚', '🎨', '🧪', '🖥️', '🧰', '🏭'];
 const COLORS = ['#6366F1', '#3B82F6', '#0EA5E9', '#06B6D4', '#0D9488', '#10B981', '#65A30D', '#D97706', '#E4572E', '#EC4899', '#8B5CF6', '#64748B'];
@@ -212,6 +212,7 @@ function notesCheck(firstLoad){
       else gtoast(t[0] + ' Demandas: ' + t[1] + ' · ' + n.dem);
     }else if(n.tipo === 'accepted') dtoast(n.dem + ' iniciada por ' + (n.quem || 'o setor'));
     else if(n.tipo === 'done') dtoast('✅ ' + n.dem + ' foi concluída');
+    else if(n.tipo === 'comment') dtoast('💬 ' + (n.quem || 'Alguém') + ' comentou em ' + n.dem);
   });
   if(ring) ringBell();
 }

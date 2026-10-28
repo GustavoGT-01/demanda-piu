@@ -74,6 +74,16 @@ class Carga(Base):
             self.grava(raw)
             self.assertEqual(ds.load(cache=False), ds.empty(), raw)
 
+    def test_notas_por_pessoa(self):
+        self.grava({"v": 1, "notas": [{"id": 1, "aud": "CNC", "lida": True},
+                                      {"id": 2, "aud": "CNC", "pid": "p1", "lidas": ["p2", 3, None]},
+                                      {"id": 3, "aud": "CNC", "pid": 5, "lidas": "p1"},
+                                      {"id": 4, "aud": "CNC", "pid": None}]})
+        n = {x["id"]: x for x in ds.load()["notas"]}
+        self.assertNotIn("pid", n[1], "nota antiga continua sem pid (vale para o setor todo)")
+        self.assertEqual((n[1]["lidas"], n[2]["pid"], n[2]["lidas"], n[3]["pid"], n[3]["lidas"], n[4]["pid"]),
+                         ([], "p1", ["p2"], None, [], None))
+
     def test_cids(self):
         boas = [["c%07d" % i, "SOL-%d" % i] for i in range(ds.MAX["cids"] + 2)]
         ruins = ["x", ["so-um"], ["a", "b", "c"], ["a", 1], [1, "b"], {"a": "b"}]
@@ -457,7 +467,7 @@ class Arquivo(Base):
         self.assertEqual(self._max["demandas"], 5000)
         self.assertEqual(self._max["arquivo"], 50000)
         self.assertEqual(self._max, {"setores": 60, "pessoas": 500, "demandas": 5000, "arquivo": 50000,
-                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 120, "cids": 500})
+                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 1000, "cids": 500})
 
     def test_num_sem_id_valido(self):
         self.assertEqual(ds._num({"id": "SOL-42"}), 42)

@@ -190,6 +190,40 @@ class Email(unittest.TestCase):
         self.assertNotIn("email", pes["pessoas"][0])
 
 
+class NotasPorPessoa(unittest.TestCase):
+    EU = {"id": "p1", "setor": "CNC"}
+
+    def doc(self):
+        n = lambda i, **kw: dict({"id": i, "aud": "CNC", "pid": None, "t": i, "lida": False, "lidas": []}, **kw)  # noqa: E731
+        return {"notas": [n(1), n(2, pid="p1"), n(3, pid="p2"), n(4, aud="PCP"), n(5, aud="adm", lida=True),
+                          n(6, lidas=["p1"]), {"id": 7, "aud": "CNC", "t": 7, "lida": True},
+                          {"id": 8, "aud": "CNC", "t": 8, "lida": False}, n(9, lida=True)]}
+
+    def test_pessoa(self):
+        sel = calc.notas_de(self.doc(), self.EU)
+        self.assertEqual([(x["id"], x["lida"]) for x in sel], [(9, False), (8, False), (7, True), (6, True), (2, False), (1, False)])
+        self.assertTrue(all("lidas" not in x for x in sel))
+
+    def test_adm(self):
+        sel = calc.notas_de(self.doc(), None)
+        self.assertEqual([(x["id"], x["lida"]) for x in sel], [(5, True)])
+        self.assertNotIn("lidas", sel[0])
+
+    def test_nao_mexe_no_doc(self):
+        doc = self.doc()
+        calc.notas_de(doc, self.EU)
+        self.assertEqual(doc["notas"][5]["lidas"], ["p1"])
+        self.assertFalse(doc["notas"][8]["lida"] is not True)
+
+    def test_nota_lida(self):
+        self.assertTrue(calc.nota_lida({"lidas": ["p1"], "pid": None}, "p1"))
+        self.assertFalse(calc.nota_lida({"lidas": ["p2"], "pid": None, "lida": True}, "p1"), "a do ADM não conta para a pessoa")
+        self.assertTrue(calc.nota_lida({"lida": True}, "p1"))
+        self.assertFalse(calc.nota_lida({"lida": 1}, "p1"))
+        self.assertFalse(calc.nota_lida({}, "p1"))
+        self.assertFalse(calc.nota_lida({"lidas": None}, "p1"))
+
+
 class Feed(unittest.TestCase):
     def test_ordem_tipo_e_texto(self):
         a = dem(1, eventos=[{"t": T0, "ev": "created", "quem": "H", "nota": ""},

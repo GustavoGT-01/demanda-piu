@@ -124,6 +124,9 @@ class Base(unittest.TestCase):
     def notas(self, aud=None):
         return [(n["aud"], n["tipo"], n["dem"]) for n in self.disco()["notas"] if aud is None or n["aud"] == aud]
 
+    def pids(self):
+        return [n["pid"] for n in self.disco()["notas"]]
+
     def evs(self, did):
         return [e["ev"] for e in self.dem(did)["eventos"]]
 
@@ -832,7 +835,8 @@ class Transicoes(Base):
         d = self.nova(self.tk_b, para={"s": "CNC", "p": self.carlos})
         self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
         self.assertEqual(self.evs(d["id"]), ["created", "assigned", "started"])   # sem novo "assigned"
-        self.assertEqual(self.notas(), [("CNC", "new", d["id"])])                 # mesmo setor: sem "accepted"
+        self.assertEqual(self.notas(), [("CNC", "new", d["id"]), ("CNC", "accepted", d["id"])])
+        self.assertEqual(self.pids(), [self.carlos, self.bruno], "mesmo setor: o aviso vai para a pessoa, não para o setor")
 
     def test_pausar_retomar(self):
         did = self.aceita()
@@ -866,7 +870,8 @@ class Transicoes(Base):
         self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
         with mock.patch.dict(ds.MAX, {"pausas": 1}):
             self.pes(self.tk_c, "demanda/pausar", {"id": d["id"], "motivo": "Máquina parada"})
-            self.assertEqual(self.notas()[-1], ("adm", "pause", d["id"]))   # mesmo setor: só o adm
+            self.assertEqual(self.notas()[-2:], [("adm", "pause", d["id"]), ("CNC", "pause", d["id"])])
+            self.assertEqual(self.pids()[-1], self.bruno, "quem pediu, mesmo sendo do mesmo setor")
             self.pes(self.tk_c, "demanda/retomar", {"id": d["id"]})
             self.assertEqual(self.erro(self.pes, self.tk_c, "demanda/pausar", {"id": d["id"], "motivo": "Máquina parada"}), 400)
 
@@ -895,7 +900,8 @@ class Transicoes(Base):
         self.pes(self.tk_c, "demanda/concluir", {"id": d["id"]})
         r = self.dem(d["id"])
         self.assertEqual((r["iniciado"], r["fim"]), (self.t, self.t))
-        self.assertEqual(self.notas(), [("CNC", "new", d["id"])])   # mesmo setor: sem "done"
+        self.assertEqual(self.notas(), [("CNC", "new", d["id"]), ("CNC", "done", d["id"])])
+        self.assertEqual(self.pids(), [self.carlos, self.bruno])
 
     def test_cancelar(self):
         did = self.aceita()
@@ -933,7 +939,10 @@ class Transicoes(Base):
         self.assertEqual(self.erro(self.pes, self.tk_f, "demanda/reatribuir", {"id": d["id"], "s": "ESP"}), 403)
         self.pes(self.tk_b, "demanda/reatribuir", {"id": d["id"], "s": "CNC", "p": self.carlos})   # aberta: o setor repassa
         self.assertEqual(self.dem(d["id"])["para"], {"s": "CNC", "p": self.carlos})
-        self.assertEqual(self.notas(), [("CNC", "new", d["id"])])   # mesmo setor: sem nota nova
+        self.assertEqual(self.notas(), [("CNC", "new", d["id"])] * 2)
+        self.assertEqual(self.pids(), [None, self.carlos], "a fila avisou o setor; agora a pessoa escolhida")
+        self.pes(self.tk_b, "demanda/reatribuir", {"id": d["id"], "s": "CNC", "p": self.carlos})   # a mesma pessoa: sem aviso
+        self.assertEqual(len(self.notas()), 2)
         self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
         self.assertEqual(self.erro(self.pes, self.tk_b, "demanda/reatribuir", {"id": d["id"], "s": "ESP"}), 403)
         self.pes(self.tk_c, "demanda/reatribuir", {"id": d["id"], "s": "CNC", "p": self.bruno})
@@ -956,7 +965,9 @@ class Transicoes(Base):
         self.assertEqual(self.erro(self.pes, self.tk_c, "demanda/cobrar", {"id": d["id"]}), 403)
         self.pes(self.tk_h, "demanda/cobrar", {"id": d["id"]})
         self.adm("demanda/cobrar", {"id": d["id"]})
-        self.assertEqual(self.notas()[-2:], [("CNC", "nudge", d["id"])] * 2)
+        self.assertEqual(self.notas()[-3:], [("CNC", "nudge", d["id"]), ("adm", "nudge", d["id"]), ("CNC", "nudge", d["id"])],
+                         "cobrança de uma pessoa também avisa o escritório; a do escritório, não")
+        self.assertEqual([(n["texto"], n["quem"]) for n in self.disco()["notas"][-3:]], [("", "Helena"), ("", "Helena"), ("", "Escritório")])
         self.assertEqual([e["quem"] for e in self.dem(d["id"])["eventos"][-2:]], ["Helena", "Escritório"])
         self.adm("demanda/cancelar", {"id": d["id"]})
         self.assertEqual(self.erro(self.adm, "demanda/cobrar", {"id": d["id"]}), 409)
@@ -1132,9 +1143,84 @@ class Notas(Base):
         r0 = self.rev()
         self.adm("nota/todas")
         self.assertEqual(self.rev(), r0)
+        vb = self.pes(self.tk_b, "vista")
+        self.assertFalse(next(n for n in vb["notas"] if n["id"] == cnc)["lida"], "o Carlos leu; para o Bruno continua nova")
         self.pes(self.tk_b, "nota/todas")
-        self.assertTrue(all(n["lida"] for n in self.disco()["notas"]))
+        cncs = [n for n in self.disco()["notas"] if n["aud"] == "CNC"]
+        self.assertEqual([n["lidas"] for n in cncs], [[self.carlos, self.bruno], [self.bruno]])
+        self.assertFalse(any(n["lida"] for n in cncs), "a leitura das pessoas não mexe na do escritório")
+        r0 = self.rev()
+        self.pes(self.tk_b, "nota/todas")
+        self.assertEqual(self.rev(), r0)
+        self.assertNotIn("lidas", json.dumps(self.pes(self.tk_c, "vista")["notas"]), "quem mais leu não vai para a tela")
         self.assertEqual(d["id"], "SOL-1001")
+
+    def destinos(self):
+        return [(n["aud"], n["pid"], n["tipo"]) for n in self.disco()["notas"]]
+
+    def test_quem_recebe_cada_aviso(self):
+        d = self.nova(self.tk_h, para={"s": "CNC", "p": self.carlos})["id"]   # Helena (PCP) pede ao Carlos
+        self.pes(self.tk_h, "demanda/comentar", {"id": d, "texto": "quando fica pronto?" + "x" * 200})
+        self.pes(self.tk_c, "demanda/comentar", {"id": d, "texto": "amanhã"})
+        self.pes(self.tk_b, "demanda/comentar", {"id": d, "texto": "eu ajudo"})   # colega do Carlos: lado de quem atende
+        self.adm("demanda/comentar", {"id": d, "texto": "ok"})
+        self.pes(self.tk_h, "demanda/cancelar", {"id": d, "motivo": "não precisa"})
+        self.assertEqual(self.destinos(), [("CNC", self.carlos, "new"), ("CNC", self.carlos, "comment"),
+                                           ("PCP", self.helena, "comment"), ("PCP", self.helena, "comment"),
+                                           ("CNC", self.carlos, "comment"), ("CNC", self.carlos, "canc")])
+        notas = self.disco()["notas"]
+        self.assertEqual(len(notas[1]["texto"]), 120)
+        self.assertTrue(notas[1]["texto"].endswith("…"))
+        self.assertEqual((notas[2]["texto"], notas[2]["quem"], notas[4]["quem"]), ("amanhã", "Carlos", "Escritório"))
+
+    def test_pedido_do_escritorio_avisa_o_adm(self):
+        d = self.nova(para={"s": "CNC", "p": self.carlos})["id"]   # o Escritório pede (de.p = None)
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d})
+        self.pes(self.tk_c, "demanda/comentar", {"id": d, "texto": "começando"})
+        self.pes(self.tk_c, "demanda/pausar", {"id": d, "motivo": "Máquina parada"})
+        self.pes(self.tk_c, "demanda/retomar", {"id": d})
+        self.pes(self.tk_c, "demanda/concluir", {"id": d})
+        self.assertEqual(self.destinos(), [("CNC", self.carlos, "new"), ("adm", None, "accepted"), ("adm", None, "comment"),
+                                           ("adm", None, "pause"), ("adm", None, "done")],
+                         "a pausa do pedido do Escritório avisa o adm uma vez só")
+
+    def test_fila_atraso_e_urgente(self):
+        d = self.nova(est=1)["id"]   # fila do CNC
+        self.adm("demanda/prioridade", {"id": d, "prio": "urg"})
+        self.t += 2 * MIN
+        self.adm("nota/todas")
+        self.assertEqual(self.destinos(), [("CNC", None, "new"), ("CNC", None, "nudge"), ("adm", None, "late"),
+                                           ("CNC", None, "late")])
+        d2 = self.nova(para={"s": "CNC", "p": self.bruno}, est=1)["id"]
+        self.t += 2 * MIN
+        self.adm("nota/todas")
+        self.assertEqual(self.destinos()[-2:], [("adm", None, "late"), ("CNC", self.bruno, "late")])
+        self.adm("pessoa/ativar", {"id": self.bruno, "rev": next(p["_rv"] for p in self.disco()["pessoas"] if p["id"] == self.bruno)})
+        self.assertEqual(self.destinos()[-1], ("CNC", None, "new"), "pessoa desativada: volta para a fila e avisa o setor")
+        self.assertEqual(self.dem(d2)["para"]["p"], None)
+
+    def test_nota_da_pessoa_so_ela_ve(self):
+        d = self.nova(para={"s": "CNC", "p": self.carlos})
+        nid = self.disco()["notas"][-1]["id"]
+        self.assertEqual([n["id"] for n in self.pes(self.tk_c, "vista")["notas"]], [nid])
+        self.assertEqual(self.pes(self.tk_b, "vista")["notas"], [], "o colega do setor não vê")
+        self.assertEqual(self.erro(self.pes, self.tk_b, "nota/lida", {"nid": nid}), 403)
+        self.pes(self.tk_b, "nota/todas")
+        self.assertEqual(self.disco()["notas"][-1]["lidas"], [])
+        self.assertEqual(d["id"], "SOL-1001")
+
+    def test_nota_antiga_sem_pid(self):
+        doc = self.disco()
+        doc["notas"] = [{"id": 1, "aud": "CNC", "tipo": "new", "dem": "SOL-1", "texto": "", "quem": "x", "t": 1, "lida": True},
+                        {"id": 2, "aud": "CNC", "tipo": "new", "dem": "SOL-2", "texto": "", "quem": "x", "t": 2, "lida": False}]
+        (self.dir / "demandas.json").write_text(json.dumps(doc), encoding="utf-8")
+        ds._CACHE.update(key=None, texto=None)
+        v = self.pes(self.tk_c, "vista")
+        self.assertEqual([(n["id"], n["lida"]) for n in v["notas"]], [(2, False), (1, True)],
+                         "nota de antes continua para o setor; a que o setor já tinha lido segue lida")
+        self.pes(self.tk_c, "nota/lida", {"nid": 2})
+        self.assertEqual([(n["id"], n["lida"]) for n in self.pes(self.tk_c, "vista")["notas"]], [(2, True), (1, True)])
+        self.assertFalse(next(n for n in self.pes(self.tk_b, "vista")["notas"] if n["id"] == 2)["lida"])
 
 
 class Setores(Base):
@@ -1730,11 +1816,12 @@ class Detalhes(Base):
         self.adm("nota/todas")
         notas = [{k: v for k, v in n.items() if k != "id"} for n in self.disco()["notas"]]
 
-        def n(aud, tipo, dem, quem, lida=False, t=T0):
-            return {"aud": aud, "tipo": tipo, "dem": dem, "texto": "", "quem": quem, "t": t, "lida": lida}
+        def n(aud, tipo, dem, quem, lida=False, t=T0, pid=None):
+            return {"aud": aud, "pid": pid, "tipo": tipo, "dem": dem, "texto": "", "quem": quem, "t": t, "lida": lida,
+                    "lidas": []}
 
         self.assertEqual(notas, [n("CNC", "new", d, "Helena"), n("adm", "urg", d, "Helena", True),
-                                 n("PCP", "accepted", d, "Carlos"), n("PCP", "done", d, "Carlos"),
+                                 n("PCP", "accepted", d, "Carlos", pid=self.helena), n("PCP", "done", d, "Carlos", pid=self.helena),
                                  n("CNC", "new", d2, "Escritório"), n("CNC", "nudge", d2, "Escritório"),
                                  n("ESP", "new", d2, "Escritório"),
                                  n("adm", "late", d2, "Sistema", False, T0 + 2 * MIN),

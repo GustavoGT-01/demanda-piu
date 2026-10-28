@@ -309,12 +309,22 @@ def _evento(d: dict, ev: str, quem: str, nota: str, t: int) -> None:
         del d["eventos"][1]   # o "created" fica; sai o mais antigo depois dele
 
 
-def _nota(doc: dict, aud: str, tipo: str, dem: str, texto: str, quem: str, t: int) -> None:
+def _nota(doc: dict, aud: str, tipo: str, dem: str, texto: str, quem: str, t: int, pid=None) -> None:
+    """Aviso do sino. aud = setor (ou "adm"); pid = só esta pessoa do setor (None = o setor todo). "lida" é do ADM;
+    as pessoas marcam em "lidas" (cada uma por si)."""
     nid = max([doc["seq"]["nota"]] + [n["id"] for n in doc["notas"]]) + 1
     doc["seq"]["nota"] = nid
-    doc["notas"].append({"id": nid, "aud": aud, "tipo": tipo, "dem": dem, "texto": texto, "quem": quem, "t": t,
-                         "lida": False})
+    doc["notas"].append({"id": nid, "aud": aud, "pid": pid, "tipo": tipo, "dem": dem, "texto": texto, "quem": quem,
+                         "t": t, "lida": False, "lidas": []})
     del doc["notas"][:-ds.MAX["notas"]]   # as mais antigas saem
+
+
+def _avisa(doc: dict, ponta: dict, tipo: str, d: dict, texto: str, quem: str, t: int) -> None:
+    """Aviso para uma ponta da demanda: a pessoa dela ou, sem pessoa, o setor (o Escritório que pediu = "adm")."""
+    if ponta is d["de"] and not ponta.get("p"):
+        _nota(doc, "adm", tipo, d["id"], texto, quem, t)
+    else:
+        _nota(doc, ponta["s"], tipo, d["id"], texto, quem, t, ponta.get("p"))
 
 
 def _fecha_pausa(d: dict, t: int) -> None:
@@ -369,7 +379,7 @@ def marcar_atrasos(doc: dict, agora: int) -> bool:
             d["atraso_avisado"] = True
             _evento(d, "late", SISTEMA, "", agora)
             _nota(doc, "adm", "late", d["id"], "", SISTEMA, agora)
-            _nota(doc, d["para"]["s"], "late", d["id"], "", SISTEMA, agora)
+            _avisa(doc, d["para"], "late", d, "", SISTEMA, agora)
             _stamp(d)
             mudou = True
     return mudou
@@ -384,7 +394,7 @@ def _devolve(doc: dict, pid: str, porque: str, t: int) -> None:
         d["status"], d["iniciado"] = "new", None
         d["para"]["p"] = None
         _evento(d, "reassigned", ADM, porque + " — voltou para a fila do setor", t)
-        _nota(doc, d["para"]["s"], "new", d["id"], "", ADM, t)
+        _avisa(doc, d["para"], "new", d, "", ADM, t)   # sem pessoa agora: o setor
         _stamp(d)
 
 
@@ -442,7 +452,7 @@ def _criar(doc: dict, ator, body: dict, t: int):
     doc["demandas"].append(_stamp(d))
     doc["seq"]["demanda"] = n
     _anota_cid(doc, cid, d["id"])
-    _nota(doc, s, "new", d["id"], "", quem, t)
+    _avisa(doc, d["para"], "new", d, "", quem, t)   # a pessoa escolhida; na fila, o setor
     if prio == "urg":
         _nota(doc, "adm", "urg", d["id"], "", quem, t)
 
@@ -459,8 +469,7 @@ def _aceitar(doc: dict, ator, body: dict, t: int):
         _evento(d, "assigned", nome, "Responsável: " + nome, t)
     d["status"], d["iniciado"] = "prog", t
     _evento(d, "started", nome, "", t)
-    if d["de"]["s"] != d["para"]["s"]:
-        _nota(doc, d["de"]["s"], "accepted", d["id"], "", nome, t)
+    _avisa(doc, d["de"], "accepted", d, "", nome, t)   # quem pediu (a tela não avisa a própria pessoa)
     _stamp(d)
 
 
@@ -478,8 +487,8 @@ def _pausar(doc: dict, ator, body: dict, t: int):
     d["pausas"].append({"ini": t, "fim": None, "motivo": motivo, "obs": obs, "por": nome})
     _evento(d, "paused", nome, motivo + (" — " + obs if obs else ""), t)
     _nota(doc, "adm", "pause", d["id"], motivo, nome, t)
-    if d["de"]["s"] != d["para"]["s"]:
-        _nota(doc, d["de"]["s"], "pause", d["id"], motivo, nome, t)
+    if d["de"].get("p"):   # pedido do Escritório: a nota "adm" acima já avisa
+        _avisa(doc, d["de"], "pause", d, motivo, nome, t)
     _stamp(d)
 
 
@@ -504,8 +513,7 @@ def _concluir(doc: dict, ator, body: dict, t: int):
         d["iniciado"] = t
     d["status"], d["fim"] = "done", t
     _evento(d, "done", ator["nome"], nota, t)
-    if d["de"]["s"] != d["para"]["s"]:
-        _nota(doc, d["de"]["s"], "done", d["id"], "", ator["nome"], t)
+    _avisa(doc, d["de"], "done", d, "", ator["nome"], t)
     _stamp(d)
 
 
@@ -518,7 +526,7 @@ def _cancelar(doc: dict, ator, body: dict, t: int):
     _fecha_pausa(d, t)
     d["status"], d["fim"] = "canc", t
     _evento(d, "canc", _quem(ator), motivo, t)
-    _nota(doc, d["para"]["s"], "canc", d["id"], motivo, _quem(ator), t)
+    _avisa(doc, d["para"], "canc", d, motivo, _quem(ator), t)
     _stamp(d)
 
 
@@ -530,15 +538,15 @@ def _reatribuir(doc: dict, ator, body: dict, t: int):
     s = _setor_ok(doc, body.get("s"), "Setor")
     p = _pessoa_do_setor(doc, body.get("p"), s)
     nota = _texto(_opcional(body.get("nota")), "Observação", 0, 500)
-    mudou = s != d["para"]["s"]
+    mudou, antes = s != d["para"]["s"], d["para"]["p"]
     if mudou or p is None:   # outro setor, ou sem responsável: volta à fila (aberta, sem início)
         _fecha_pausa(d, t)
         d["status"], d["iniciado"] = "new", None
     d["para"] = {"s": s, "p": p}
     _evento(d, "reassigned", _quem(ator), "Para " + s + (" · " + _nome_pessoa(doc, p) if p else "")
             + (" — " + nota if nota else ""), t)
-    if mudou:
-        _nota(doc, s, "new", d["id"], "", _quem(ator), t)
+    if mudou or (p is not None and p != antes):   # outro setor, ou uma pessoa nova escolhida
+        _avisa(doc, d["para"], "new", d, "", _quem(ator), t)
     _stamp(d)
 
 
@@ -548,7 +556,9 @@ def _cobrar(doc: dict, ator, body: dict, t: int):
         raise ApiError(403, "Só quem pediu ou o escritório pode cobrar.")
     _ativa(d)
     _evento(d, "nudge", _quem(ator), "", t)
-    _nota(doc, d["para"]["s"], "nudge", d["id"], "", _quem(ator), t)
+    _avisa(doc, d["para"], "nudge", d, "", _quem(ator), t)
+    if ator is not None:   # o escritório fica sabendo da cobrança (se não foi ele mesmo)
+        _nota(doc, "adm", "nudge", d["id"], "", _quem(ator), t)
     _stamp(d)
 
 
@@ -562,7 +572,7 @@ def _prioridade(doc: dict, ator, body: dict, t: int):
     _evento(d, "prio", ADM, PRIO.get(d["prio"], str(d["prio"])) + " → " + PRIO[prio], t)
     d["prio"] = prio
     if prio == "urg":
-        _nota(doc, d["para"]["s"], "nudge", d["id"], "Prioridade elevada para URGENTE", ADM, t)
+        _avisa(doc, d["para"], "nudge", d, "Prioridade elevada para URGENTE", ADM, t)
     _stamp(d)
 
 
@@ -595,6 +605,9 @@ def _comentar(doc: dict, ator, body: dict, t: int):
     # comentário não é evento da demanda, mas pode avisar por e-mail o outro lado da conversa
     _EVS.append({"dem": d["id"], "ev": "comment", "quem": _quem(ator), "nota": texto,
                  "autor": None if ator is None else ator["setor"]})
+    # o sino avisa o outro lado: quem atende comentou -> quem pediu; senão -> quem atende
+    lado = d["de"] if ator is not None and ator["setor"] == d["para"]["s"] else d["para"]
+    _avisa(doc, lado, "comment", d, _corta(texto, 120), _quem(ator), t)
     _stamp(d)
 
 
@@ -661,8 +674,24 @@ def _anexo_apagar(doc: dict, ator, body: dict, t: int):
 
 # ---------- notas ----------
 
-def _aud(ator) -> str:
-    return "adm" if ator is None else ator["setor"]
+def _ve_nota(n: dict, ator) -> bool:
+    """A nota é deste ator? ADM: as "adm". Pessoa: as do setor dela para o setor todo ou só para ela."""
+    if ator is None:
+        return n.get("aud") == "adm"
+    return n.get("aud") == ator["setor"] and n.get("pid") in (None, ator["id"])
+
+
+def _marca_lida(n: dict, ator) -> bool:
+    """Marca como lida para este ator só (ADM: "lida"; pessoa: entra em "lidas"). False se já estava."""
+    if ator is None:
+        if n["lida"]:
+            return False
+        n["lida"] = True
+        return True
+    if calc.nota_lida(n, ator["id"]):
+        return False
+    n["lidas"].append(ator["id"])
+    return True
 
 
 def _nota_lida(doc: dict, ator, body: dict, t: int):
@@ -670,18 +699,14 @@ def _nota_lida(doc: dict, ator, body: dict, t: int):
     n = _find(doc["notas"], nid) if isinstance(nid, int) and not isinstance(nid, bool) else None
     if n is None:
         raise ApiError(404, "Notificação não encontrada.")
-    if n.get("aud") != _aud(ator):
+    if not _ve_nota(n, ator):
         raise ApiError(403, "Notificação de outra pessoa.")
-    if n["lida"]:
+    if not _marca_lida(n, ator):
         return False
-    n["lida"] = True
 
 
 def _notas_todas(doc: dict, ator, body: dict, t: int):
-    novas = [n for n in doc["notas"] if n.get("aud") == _aud(ator) and not n["lida"]]
-    for n in novas:
-        n["lida"] = True
-    if not novas:
+    if not [n for n in doc["notas"] if _ve_nota(n, ator) and _marca_lida(n, ator)]:
         return False
 
 

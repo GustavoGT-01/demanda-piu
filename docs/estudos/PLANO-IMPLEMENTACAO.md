@@ -180,9 +180,11 @@ estudo correspondente inteiro**. Ele tem os detalhes, formatos JSON, rotas e a l
 - Descrição: **vai, cortada em 400 caracteres**, com opção de desligar.
 - Envio pela thread de fundo comum (a cada 60 s): um e-mail sai em até 1 minuto. "Enviar teste" é na hora.
 
-**Etapa 4 (avisos)**
-- No tablet compartilhado, o aviso é do setor ou da pessoa?
-- O texto da demanda pode aparecer na tela bloqueada?
+**Etapa 4 (avisos)**: respondidas pelo dono em 28/10/2026
+- Avisos **por pessoa** (tabela 6.1 do estudo 02): pessoa escolhida recebe; fila do setor avisa o setor; leitura
+  por pessoa. No tablet compartilhado, cada um vê os seus ao se identificar.
+- Aviso do Windows no PC principal (Notification API) **mostra o título** da demanda. Push com o app fechado
+  (camada 2) continua só depois do HTTPS.
 
 **Etapa 5 (calendário)**
 - O cronograma fica dentro da Cronoanálise (proposto) ou numa aba própria?
