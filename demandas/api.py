@@ -16,6 +16,7 @@ import threading
 import time
 from collections import OrderedDict
 
+import demandas_backup as bk
 import demandas_calc as calc
 import demandas_store as ds
 
@@ -732,7 +733,11 @@ def _crono(doc: dict, ator, body: dict, t: int) -> dict:
 
 
 def _vista_de(doc: dict, ator, t: int) -> dict:
-    return calc.vista(doc, t, ator, ds.uso_anexos() if ator is None else None)
+    if ator is not None:
+        return calc.vista(doc, t, ator)
+    v = calc.vista(doc, t, None, ds.uso_anexos())
+    v["backup"] = bk.resumo(t)   # só o aviso e a frase curta, sem caminho de pasta: o ADM pela rede também vê
+    return v
 
 
 def _vista(doc: dict, ator, body: dict, t: int) -> dict:

@@ -5,7 +5,8 @@ const {JSDOM}=require('jsdom'),{spawn,spawnSync}=require('child_process'),fs=req
 // pessoa entra com o código, aceita (botão do cartão não abre a gaveta), pausa, retoma, conclui; mudança feita por outro
 // aparelho aparece sozinha (/api/rev); aparelho de operador sem Administrador e sem o painel de rede.
 const REPO=path.resolve(__dirname,'..');
-const data=fs.mkdtempSync(path.join(os.tmpdir(),'dem-check-'));
+const base=fs.mkdtempSync(path.join(os.tmpdir(),'dem-check-')),data=path.join(base,'data');   // o backup vai para <base>/backup
+fs.mkdirSync(data);
 const PY=process.env.PYTHON||(process.platform==='win32'?'py':'python3');
 let PORT=0;
 function startServer(){return new Promise((res,rej)=>{
@@ -42,7 +43,9 @@ async function aparelhoOperador(){
   ok(await until(()=>!$('#dm-login').hidden&&$('#dm-login .dm-lgcard')),'aparelho de operador abre em "Quem é você?"');
   const semAdm=()=>!$('[data-act=lgk][data-v=adm]')&&!/Administrador/.test($('#dm-login').textContent);
   ok(semAdm(),'sem a opção Administrador'+(semAdm()?'':' (ainda aparece: '+$('#dm-login').textContent.slice(0,120)+')'));
-  ok($('#cx-rede').hidden,'sem o botão ⚙ Rede');
+  ok($('#cx-cfg').hidden,'sem o botão ⚙ Configurações');
+  w.NestLocal.views.demandas.config('backup');await sleep(300);
+  ok(!$('.dm-cfg'),'nem pela função: o diálogo não abre fora do computador principal');
   ok(await until(()=>$('[data-act=lgs][data-v=CNC]')),'a lista de setores chega na tela de entrada');
   $('[data-act=lgs][data-v=CNC]').click();await until(()=>$('.dm-lguser'));
   $$('.dm-lguser').find(b=>b.textContent.includes('Carlos')).click();
@@ -61,7 +64,7 @@ async function aparelhoOperador(){
     const css=fs.readFileSync(path.join(REPO,'demandas/demandas.css'),'utf8');
     ok(!!w.NestLocal.views.demandas,'módulo registrou NestLocal.views.demandas');
     ok(!$('.nav')&&!!d.getElementById('dm-i-painel'),'página própria: sem menu de outro programa, ícones do módulo carregados');
-    ok(await until(()=>!$('#cx-rede').hidden),'computador principal tem o botão ⚙ Rede');
+    ok(await until(()=>!$('#cx-cfg').hidden),'computador principal tem o botão ⚙ Configurações');
     // regra de escopo do CSS: todo seletor sob #dmboard ou main[data-view="demandas"]
     const sels=css.replace(/\/\*[\s\S]*?\*\//g,'').replace(/@keyframes[^{]+\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g,'').replace(/@media[^{]+\{/g,'').match(/[^{}]+(?=\{)/g).flatMap(s=>s.split(',')).map(s=>s.trim()).filter(Boolean);
     const solto=sels.filter(s=>!/^(#dmboard|main\[data-view="demandas"\])/.test(s));
@@ -73,6 +76,32 @@ async function aparelhoOperador(){
     ok(await until(()=>$('[data-act=lgk][data-v=adm]')),'computador principal tem a opção Administrador');
     click('[data-act=lgk][data-v=adm]');click('.dm-lgbtn');
     ok(await until(()=>$('#dm-login').hidden&&$('.dm-tab[data-v=painel]')),'Administrador entra como Escritório '+toast());
+    // backup: aviso no Painel e ⚙ Configurações (Rede e Backup)
+    ok(await until(()=>$('#dm-bkav')&&/Nenhum backup feito ainda/.test($('#dm-bkav').textContent)),'Painel do ADM avisa: nenhum backup feito');
+    ok(await until(()=>$('.dm-alert[data-k=backup]')),'alerta flutuante do backup aparece');
+    click('.dm-alert[data-k=backup] [data-act=ax]');
+    click('#cx-cfg');
+    ok(await until(()=>$('.dm-cfg')&&$('#dm-cfg-on')),'⚙ Configurações abre na seção Rede');
+    ok(!$('#dm-cfg-on').checked&&!$('#dm-cfg-pin'),'rede desligada: sem PINs');
+    click('#dm-cfg-on');
+    ok(await until(()=>$('#dm-cfg-pin')&&/^\d{6}$/.test($('#dm-cfg-pin').textContent)&&/para ligar o acesso/.test(($('#dm-cfg-msg')||{}).textContent)),'ligar a rede mostra os PINs e pede para reiniciar');
+    const pin0=$('#dm-cfg-pin').textContent;w.confirm=()=>true;
+    click('[data-act=cfg-pin][data-v=pin]');
+    ok(await until(()=>$('#dm-cfg-pin')&&$('#dm-cfg-pin').textContent!==pin0),'gerar PIN do escritório novo');
+    click('#dm-cfg-on');ok(await until(()=>!$('#dm-cfg-pin')),'desligar a rede de novo');
+    click('[data-act=cfg-sec][data-v=backup]');
+    ok(await until(()=>$('#dm-bk-hora')&&$('#dm-bk-hora').value==='03:00'&&$('[data-act=cfg-sec][data-v=backup] .dm-cfgdot')),'seção Backup: 03:00 e ponto vermelho no menu');
+    ok(/Nenhum backup feito ainda/.test($('#dm-bk-ult').textContent)&&/Nenhuma cópia/.test($('.dm-cfgbody').textContent),'sem cópias ainda');
+    ok($('#dm-bk-pasta').textContent===path.join(base,'backup'),'pasta padrão ao lado de data/: '+$('#dm-bk-pasta').textContent);
+    type('#dm-bk-hora','');click('[data-act=bk-salvar]');
+    ok(await until(()=>/Horário inválido/.test(toast())),'horário inválido: mensagem do servidor '+toast());
+    type('#dm-bk-hora','12:30');type('#dm-bk-diarias','3');click('[data-act=bk-salvar]');
+    ok(await until(()=>/salva/.test(toast())&&$('#dm-bk-hora').value==='12:30'&&$('#dm-bk-diarias').value==='3'),'salvar a configuração '+toast());
+    click('[data-act=bk-agora]');
+    ok(await until(()=>$$('.dm-cfgcp:not(.dm-cfgth)').length===1&&/Verificado/.test($('#dm-bk-ult').textContent),8000),'fazer backup agora: a cópia aparece verificada '+toast());
+    ok(!$('[data-act=cfg-sec][data-v=backup] .dm-cfgdot')&&fs.readdirSync(path.join(base,'backup')).length===1,'o ponto vermelho some e o zip está na pasta');
+    click('[data-act=mclose]');
+    ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')&&$('.dm-kpis')&&!$('#dm-bkav')),'fecha e o aviso do Painel some');
     // setores
     const novoSetor=async(nome,sig)=>{click('[data-act=tab][data-v=admin]');await until(()=>$('[data-act=newsector]'));click('[data-act=newsector]');type('#dm-sf-name',nome);type('#dm-sf-id',sig);click('[data-act=sf-save]');return until(()=>!$('#dm-modal').classList.contains('dm-on')&&$$('.dm-scard').some(c=>c.textContent.includes(nome)))};
     ok(await novoSetor('Planejamento','PCP'),'cria setor PCP '+toast());
@@ -138,6 +167,6 @@ async function aparelhoOperador(){
     w.close();
     await aparelhoOperador();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso
-    try{fs.rmSync(data,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch(e){console.log('aviso: pasta temporária ficou em '+data)}}
+    try{fs.rmSync(base,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch(e){console.log('aviso: pasta temporária ficou em '+base)}}
   console.log(process.exitCode?'houve falhas':'tudo certo');
 })().catch(e=>{console.log('FAIL '+e.stack);process.exitCode=1}).finally(()=>process.exit());   // janela jsdom aberta não pode prender o processo

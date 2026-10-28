@@ -1021,6 +1021,16 @@ class Leituras(Base):
         self.assertEqual({d["id"] for d in v["demandas"]}, {b["id"]})
         self.assertNotIn(c["id"], json.dumps(v))
         self.assertNotIn("anexos_uso", v)
+        self.assertNotIn("backup", v)
+
+    def test_vista_do_adm_traz_o_aviso_do_backup_sem_caminho(self):
+        for papel in ("maquina", "completo"):
+            v = self.get(ctx={"papel": papel})
+            self.assertEqual(v["backup"], {"alerta": "grave", "texto": "Nenhum backup feito ainda.", "ultimo_ok_t": None})
+        (self.dir / "backup-estado.json").write_text(json.dumps({"ultimo_ok": {"t": self.t - 3600000}}), encoding="utf-8")
+        self.assertEqual(self.get()["backup"], {"alerta": None, "texto": "", "ultimo_ok_t": self.t - 3600000})
+        self.assertEqual(self.adm("vista")["backup"]["ultimo_ok_t"], self.t - 3600000)
+        self.assertNotIn(str(self.dir), json.dumps(self.get()["backup"]))
 
     def test_historico(self):
         self.nova()

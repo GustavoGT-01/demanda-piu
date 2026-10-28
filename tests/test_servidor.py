@@ -587,6 +587,93 @@ class Detalhes(Base):
         self.assertEqual(self.texto("GET", "/api/rede", headers=op, rede=True), (403, servidor.OPERADOR_MSG))
 
 
+class Backup(Base):
+    """Rotas /api/backup*: só o computador principal. Dados em <tmp>/data: as cópias vão para <tmp>/backup."""
+
+    def setUp(self):
+        super().setUp()
+        self.data = self.data / "data"
+        self.data.mkdir()
+        os.environ["DEMANDAS_DATA"] = str(self.data)
+
+    def json(self, method, path, body=None, headers=None, rede=False):
+        st, _, raw = self.req(method, path, body, headers, rede)
+        return st, (json.loads(raw) if st == 200 else raw.decode("utf-8"))
+
+    def test_pode(self):
+        self.assertTrue(servidor.pode("maquina", "configurar"))
+        for papel in ("completo", "operador", None, "x"):
+            self.assertFalse(servidor.pode(papel, "configurar"))
+        self.assertFalse(servidor.pode("maquina", "outra"))
+
+    def test_painel_salvar_e_fazer_agora(self):
+        st, p = self.json("GET", "/api/backup")
+        self.assertEqual(st, 200)
+        self.assertEqual((p["copias"], p["pasta"], p["pasta_ok"], p["rodando"]), ([], str(self.data.parent / "backup"), False, False))
+        self.assertEqual(p["resumo"]["texto"], "Nenhum backup feito ainda.")
+        st, p = self.json("POST", "/api/backup", {"hora": "12:30", "ret": {"diarias": 3}})
+        self.assertEqual((st, p["cfg"]["hora"], p["cfg"]["ret"]["diarias"]), (200, "12:30", 3))
+        self.assertEqual(self.json("POST", "/api/backup", {"hora": "25:00"}),
+                         (400, "Horário inválido: use HH:MM, de 00:00 a 23:59."))
+        self.assertEqual(self.json("POST", "/api/backup", b"{x"), (400, "JSON inválido."))
+        self.assertEqual(self.json("POST", "/api/backup", b"\xff"), (400, "JSON inválido."))
+        self.assertEqual(self.json("POST", "/api/backup", [1])[0], 400)
+        st, p = self.json("POST", "/api/backup/agora", {})
+        self.assertEqual(st, 200)
+        self.assertEqual(len(p["copias"]), 1)
+        self.assertEqual(p["copias"][0]["tipo"], "manual")
+        self.assertTrue(p["pasta_ok"])
+        self.assertEqual(p["usado"], p["copias"][0]["bytes"])
+        self.assertIsNone(p["resumo"]["alerta"])
+        self.assertTrue((self.data.parent / "backup" / p["copias"][0]["nome"]).is_file())
+        st, p = self.json("POST", "/api/backup/agora")   # corpo vazio também vale
+        self.assertEqual(st, 200)
+
+    def test_uma_de_cada_vez(self):
+        bk = servidor.backup_mod()
+        with bk._BACKUP:
+            self.assertEqual(self.json("POST", "/api/backup/agora", {}), (409, "Já tem um backup em andamento."))
+            self.assertTrue(self.json("GET", "/api/backup")[1]["rodando"])
+
+    def test_abrir_pasta(self):
+        self.assertEqual(self.json("POST", "/api/backup/abrir", {}),
+                         (404, "A pasta do backup ainda não existe: faça um backup primeiro."))
+        (self.data.parent / "backup").mkdir()
+        with mock.patch.object(servidor.os, "startfile", create=True) as sf:
+            st, _ = self.json("POST", "/api/backup/abrir", {"pasta": "C:\\Windows"})
+        self.assertEqual(st, 200)
+        sf.assert_called_once_with(self.data.parent / "backup")   # nunca o caminho que veio no pedido
+        with mock.patch.object(servidor.os, "startfile", side_effect=OSError("x"), create=True), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(self.json("POST", "/api/backup/abrir", {}), (500, "Falha no backup: veja a janela do servidor."))
+        self.assertEqual(err.getvalue(), "[backup] POST /api/backup/abrir: OSError('x')\n")
+
+    def test_rotas_desconhecidas(self):
+        for method, path in (("GET", "/api/backup/agora"), ("GET", "/api/backup/abrir"), ("POST", "/api/backup/x"),
+                             ("GET", "/api/backup/"), ("POST", "/api/backup/restaurar")):
+            self.assertEqual(self.json(method, path, {} if method == "POST" else None), (404, "Não encontrado."), path)
+        self.assertEqual(self.req("GET", "/api/backupx")[0], 404)
+
+    def test_pela_rede_nunca(self):
+        self.precisa_rede()
+        adm = self.login(servidor.net_config()["pin"])
+        for method, path in (("GET", "/api/backup"), ("POST", "/api/backup"), ("POST", "/api/backup/agora"),
+                             ("POST", "/api/backup/abrir"), ("GET", "/api/backup/agora")):
+            body = {} if method == "POST" else None
+            self.assertEqual(self.json(method, path, body, adm, rede=True), (403, "Só no computador principal."), path)
+            self.assertEqual(self.json(method, path, body, rede=True)[0], 401, path)
+        st, h, _ = self.req("POST", "/api/login", ("pin=" + servidor.net_config()["pin_op"]).encode(),
+                            {"Content-Type": "application/x-www-form-urlencoded"}, rede=True)
+        op = {"Cookie": h["Set-Cookie"].split(";")[0]}
+        self.assertEqual(self.json("GET", "/api/backup", None, op, rede=True), (403, servidor.OPERADOR_MSG))
+        self.assertFalse((self.data.parent / "backup").exists())
+
+    def test_origem_estranha(self):
+        self.assertEqual(self.json("POST", "/api/backup/agora", {}, {"Origin": "http://mal.example"}),
+                         (403, "Origem não aceita."))
+        self.assertEqual(self.req("GET", "/api/backup", headers={"Host": "mal.example:%d" % self.port})[0], 421)
+
+
 class Fundo(unittest.TestCase):
     """Thread de fundo comum: roda ao ligar e a cada intervalo, com o relógio injetado; uma tarefa que falha não
     derruba as outras."""

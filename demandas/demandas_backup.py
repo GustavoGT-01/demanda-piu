@@ -462,6 +462,30 @@ def verificar(caminho: Path) -> dict:
     return man
 
 
+def quando(nome: str) -> int | None:
+    """Instante (ms, hora local do nome) de uma cópia do padrão; None se o nome não é do padrão."""
+    m = NOME_RE.fullmatch(nome)
+    if not m:
+        return None
+    return int(time.mktime(time.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")) * 1000)
+
+
+def painel(agora: int | None = None) -> dict:
+    """Tudo o que a seção Backup das Configurações mostra (só no computador principal: tem o caminho da pasta)."""
+    agora = _agora() if agora is None else agora
+    cfg = config()
+    pasta = pasta_local(cfg)
+    try:
+        livre = shutil.disk_usage(pasta if pasta.is_dir() else pasta.parent).free
+    except OSError:
+        livre = None
+    copias = [{"nome": n, "tipo": NOME_RE.fullmatch(n).group(3), "bytes": b, "t": quando(n)} for n, b in listar(pasta)]
+    copias.sort(key=lambda c: (c["t"], c["nome"]), reverse=True)
+    return {"cfg": cfg, "padrao": PADRAO, "pasta": str(pasta), "pasta_ok": pasta.is_dir(), "livre": livre,
+            "estado": estado(), "resumo": resumo(agora, cfg), "copias": copias,
+            "usado": sum(c["bytes"] for c in copias), "rodando": _BACKUP.locked()}
+
+
 def fazer(tipo: str, agora: int | None = None) -> dict:
     """Uma cópia agora na pasta local, verificada, e a retenção. Registra o resultado em backup-estado.json.
     409 se já tem uma cópia em andamento."""

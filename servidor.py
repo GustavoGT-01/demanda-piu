@@ -51,7 +51,7 @@ LOGIN_PAGE = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><m
 form{background:#151E38;border:1px solid #263457;border-radius:18px;padding:28px;width:min(320px,calc(100vw - 32px));box-sizing:border-box;display:grid;gap:14px}
 h1{font-size:20px;margin:0}p{margin:0;color:#93A0BF;font-size:14px}input{font:inherit;font-size:22px;letter-spacing:.3em;text-align:center;padding:10px;border-radius:10px;border:1px solid #263457;background:#0C1224;color:inherit}
 button{font:inherit;font-weight:700;padding:11px;border:0;border-radius:10px;background:#FFFFFF;color:#0C1224;cursor:pointer}.e{color:#EF5B67}</style></head>
-<body><form method="post" action="/api/login"><h1>Central de demandas</h1><p>Digite o PIN mostrado no computador principal, em ⚙ Rede.</p>
+<body><form method="post" action="/api/login"><h1>Central de demandas</h1><p>Digite o PIN mostrado no computador principal, em ⚙ Configurações.</p>
 %s<input name="pin" inputmode="numeric" autocomplete="one-time-code" maxlength="12" required autofocus aria-label="PIN"><button>Entrar</button></form></body></html>"""
 
 # Sessão do PIN dos operadores: lista fechada, todo o resto é 403 (HEAD conta como GET). As rotas de ADM das demandas
@@ -263,6 +263,12 @@ def session_ok(cookie_header: str | None) -> str | None:
     return None
 
 
+def pode(papel, acao: str) -> bool:
+    """Autorização das telas de sistema num lugar só. "configurar" (⚙ Configurações: rede, backup): só o computador
+    principal. Na hospedagem, muda aqui e não em cada rota."""
+    return acao == "configurar" and papel == "maquina"
+
+
 def ip_host(host: str, port: int) -> bool:
     """Host "IPv4:porta": um IP literal não sofre DNS rebinding, por isso pode vir da rede."""
     name, _, p = host.rpartition(":")
@@ -398,6 +404,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail(500, "Resposta do módulo inválida.")
         self._json(out)
 
+    def _backup(self, method: str, path: str, raw: bytes) -> None:
+        """/api/backup (GET: painel; POST: salva a configuração), /api/backup/agora e /api/backup/abrir."""
+        if not pode(self.papel, "configurar"):
+            return self._fail(403, "Só no computador principal.")
+        bk = backup_mod()
+        acao = path[len("/api/backup"):]
+        if (method, acao) not in (("GET", ""), ("POST", ""), ("POST", "/agora"), ("POST", "/abrir")):
+            return self._fail(404, "Não encontrado.")
+        try:
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeError, ValueError):
+            return self._fail(400, "JSON inválido.")
+        try:
+            if acao == "" and method == "POST":
+                bk.salvar_config(body)
+            elif acao == "/agora":
+                bk.fazer("manual")
+            elif acao == "/abrir":
+                pasta = bk.pasta_local(bk.config())
+                if not pasta.is_dir():
+                    return self._fail(404, "A pasta do backup ainda não existe: faça um backup primeiro.")
+                os.startfile(pasta)   # só a pasta configurada, nunca um caminho vindo do pedido
+            return self._json(bk.painel())
+        except bk.ds.StoreError as exc:
+            return self._fail(exc.status, str(exc))
+        except (OSError, AttributeError) as exc:   # AttributeError: os.startfile fora do Windows
+            print("[backup] %s %s: %r" % (method, path, exc), file=sys.stderr)
+            return self._fail(500, "Falha no backup: veja a janela do servidor.")
+
     def _rede(self) -> dict:
         cfg = net_config()
         port = self.server.server_address[1]
@@ -416,9 +451,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/rev":
             return self._json({"rev": rev()})
         if path == "/api/rede":
-            if self._remote():
+            if not pode(self.papel, "configurar"):
                 return self._fail(403, "Só no computador principal.")
             return self._json(self._rede())
+        if path == "/api/backup" or path.startswith("/api/backup/"):
+            return self._backup("GET", path, b"")
         if path == "/api/local/demandas" or path.startswith("/api/local/demandas/"):
             return self._api("GET", path, b"")
         if not self._static(path):
@@ -460,7 +497,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._auth_ok() or not self._operador_ok("POST", path):
             return
         if path == "/api/rede":
-            if self._remote():
+            if not pode(self.papel, "configurar"):
                 return self._fail(403, "Só no computador principal.")
             try:
                 body = json.loads(data.decode("utf-8") or "{}")
@@ -469,6 +506,8 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, AttributeError, OSError):
                 return self._fail(400, "Falha ao gravar a configuração da rede.")
             return self._json(self._rede())
+        if path == "/api/backup" or path.startswith("/api/backup/"):
+            return self._backup("POST", path, data)
         if path.startswith("/api/local/demandas/"):
             return self._api("POST", path, data)
         self._fail(404, "Não encontrado.")

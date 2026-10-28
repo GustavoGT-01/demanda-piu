@@ -184,6 +184,7 @@ function apply(v){
   if(v.eu && D.role === 'pessoa') D.eu = v.eu;
   notesCheck(firstLoad);
   renderBell();
+  bkAlert();
 }
 async function loadPub(){
   try{
@@ -386,7 +387,7 @@ function vPainel(intro){
   const att = attention();
   const feed = D.v.feed.slice(0, 10), seen = D.feedSeen, key = f => num(f.t) + '|' + f.msg;
   D.feedSeen = new Set(D.v.feed.map(key));
-  return `<div class="dm-kpis">${K.map(([k, st, l, s]) => `<button type="button" class="dm-kpi" data-act="kpi" data-v="${k}" data-st="${st}"><b${intro ? ` data-count="${c[k]}"` : ''}>${c[k]}</b><span>${l}</span><small>${s}</small></button>`).join('')}</div>
+  return `${bkAviso()}<div class="dm-kpis">${K.map(([k, st, l, s]) => `<button type="button" class="dm-kpi" data-act="kpi" data-v="${k}" data-st="${st}"><b${intro ? ` data-count="${c[k]}"` : ''}>${c[k]}</b><span>${l}</span><small>${s}</small></button>`).join('')}</div>
    ${mapa(act, intro)}
    <div class="dm-grid2"><div class="dm-panel"><div class="dm-ph"><h3>🚨 Atenção agora</h3><span class="dm-s">${att.length} itens exigem atenção</span></div>${att.slice(0, 7).map(a => {
      const r = a.r, op = openPause(r);
@@ -697,9 +698,9 @@ function openNotif(){
 
 /* ---------- modais ---------- */
 const modalOn = () => !!root && $('dm-modal').classList.contains('dm-on');
-function openModal(html, wide){
+function openModal(html, wide){   // wide: true = largo; texto = classe própria da caixa
   const box = $('dm-mbox');
-  box.className = 'dm-mbox' + (wide ? ' dm-wide' : '');
+  box.className = 'dm-mbox' + (wide ? ' ' + (wide === true ? 'dm-wide' : wide) : '');
   box.innerHTML = html;
   $('dm-modal').classList.add('dm-on');
   const f = box.querySelector('input:not([type=radio]):not([disabled]),textarea,select');
@@ -708,8 +709,8 @@ function openModal(html, wide){
 function closeModal(){
   if(!root) return;
   if(D.mod && D.mod.url && window.URL && URL.revokeObjectURL) URL.revokeObjectURL(D.mod.url);
-  $('dm-modal').classList.remove('dm-on'); $('dm-mbox').textContent = '';
-  D.mod = null; D.form = null; D.sform = null; D.uform = null;
+  $('dm-modal').classList.remove('dm-on'); $('dm-mbox').textContent = ''; $('dm-mbox').removeAttribute('aria-labelledby'); delete $('dm-mbox').dataset.sec;
+  D.mod = null; D.form = null; D.sform = null; D.uform = null; D.cfg = null;
   if(D.dirty && !D.open && !D.notif) render();
 }
 function modalConfirm(title, msgHtml, okLabel, run){
@@ -998,6 +999,128 @@ function flip(fn){
   });
 }
 
+/* ---------- ⚙ Configurações (só no computador principal): Rede e Backup ---------- */
+const BK_TIPO = {auto: 'diária', inicio: 'ao ligar', manual: 'manual', 'antes-restaurar': 'antes de restaurar'};
+const BK_RET = [['diarias', 'Diárias'], ['semanais', 'Semanais'], ['mensais', 'Mensais'], ['manuais', 'Manuais']];
+const BK_LIM = [[1000, '1 GB'], [2000, '2 GB'], [5000, '5 GB'], [10000, '10 GB'], [50000, '50 GB'], [1000000, 'Sem limite']];
+const gBytes = b => num(b) >= 1073741824 ? (num(b) / 1073741824).toFixed(1).replace('.', ',') + ' GB' : fBytes(b);
+const fQuando = ms => (sameDay(ms, Date.now()) ? 'Hoje' : fD(ms)) + ', ' + fT(ms);
+/* rotas da casca (/api/rede, /api/backup): fora do call(), que é das demandas */
+async function sys(path, body){
+  try{return await window.api(path, body)}catch(e){toast('⚠️ ' + errMsg(e)); return null}
+}
+async function openCfg(sec){
+  if(D.srv !== 'maquina' || !root) return;
+  const [rede, bk] = await Promise.all([sys('/api/rede'), sys('/api/backup')]);
+  if(!rede || !bk) return;
+  D.cfg = {sec: sec === 'backup' ? 'backup' : 'rede', rede, bk};
+  openModal('', 'dm-cfgbox');
+  renderCfg();
+}
+function renderCfg(){
+  const c = D.cfg, box = $('dm-mbox');
+  if(!c || !box) return;
+  const r = c.bk.resumo, dot = r && r.alerta ? `<span class="dm-cfgdot" title="${esc(r.texto)}"></span>` : '';
+  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot]].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
+  const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === c.sec ? corpo.scrollTop : 0;   // mesma seção: não pula para o topo
+  box.setAttribute('aria-labelledby', 'dm-cfg-t');
+  box.dataset.sec = c.sec;
+  box.innerHTML = `<div class="dm-cfg"><div class="dm-cfghead"><h2 id="dm-cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-sm" data-act="mclose" aria-label="Fechar">✕</button></div>
+   <nav class="dm-cfgnav" aria-label="Seções das configurações">${nav}</nav>
+   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : cfgBackup(c.bk)}</div></div>`;
+  box.querySelector('.dm-cfgbody').scrollTop = topo;
+}
+function cfgRede(n){
+  const msg = n.on && !n.active ? 'Feche e abra o programa (iniciar.bat) para ligar o acesso.' : !n.on && n.active ? 'Feche e abra o programa (iniciar.bat) para desligar o acesso.' : '';
+  const urls = (n.urls || []).map(u => `<code class="dm-cfgurl">${esc(u)}</code>`).join('') || '<p class="dm-note">Nenhum endereço de rede encontrado neste computador.</p>';
+  return `<section class="dm-cfgsec"><h3>Acesso pela rede</h3>
+   <label class="dm-cfgsw"><input type="checkbox" id="dm-cfg-on"${n.on ? ' checked' : ''}><i aria-hidden="true"></i><span><b>Ligar o acesso pela rede</b><small>Outros computadores, celulares e tablets do mesmo Wi-Fi usam a Central com PIN. Ligar ou desligar vale depois de reiniciar o programa.</small></span></label>
+   ${msg ? `<p class="dm-cfgmsg" id="dm-cfg-msg">${esc(msg)}</p>` : ''}</section>
+  ${n.on ? `<section class="dm-cfgsec"><h3>PINs</h3><div class="dm-cfgpins">
+    <div class="dm-cfgpin"><span>PIN do escritório</span><b id="dm-cfg-pin">${esc(n.pin)}</b><small>Abre tudo, inclusive a Administração. Use só nos computadores do escritório.</small><button type="button" class="dm-btn dm-sm" data-act="cfg-pin" data-v="pin">Gerar novo</button></div>
+    <div class="dm-cfgpin"><span>PIN dos operadores</span><b id="dm-cfg-pinop">${esc(n.pin_op)}</b><small>Abre só a tela de operador: pedir, aceitar e acompanhar solicitações.</small><button type="button" class="dm-btn dm-sm" data-act="cfg-pin" data-v="pin_op">Gerar novo</button></div></div>
+    <p class="dm-note">Gerar um PIN novo desconecta os aparelhos que entraram com o antigo.</p></section>
+   <section class="dm-cfgsec"><h3>Endereços para os outros aparelhos</h3>${n.active ? urls : '<p class="dm-note">Os endereços aparecem depois de reiniciar o programa com o acesso ligado.</p>'}</section>` : ''}`;
+}
+function cfgBackup(p){
+  const f = p.cfg, ok = p.estado.ultimo_ok, falha = p.estado.ultima_falha, falhou = falha && (!ok || falha.t > ok.t);
+  const lims = BK_LIM.some(([v]) => v === f.limite_mb) ? BK_LIM : BK_LIM.concat([[f.limite_mb, String(f.limite_mb / 1000).replace('.', ',') + ' GB']]).sort((a, b) => a[0] - b[0]);
+  const limTxt = lims.find(([v]) => v === f.limite_mb)[1], uso = Math.min(100, p.usado / (f.limite_mb * 1048576) * 100);
+  return `<section class="dm-cfgsec"><h3>Cópia automática<span class="dm-spacer"></span><label class="dm-cfgsw"><input type="checkbox" id="dm-bk-on"${f.on ? ' checked' : ''}><i aria-hidden="true"></i><b id="dm-bk-ontx">${f.on ? 'Ligada' : 'Desligada'}</b></label></h3>
+   <div class="dm-cfglinha"><label for="dm-bk-hora">Todo dia às</label><input id="dm-bk-hora" type="time" value="${esc(f.hora)}">
+    <label class="dm-inl"><input type="checkbox" id="dm-bk-lig"${f.ao_ligar ? ' checked' : ''}> Também ao ligar o programa, se a última cópia tiver mais de 20 h</label></div>
+   <p class="dm-note">Se o computador estiver desligado no horário, a cópia é feita assim que ele for ligado.</p></section>
+  <section class="dm-cfgsec"><h3>Onde guardar</h3>
+   <div class="dm-cfgdest"><span class="dm-cfgico" aria-hidden="true">🗄️</span><span><b>Pasta neste computador</b> · <code id="dm-bk-pasta">${esc(p.pasta)}</code></span>
+    <span class="dm-acts"><span class="dm-pill" data-st="${p.pasta_ok ? 'prog' : 'new'}">${p.pasta_ok ? 'Pronta' : 'Criada no 1º backup'}</span><button type="button" class="dm-btn dm-sm" data-act="bk-abrir"${p.pasta_ok ? '' : ' disabled'}>📂 Abrir pasta</button></span>
+    <small>Protege contra erro e arquivo corrompido, mas não contra o computador quebrar.${p.livre != null ? ' ' + gBytes(p.livre) + ' livres.' : ''}</small></div>
+   <div class="dm-fld"><label for="dm-bk-local">Outra pasta (vazio = a padrão)</label><input id="dm-bk-local" value="${esc(f.local)}" placeholder="${esc(f.local ? '' : p.pasta)}" autocomplete="off" spellcheck="false"></div>
+   <p class="dm-note">⚠ A cópia contém nomes, matrículas e os códigos das pessoas. Guarde-a em local seguro; em pen drive, use BitLocker. Os PINs de rede não entram na cópia.</p></section>
+  <section class="dm-cfgsec"><h3>Quantas cópias guardar</h3>
+   <div class="dm-cfgret">${BK_RET.map(([k, l]) => `<label>${l}<input type="number" id="dm-bk-${k}" min="1" max="60" value="${num(f.ret[k])}"></label>`).join('')}
+    <label>Limite de espaço<select id="dm-bk-lim">${lims.map(([v, l]) => `<option value="${v}"${v === f.limite_mb ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div>
+   <div class="dm-cfgbar" aria-hidden="true"><span style="width:${uso.toFixed(1)}%"></span></div>
+   <p class="dm-note" id="dm-bk-uso">Usando ${gBytes(p.usado)}${f.limite_mb >= 1000000 ? '' : ' de ' + limTxt} com ${p.copias.length} ${p.copias.length === 1 ? 'cópia' : 'cópias'}. Manuais e "antes de restaurar" contam à parte: ficam as últimas de cada.</p></section>
+  <section class="dm-cfgsec"><h3>Último backup<span class="dm-spacer"></span><button type="button" class="dm-btn dm-sm dm-primary" data-act="bk-agora"${p.rodando ? ' disabled' : ''}>💾 Fazer backup agora</button></h3>
+   ${ok ? `<div class="dm-cfgult" id="dm-bk-ult"><div>Quando<b>${fQuando(ok.t)}</b></div><div>Tamanho<b>${gBytes(ok.bytes)}</b></div><div>Tipo<b>${esc(BK_TIPO[ok.tipo] || ok.tipo)}</b></div><div>Integridade<b class="dm-good">Verificado ✓</b></div></div>` : '<p class="dm-note" id="dm-bk-ult">Nenhum backup feito ainda.</p>'}
+   ${ok && ok.faltando ? `<p class="dm-note">${num(ok.faltando)} anexo(s) apagado(s) durante a cópia ficaram de fora.</p>` : ''}
+   ${falhou ? `<p class="dm-cfgerr" id="dm-bk-falha">Última tentativa (${fQuando(falha.t)}) falhou: ${esc(falha.erro)}.</p>` : ''}</section>
+  <section class="dm-cfgsec"><h3>Cópias guardadas</h3>${p.copias.length ? `<div class="dm-cfglista"><div class="dm-cfgcp dm-cfgth"><span>Cópia</span><span>Tipo</span><span>Tamanho</span></div>${p.copias.map(x => `<div class="dm-cfgcp"><span><b>${x.t ? fQuando(x.t) : ''}</b><small>${esc(x.nome)}</small></span><span class="dm-cfgtipo" data-t="${esc(x.tipo)}">${esc(BK_TIPO[x.tipo] || x.tipo)}</span><span>${gBytes(x.bytes)}</span></div>`).join('')}</div>` : '<p class="dm-note">Nenhuma cópia nesta pasta.</p>'}</section>
+  <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="bk-salvar">Salvar</button></div>`;
+}
+async function cfgRedeOn(inp){
+  const n = await sys('/api/rede', {on: inp.checked});
+  if(!n){inp.checked = !inp.checked; return}
+  if(D.cfg){D.cfg.rede = n; renderCfg()}
+}
+async function cfgPin(k){
+  const q = k === 'pin' ? 'Gerar um PIN do escritório novo? Todos os aparelhos que já entraram vão precisar do PIN novo.'
+    : 'Gerar um PIN dos operadores novo? Os aparelhos de operador que já entraram vão precisar do PIN novo.';
+  if(!window.confirm(q)) return;
+  const n = await sys('/api/rede', k === 'pin' ? {newpin: true} : {newpin_op: true});
+  if(n && D.cfg){D.cfg.rede = n; renderCfg(); toast('PIN novo gerado')}
+}
+async function bkPost(el, path, body){
+  if(el) el.disabled = true;
+  const p = await sys(path, body);
+  if(el && el.isConnected) el.disabled = false;
+  if(p && D.cfg){D.cfg.bk = p; renderCfg()}
+  return p;
+}
+async function bkAgora(el){
+  const p = await bkPost(el, '/api/backup/agora', {});
+  if(!p) return;
+  toast('💾 Backup feito e verificado (' + gBytes(p.estado.ultimo_ok.bytes) + ')');
+  refresh();   // o aviso do Painel some
+}
+function bkSalvar(el){
+  const v = k => $('dm-bk-' + k), body = {on: v('on').checked, hora: v('hora').value, ao_ligar: v('lig').checked, local: v('local').value.trim(), limite_mb: num(v('lim').value), ret: {}};
+  for(const [k] of BK_RET) body.ret[k] = num(v(k).value, -1);
+  bkPost(el, '/api/backup', body).then(p => {if(p){toast('Configuração do backup salva'); refresh()}});
+}
+/* aviso de backup no Painel do ADM: faixa fixa e, uma vez por dia, o alerta flutuante */
+function bkAviso(){
+  const b = D.v.backup;
+  if(!b || !b.alerta) return '';
+  const k = b.alerta === 'grave' ? 'late' : 'pause', pc = D.srv === 'maquina';
+  return `<div class="dm-al dm-bkav" data-k="${k}" role="alert" id="dm-bkav"><span class="dm-bkico" aria-hidden="true">💾</span><div class="dm-bktxt"><div class="dm-al-h"><b>Backup</b><span class="dm-tg" data-k="${k}">${b.alerta === 'grave' ? 'Atenção' : 'Aviso'}</span></div>
+   <div class="dm-al-t">${esc(b.texto)}</div><div class="dm-al-m"><span>${pc ? 'Detalhes em ⚙ Configurações → Backup.' : 'Resolva no computador principal, em ⚙ Configurações.'}</span></div></div>
+   ${pc ? '<div class="dm-al-b"><button type="button" class="dm-btn dm-sm dm-primary" data-act="bk-agora">💾 Fazer backup agora</button><button type="button" class="dm-btn dm-sm" data-act="cfg-open" data-v="backup">Abrir configurações</button></div>' : ''}</div>`;
+}
+function bkAlert(){
+  const b = D.v.backup;
+  if(!isAdm() || !b || b.alerta !== 'grave' || !root || !visible()) return;
+  const dia = new Date().toDateString();
+  if(D.bkDia === dia) return;
+  D.bkDia = dia;
+  try{if(localStorage.getItem('dm-bk-aviso') === dia) return; localStorage.setItem('dm-bk-aviso', dia)}catch(_){/* sem armazenamento: uma vez por abertura */}
+  const el = document.createElement('div');
+  el.className = 'dm-alert'; el.dataset.k = 'backup'; el.setAttribute('role', 'alert');
+  el.innerHTML = `<h4><span>💾 Backup</span><button type="button" class="dm-btn dm-sm" data-act="ax" aria-label="Fechar alerta">✕</button></h4><p class="dm-note">${esc(b.texto)}</p>
+   <div class="dm-acts2">${D.srv === 'maquina' ? '<button type="button" class="dm-btn dm-sm dm-primary" data-act="cfg-open" data-v="backup">Abrir configurações</button>' : ''}<button type="button" class="dm-btn dm-sm" data-act="ax">Dispensar</button></div>`;
+  $('dm-alerts').prepend(el);
+}
+
 /* ---------- ações ---------- */
 async function run(el, rest, body, okMsg, after){
   if(el) el.disabled = true;
@@ -1073,6 +1196,12 @@ function act(a, d, el, ev){
       break;
     }
     case 'cf-ok': if(D.mod && D.mod.run) D.mod.run(el); break;
+    case 'cfg-open': {const al = el.closest('.dm-alert'); if(al) al.remove(); openCfg(d.v); break}
+    case 'cfg-sec': if(D.cfg){D.cfg.sec = d.v; renderCfg()} break;
+    case 'cfg-pin': cfgPin(d.v); break;
+    case 'bk-agora': bkAgora(el); break;
+    case 'bk-abrir': bkPost(el, '/api/backup/abrir', {}); break;
+    case 'bk-salvar': bkSalvar(el); break;
     case 'm-type': D.form.tipo = d.v; renderForm(); break;
     case 'm-reason': D.form.motivo = d.v; D.form.err.motivo = 0; renderForm(); break;
     case 'm-prio': D.form.prio = d.v; renderForm(); break;
@@ -1185,6 +1314,8 @@ function onChange(e){
   else if(id === 'dm-fm-estU' && D.form) setEstFromInputs(true);
   else if(id === 'dm-ra-s'){$('dm-ra-p').innerHTML = peopleOpts(v, '')}
   else if(id === 'dm-uf-sec' && D.uform){D.uform.setor = v; D.uform.err.setor = 0; renderUF()}
+  else if(id === 'dm-cfg-on') cfgRedeOn(e.target);
+  else if(id === 'dm-bk-on') $('dm-bk-ontx').textContent = e.target.checked ? 'Ligada' : 'Desligada';
 }
 function onSubmit(e){if(e.target && e.target.id === 'dm-lgform'){e.preventDefault(); doLogin()}}
 function onKey(e){
@@ -1223,6 +1354,7 @@ const LIVE = {
   open(){if(!D.booted) boot(); else{render(); refresh()}},
   rev: () => D.v ? D.v.rev : null,
   refresh: () => refresh(),
+  config: sec => openCfg(sec),   // botão ⚙ Configurações da casca (app.js)
 };
 
 const SVGNS = 'http://www.w3.org/2000/svg';

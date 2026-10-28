@@ -821,6 +821,50 @@ class Fazer(Base):
         self.assertTrue(antes <= info["t"] <= int(time.time() * 1000))
 
 
+class Painel(Base):
+    AGORA = ms(2026, 10, 28, 12)
+
+    def test_quando(self):
+        self.assertEqual(bk.quando(nome(2026, 10, 28, 3, 7)), ms(2026, 10, 28, 3, 7))
+        self.assertEqual(bk.quando(nome(2026, 1, 2, 23, 59, "antes-restaurar")), ms(2026, 1, 2, 23, 59))
+        for n in ("outro.zip", nome(2026, 1, 1) + ".part", ""):
+            self.assertIsNone(bk.quando(n))
+
+    def test_sem_copias(self):
+        p = bk.painel(self.AGORA)
+        self.assertEqual((p["cfg"], p["padrao"], p["pasta"], p["pasta_ok"], p["copias"], p["usado"], p["rodando"]),
+                         (bk.config(), bk.PADRAO, str(self.pasta()), False, [], 0, False))
+        self.assertEqual(p["estado"], bk.estado())
+        self.assertEqual(p["resumo"], bk.resumo(self.AGORA))
+        self.assertIsInstance(p["livre"], int)
+        self.assertGreater(p["livre"], 0)
+
+    def test_copias_mais_novas_primeiro(self):
+        self.pasta().mkdir()
+        for n, tam in ((nome(2026, 10, 27), 3), (nome(2026, 10, 28, 3, 0, "manual"), 5), (nome(2026, 10, 28), 7)):
+            (self.pasta() / n).write_bytes(b"x" * tam)
+        (self.pasta() / "outro.txt").write_bytes(b"x")
+        p = bk.painel(self.AGORA)
+        self.assertEqual(p["copias"], [
+            {"nome": nome(2026, 10, 28, 3, 0, "manual"), "tipo": "manual", "bytes": 5, "t": ms(2026, 10, 28, 3)},
+            {"nome": nome(2026, 10, 28), "tipo": "auto", "bytes": 7, "t": ms(2026, 10, 28, 3)},
+            {"nome": nome(2026, 10, 27), "tipo": "auto", "bytes": 3, "t": ms(2026, 10, 27, 3)}])
+        self.assertEqual((p["usado"], p["pasta_ok"]), (15, True))
+        with bk._BACKUP:
+            self.assertTrue(bk.painel(self.AGORA)["rodando"])
+
+    def test_usa_o_relogio_dado(self):
+        self.grava({"ultimo_ok": {"t": self.AGORA - 30 * H}}, "backup-estado.json")
+        self.assertEqual(bk.painel(self.AGORA)["resumo"]["texto"], "Último backup há 30 h.")
+        self.assertEqual(bk.painel(self.AGORA - 29 * H)["resumo"]["alerta"], None)
+
+    def test_disco_ilegivel_e_relogio_padrao(self):
+        with mock.patch.object(bk.shutil, "disk_usage", side_effect=OSError("x")):
+            self.assertIsNone(bk.painel(self.AGORA)["livre"])
+        bk.salvar_config({"on": False})
+        self.assertEqual(bk.painel()["resumo"]["alerta"], "aviso")
+
+
 class Tarefa(Base):
     AGORA = ms(2026, 10, 28, 10)
 

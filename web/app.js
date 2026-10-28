@@ -3,7 +3,7 @@
    - api(caminho, corpo): GET sem corpo, POST com JSON e o cabeçalho X-Tab; erro vira Error com .status e o texto do servidor;
    - toast(texto): aviso curto quando a tela do módulo não está aberta;
    - NestLocal.views.demandas: o módulo se registra ali; a casca chama refresh() quando o demandas.json muda (/api/rev).
-   Também: o painel "⚙ Rede" (ligar o acesso pela rede e ver os PINs), só no computador principal. */
+   Também: o botão "⚙ Configurações" (Rede e Backup), só no computador principal; o diálogo é do módulo (config()). */
 const $ = id => document.getElementById(id);
 const TAB = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
 window.NestLocal = window.NestLocal || {views: {}};
@@ -35,37 +35,15 @@ async function vigia(){
   }catch(_){/* servidor fora do ar: tenta de novo no próximo ciclo */}
 }
 
-/* ---------- ⚙ Rede (só no computador principal) ---------- */
-function mostraRede(n){
-  $('cx-on').checked = n.on;
-  $('cx-pins').hidden = !n.on;
-  $('cx-pin').textContent = n.pin || '';
-  $('cx-pinop').textContent = n.pin_op || '';
-  const urls = $('cx-urls');
-  urls.textContent = '';
-  if(n.on && n.active){
-    urls.append('Nos outros aparelhos, abra no navegador:');
-    for(const u of n.urls || []){const c = document.createElement('code'); c.textContent = u; urls.append(c)}
-    if(!(n.urls || []).length) urls.append(' nenhum endereço de rede encontrado neste computador.');
-  }
-  $('cx-msg').textContent = n.on && !n.active ? 'Feche e abra o programa (iniciar.bat) para ligar o acesso.'
-    : !n.on && n.active ? 'Feche e abra o programa (iniciar.bat) para desligar o acesso.' : '';
-}
-async function rede(body, pergunta){
-  if(pergunta && !confirm(pergunta)) return;
-  try{mostraRede(await api('/api/rede', body))}catch(e){toast(e.message)}
-}
-$('cx-rede').onclick = async () => {try{mostraRede(await api('/api/rede')); $('cx-fundo').hidden = false}catch(e){toast(e.message)}};
-$('cx-fechar').onclick = () => {$('cx-fundo').hidden = true};
-$('cx-fundo').onclick = e => {if(e.target === $('cx-fundo')) $('cx-fundo').hidden = true};
-document.addEventListener('keydown', e => {if(e.key === 'Escape') $('cx-fundo').hidden = true});
-$('cx-on').onchange = e => rede({on: e.target.checked});
-$('cx-novo').onclick = () => rede({newpin: true}, 'Gerar um PIN do escritório novo? Todos os aparelhos que já entraram vão precisar do PIN novo.');
-$('cx-novoop').onclick = () => rede({newpin_op: true}, 'Gerar um PIN dos operadores novo? Os aparelhos de operador que já entraram vão precisar do PIN novo.');
+/* ---------- ⚙ Configurações (só no computador principal) ---------- */
+$('cx-cfg').onclick = () => {
+  const v = window.NestLocal.views.demandas;
+  if(v && v.config) v.config('rede'); else toast('A Central de demandas ainda está abrindo.');
+};
 
 (async () => {
   const eu = await api('/api/eu').catch(() => null);
-  if(eu && eu.papel === 'maquina') $('cx-rede').hidden = false;   // o servidor recusa /api/rede vindo da rede de qualquer jeito
+  if(eu && eu.papel === 'maquina') $('cx-cfg').hidden = false;   // o servidor recusa /api/rede e /api/backup vindos da rede de qualquer jeito
   // o módulo carrega logo depois e se abre sozinho (o <main> já está em data-view="demandas")
   for(let i = 0; i < 100 && !window.NestLocal.views.demandas; i++) await new Promise(r => setTimeout(r, 50));
   if(!window.NestLocal.views.demandas) toast('Não foi possível abrir a Central de demandas.');
