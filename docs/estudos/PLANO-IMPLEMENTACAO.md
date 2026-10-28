@@ -149,10 +149,12 @@ estudo correspondente inteiro**. Ele tem os detalhes, formatos JSON, rotas e a l
 
 ## 5. Decisões pendentes do dono (perguntar quando a etapa chegar)
 
-**Etapa 1 (backup)**
-- O PC fica ligado 24 h? Isso define o horário padrão; o proposto é 12:00 mais a cópia ao ligar.
-- Qual é o destino extra real?
-- Exigir BitLocker no pen drive?
+**Etapa 1 (backup)**: respondidas pelo dono em 28/10/2026
+- PC ligado 24 h → horário padrão **03:00**. A cópia ao ligar (última com mais de 20 h) continua, como rede de
+  segurança.
+- Destino extra: **nenhum por enquanto**. Só a pasta local; o destino extra (fase 3) fica configurável, sem pressa.
+- BitLocker: **só avisar na tela** que o zip tem nomes, matrículas e códigos, recomendando BitLocker To Go.
+- Restaurar: **as pessoas se identificam de novo** (limpar `_TK`).
 
 **Etapa 3 (e-mail)**
 - Qual conta de envio (SMTP da empresa, Microsoft 365, Google Workspace ou Brevo/SES)?

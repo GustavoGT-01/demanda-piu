@@ -17,6 +17,10 @@ Só Python 3.10+ (biblioteca padrão). Nada para instalar além dele.
    - **PIN dos operadores:** abre só a tela de operador.
    O PIN é pedido uma vez por aparelho e vale por 30 dias. Gerar um PIN novo derruba quem entrou com o antigo.
 
+**Não monte túnel nem proxy neste computador** (ngrok, Cloudflare Tunnel, IIS, nginx etc.). Todo pedido que chega
+pelo próprio computador (`127.0.0.1`) entra como Escritório, sem PIN: com um túnel, qualquer visitante da internet
+viraria administrador. Para outros aparelhos, use só o acesso pela rede com PIN.
+
 Feche a janela preta do servidor para desligar.
 
 ## Dados

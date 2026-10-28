@@ -84,6 +84,7 @@ async function aparelhoOperador(){
     // demanda com tentativa de XSS no título
     const XSS='<img src=x onerror="window.__xss=1"> Corte de chapas';
     click('.dm-hdnew');await until(()=>$('#dm-fm-title'));
+    ok($('[data-act=m-est][data-v="480"]').textContent==='8 h','atalho de 480 min diz "8 h": o prazo conta tempo corrido, não dia útil');
     type('#dm-fm-title',XSS);type('#dm-fm-fromS','PCP','change');type('#dm-fm-toS','CNC','change');await sleep(50);
     click('[data-act=m-reason]');await sleep(30);click('[data-act=m-est][data-v="30"]');await sleep(30);click('[data-act=m-submit]');
     ok(await until(()=>!$('#dm-modal').classList.contains('dm-on')),'demanda criada '+toast());
