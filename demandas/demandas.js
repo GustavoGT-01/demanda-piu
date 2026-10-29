@@ -187,6 +187,7 @@ function apply(v){
   bkAlert();
   restCheck();
   if(firstLoad) setTimeout(abrirHash, 0);   // depois do render que vem logo em seguida
+  if(firstLoad) loadPrefs();
 }
 async function loadPub(){
   try{
@@ -204,7 +205,7 @@ function notesCheck(firstLoad){
   ns.forEach(n => D.seen.add(n.id));
   const me = myName();
   let ring = false;
-  fresh.filter(n => !n.lida && !(n.quem && n.quem === me)).sort((a, b) => num(a.t) - num(b.t)).forEach(n => {
+  fresh.filter(n => !n.lida && !(n.quem && n.quem === me) && avisoLigado(n)).sort((a, b) => num(a.t) - num(b.t)).forEach(n => {
     ring = true;
     const t = NT[n.tipo] || ['🔔', 'Aviso'];
     if(ALERT_KINDS.includes(n.tipo)){
@@ -219,14 +220,35 @@ function notesCheck(firstLoad){
 }
 
 /* ---------- avisos da camada 1 (página aberta, funciona em http): som, vibração e título da aba ----------
-   Som e vibração valem por aparelho (localStorage; o tablet do chão pode tocar alto e o celular pessoal não).
-   Avisos da mesma demanda dentro de 10 min tocam uma vez; no máximo um som a cada 20 s. */
-const AV_AGRUPA = 10 * MIN, AV_SOM_MIN = 20000;
-function aparelho(){   // preferências deste aparelho
+   Eventos, silêncio e "urgente fura o silêncio" são da pessoa (servidor, aviso/prefs: valem em qualquer aparelho).
+   Som, vibração e juntar avisos valem por aparelho (localStorage; o tablet do chão pode tocar e o celular não);
+   sem escolha no aparelho, vale o padrão da central. Evento desligado fica só no sino (sem banner, som e vibração).
+   Avisos da mesma demanda dentro do tempo de juntar tocam uma vez; no máximo um som a cada 20 s. */
+const AV_SOM_MIN = 20000, AV_AP = 'dm-avisos-aparelho', SONS = ['curto', 'sino', 'desligado'];
+const AV_PADRAO = {eventos: {}, som: 'curto', vibrar: true, agrupar_min: 10, silencio: {ligado: false, ini: '22:00', fim: '06:00'}, urgente_fura: true};
+const prefsAv = () => D.av || AV_PADRAO;
+async function loadPrefs(){   // as preferências de quem entrou; falhou = o padrão (os avisos não param por isso)
+  const quem = D.role + ' ' + D.tk, r = await call('aviso/prefs', {}, {quiet: true, notake: true});
+  if(r && r.prefs && quem === D.role + ' ' + D.tk) D.av = r.prefs;   // trocou de pessoa no meio: não vale
+}
+function apGet(){   // o que foi escolhido neste aparelho (só o que foi escolhido)
   let p = null;
-  try{p = JSON.parse(localStorage.getItem('dm-avisos-aparelho') || 'null')}catch(_){/* sem armazenamento: o padrão */}
-  p = p && typeof p === 'object' ? p : {};
-  return {som: ['curto', 'alto', 'desligado'].includes(p.som) ? p.som : 'curto', vibrar: p.vibrar !== false};
+  try{p = JSON.parse(localStorage.getItem(AV_AP) || 'null')}catch(_){/* sem armazenamento: o padrão */}
+  return p && typeof p === 'object' ? p : {};
+}
+function aparelho(){   // o que vale neste aparelho
+  const p = apGet(), c = prefsAv();
+  return {som: SONS.includes(p.som) ? p.som : c.som, vibrar: typeof p.vibrar === 'boolean' ? p.vibrar : c.vibrar !== false,
+    juntar: p.juntar !== false};
+}
+// new com pessoa = escolheram você; new sem pessoa = a fila do setor; urgente (só do Escritório) conta como nova
+const evDe = n => n.tipo === 'urg' ? 'new' : n.tipo === 'new' && !n.pid && !isAdm() ? 'fila' : n.tipo;
+const avisoLigado = n => prefsAv().eventos[evDe(n)] !== false;
+const minDe = h => num(h.slice(0, 2)) * 60 + num(h.slice(3));
+function emSilencio(s, d){   // ini incluído, fim não; ini > fim atravessa a meia-noite (22:00 → 06:00)
+  if(!s || !s.ligado) return false;
+  const m = d.getHours() * 60 + d.getMinutes(), a = minDe(s.ini), b = minDe(s.fim);
+  return a <= b ? m >= a && m < b : m >= a || m < b;
 }
 let AUDIO = null;
 function audio(){   // o navegador só deixa tocar depois de um toque na página: o contexto nasce (ou volta) nesse toque
@@ -237,27 +259,30 @@ function audio(){   // o navegador só deixa tocar depois de um toque na página
   }catch(_){AUDIO = null}
   return AUDIO;
 }
-function tocar(urgente, alto){
+// curto = bipe duplo; sino = três notas descendo, mais longas; urgente = alarme de três notas, mais alto
+const TONS = {curto: [[880, 660], 0.16, 0.14], sino: [[1318, 1046, 784], 0.3, 0.5]};
+function tocar(urgente, som){
   const ctx = audio();
   if(!ctx) return false;
-  const t0 = ctx.currentTime || 0, notas = urgente ? [988, 784, 988] : [880, 660];
+  const [notas, passo, dura] = urgente ? [[988, 784, 988], 0.16, 0.14] : TONS[som] || TONS.curto, t0 = ctx.currentTime || 0;
   notas.forEach((f, i) => {
-    const o = ctx.createOscillator(), g = ctx.createGain(), ini = t0 + i * 0.16;
+    const o = ctx.createOscillator(), g = ctx.createGain(), ini = t0 + i * passo;
     o.type = 'sine'; o.frequency.value = f;
-    g.gain.setValueAtTime(alto ? 0.5 : 0.18, ini); g.gain.exponentialRampToValueAtTime(0.001, ini + 0.14);
-    o.connect(g); g.connect(ctx.destination); o.start(ini); o.stop(ini + 0.15);
+    g.gain.setValueAtTime(urgente ? 0.4 : 0.18, ini); g.gain.exponentialRampToValueAtTime(0.001, ini + dura);
+    o.connect(g); g.connect(ctx.destination); o.start(ini); o.stop(ini + dura + 0.01);
   });
   return true;
 }
 function avisar(n){
   const agora = Date.now(), urg = n.tipo === 'urg' || n.tipo === 'late' || (byId(n.dem) || {}).prio === 'urg';
+  const p = prefsAv(), ap = aparelho(), junta = ap.juntar ? num(p.agrupar_min) * MIN : 0;
   D.avDem = D.avDem || {};
   const ultimo = D.avDem[n.dem];
   D.avDem[n.dem] = agora;
   piscar(n);
-  if(ultimo && agora - ultimo < AV_AGRUPA && !urg) return;   // a mesma demanda há pouco: só o contador sobe
-  const ap = aparelho();
-  if(ap.som !== 'desligado' && (!D.avSom || agora - D.avSom >= AV_SOM_MIN) && tocar(urg, ap.som === 'alto')) D.avSom = agora;
+  if(ultimo && agora - ultimo < junta && !urg) return;   // a mesma demanda há pouco: só o contador sobe
+  if(emSilencio(p.silencio, new Date(agora)) && !(urg && p.urgente_fura)) return;   // silêncio: o sino continua contando
+  if(ap.som !== 'desligado' && (!D.avSom || agora - D.avSom >= AV_SOM_MIN) && tocar(urg, ap.som)) D.avSom = agora;
   if(ap.vibrar && navigator.vibrate) try{navigator.vibrate(urg ? [200, 100, 200, 100, 200] : [200, 100, 200])}catch(_){/* sem vibração */}
 }
 /* título da aba: "(3) Central de demandas"; com a aba escondida, pisca com o aviso até a pessoa voltar */
@@ -318,7 +343,7 @@ async function markReadFor(id){
 
 /* ---------- quem é você (no lugar do login do DEMANDA) ---------- */
 function become(role, eu, tk){
-  Object.assign(D, {role, eu: eu || null, tk: tk || null, imp: null, v: null, seen: null, feedSeen: null, arq: null, crono: null, cronoP: 0, open: null, notif: false, lastKey: ''});
+  Object.assign(D, {role, eu: eu || null, tk: tk || null, imp: null, v: null, seen: null, feedSeen: null, arq: null, crono: null, cronoP: 0, open: null, notif: false, lastKey: '', av: null});
   if(root){$('dm-alerts').textContent = ''; closePanels()}
 }
 // aparelho restrito (PIN do chão ou das Demandas): só operador; o servidor recusa o resto de qualquer jeito
@@ -344,7 +369,7 @@ function renderLogin(){
 function openWho(){
   D.mod = {kind: 'who'};
   const cur = D.role ? `<div class="dm-acct">${D.role === 'adm' ? '<span class="dm-av" style="--dm-sc:#6C8BFF">E</span>' : av(D.eu && D.eu.id)}<div><b>${esc(D.role === 'adm' ? 'Escritório' : myName())}</b><small>Você está aqui agora · ${D.role === 'adm' ? 'Administrador' : esc(sec(meSec()).nome) + ' · matrícula ' + esc(D.eu && D.eu.mat)}</small></div></div>` : '';
-  openModal(`<form id="dm-lgform" novalidate><h2>Quem é você?</h2><p class="dm-note" style="margin-top:0">Entre com o seu código pessoal de 4 dígitos.</p>${cur}<div id="dm-lgbody">${whoBody()}</div><div class="dm-mfoot">${D.role ? '<button type="button" class="dm-btn dm-danger" data-act="logout">Sair ⎋</button><span class="dm-spacer"></span>' : ''}<button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="submit" class="dm-btn dm-primary">Entrar</button></div></form>`);
+  openModal(`<form id="dm-lgform" novalidate><h2>Quem é você?</h2><p class="dm-note" style="margin-top:0">Entre com o seu código pessoal de 4 dígitos.</p>${cur}<div id="dm-lgbody">${whoBody()}</div><div class="dm-mfoot">${D.role ? `<button type="button" class="dm-btn dm-danger" data-act="logout">Sair ⎋</button>${D.imp ? '' : '<button type="button" class="dm-btn" data-act="prefs">🔔 Meus avisos</button>'}<span class="dm-spacer"></span>` : ''}<button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="submit" class="dm-btn dm-primary">Entrar</button></div></form>`);
 }
 const rerenderWho = () => {const b = $('dm-lgbody'); if(b) b.innerHTML = whoBody(); else if(D.mod && D.mod.kind === 'who') openWho(); else renderLogin(); if(D.lg.err){const f = $('dm-lg-code'); if(f) f.focus()}};
 async function doLogin(){
@@ -790,7 +815,7 @@ function renderNotif(){
   const quem = isAdm() ? '' : ` · só os seus e os da fila do ${esc((sec(meSec()) || {}).nome || 'setor')}`;
   const seg = [['todos', 'Todos'], ['nao', 'Não lidos'], ['urg', 'Urgentes']].map(([k, l]) => `<button type="button" data-act="nf" data-v="${k}" aria-pressed="${f === k}">${l}</button>`).join('');
   $('dm-notif').innerHTML = `<button type="button" class="dm-btn dm-x" data-act="close" aria-label="Fechar">✕</button><h2>Avisos</h2><div class="dm-hsub" id="dm-nf-sub">${un} ${un === 1 ? 'não lido' : 'não lidos'}${quem}</div>
-   <div class="dm-nfbar"><div class="dm-seg" role="group" aria-label="Filtro dos avisos">${seg}</div><button type="button" class="dm-btn dm-sm" data-act="noteall"${un ? '' : ' disabled'}>✓ Marcar todos como lidos</button></div>
+   <div class="dm-nfbar"><div class="dm-seg" role="group" aria-label="Filtro dos avisos">${seg}</div><button type="button" class="dm-btn dm-sm" data-act="noteall"${un ? '' : ' disabled'}>✓ Marcar todos como lidos</button>${D.imp ? '' : '<button type="button" class="dm-btn dm-sm" data-act="prefs">⚙ Meus avisos</button>'}</div>
    ${pers.map(p => `<div class="dm-secx">${p}</div>${gs.filter(g => g.per === p).map(notifCard).join('')}`).join('')
      || `<div class="dm-empty" style="margin-top:14px">${f === 'todos' ? 'Nenhum aviso.' : f === 'nao' ? 'Nada novo.' : 'Nenhum aviso urgente.'}</div>`}
    ${D.nfAntigos ? '' : '<p class="dm-note">Mostrando os últimos 7 dias · <button type="button" class="dm-btn dm-sm" data-act="nfantigos">ver mais antigos</button></p>'}`;
@@ -800,6 +825,78 @@ function openNotif(){
   D.open = null; $('dm-drawer').classList.remove('dm-on');
   D.notif = true; renderNotif();
   $('dm-notif').classList.add('dm-on'); $('dm-scrim').classList.add('dm-on');
+}
+
+/* ---------- "Meus avisos" (mockup 02-preferencias-avisos): o que avisa, como avisa e quando fica em silêncio ---------- */
+const PF_EV = [['new', '📥', 'Demanda nova para mim', 'Quando alguém escolhe você como responsável'], ['fila', '🗂️', 'Demanda nova na fila do setor', 'Sem responsável: qualquer um do setor pode pegar'],
+  ['accepted', '▶', 'O que eu pedi foi aceito', 'Demandas que você enviou'], ['pause', '⏸', 'O que eu pedi foi pausado', ''], ['done', '✅', 'O que eu pedi foi concluído', ''],
+  ['nudge', '🔔', 'Cobrança', 'Alguém cobrou andamento de uma demanda'], ['late', '⏰', 'Prazo estourado', ''], ['comment', '💬', 'Comentário do outro lado', ''], ['canc', '✕', 'Demanda cancelada', '']];
+const TURNOS = [['A', '06:00', '14:00'], ['B', '14:00', '22:00'], ['C', '22:00', '06:00']];   // o silêncio é o que fica fora do turno
+const sw = (id, on, titulo, sub) => `<label class="dm-cfgsw dm-pfrow"><input type="checkbox" id="${id}"${on ? ' checked' : ''}><i aria-hidden="true"></i><span><b>${titulo}</b>${sub ? `<small>${sub}</small>` : ''}</span></label>`;
+async function openPrefs(){
+  if(!D.role || D.imp || !root) return;
+  closePanels();
+  await loadPrefs();
+  D.mod = {kind: 'prefs'};
+  openModal(prefsHtml(prefsAv(), aparelho()));
+}
+function prefsHtml(p, ap){
+  const fila = 'Demanda nova na fila do ' + esc((sec(meSec()) || {}).nome || 'setor');
+  const evs = PF_EV.filter(([k]) => !(k === 'fila' && isAdm()));   // o Escritório não tem fila
+  const turno = TURNOS.find(([, a, b]) => p.silencio.ini === b && p.silencio.fim === a);
+  const ag = num(p.agrupar_min);
+  return `<h2>Meus avisos</h2><p class="dm-note" style="margin-top:0">${esc(isAdm() ? 'Escritório' : myName() + ' · ' + sec(meSec()).nome)}</p>
+   <div class="dm-secx">Neste aparelho</div>
+   <div class="dm-avst"><span aria-hidden="true">🟢</span><span><b>Avisos com o app aberto: ativos</b><small>Banner, som, vibração e contador na aba.</small></span></div>
+   <div class="dm-avst"><span aria-hidden="true">🔒</span><span><b>Avisos com o app fechado: disponível só com HTTPS</b><small>Este endereço é ${esc(location.origin)}.</small></span></div>
+   <div class="dm-secx">O que me avisa</div><p class="dm-note" style="margin-top:0">Vale em qualquer aparelho em que você entrar. Desligado, o aviso fica só no sino.</p>
+   ${evs.map(([k, ic, l, s]) => sw('dm-pf-ev-' + k, p.eventos[k] !== false, ic + ' ' + (k === 'fila' ? fila : l), s)).join('')}
+   <div class="dm-secx">Como me avisa</div><p class="dm-note" style="margin-top:0">Só neste aparelho: o tablet do chão pode tocar e o seu celular não.</p>
+   <div class="dm-cfglinha"><label for="dm-pf-som">🔊 Som</label><select id="dm-pf-som">${[['curto', 'Curto (bipe duplo)'], ['sino', 'Sino'], ['desligado', 'Desligado']].map(([v, l]) => `<option value="${v}"${ap.som === v ? ' selected' : ''}>${l}</option>`).join('')}</select><button type="button" class="dm-btn dm-sm" data-act="pf-teste">▶ Testar</button></div>
+   <p class="dm-note">Toca depois do primeiro toque na tela (regra do navegador).</p>
+   ${sw('dm-pf-vib', ap.vibrar, '📳 Vibração', 'Android. iPhone não vibra pelo navegador.')}
+   ${sw('dm-pf-jun', ap.juntar && ag > 0, '🧺 Juntar avisos da mesma demanda', ag ? `Dentro de ${ag} min, toca uma vez só` : 'A central está configurada para não juntar.')}
+   <div class="dm-secx">Horário de silêncio</div><p class="dm-note" style="margin-top:0">Fora do seu turno nada toca nem vibra. O sino continua contando.</p>
+   ${sw('dm-pf-sil', p.silencio.ligado, '🌙 Silêncio ligado', '')}
+   <div class="dm-cfglinha"><label for="dm-pf-ini">das</label><input type="time" id="dm-pf-ini" value="${esc(p.silencio.ini)}"><label for="dm-pf-fim">às</label><input type="time" id="dm-pf-fim" value="${esc(p.silencio.fim)}"></div>
+   <div class="dm-seg" role="group" aria-label="Preencher pelo turno">${TURNOS.map(([t, a, b]) => `<button type="button" data-act="pf-turno" data-v="${t}" aria-pressed="${turno && turno[0] === t ? 'true' : 'false'}">Turno ${t} ${a.slice(0, 2)}–${b.slice(0, 2)}</button>`).join('')}</div>
+   <p class="dm-note">O programa ainda não tem turnos: os botões só preenchem o silêncio com o horário fora do turno.</p>
+   ${sw('dm-pf-urg', p.urgente_fura, '🚨 Urgente toca mesmo no silêncio', '')}
+   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="pf-padrao">Voltar ao padrão</button><span class="dm-spacer"></span><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="pf-salvar">Salvar</button></div>`;
+}
+function pfTurno(t){   // preenche sem redesenhar: o resto do que foi mexido continua no formulário
+  const tr = TURNOS.find(x => x[0] === t);
+  if(!tr) return;
+  $('dm-pf-ini').value = tr[2]; $('dm-pf-fim').value = tr[1]; $('dm-pf-sil').checked = true;
+  for(const b of root.querySelectorAll('[data-act=pf-turno]')) b.setAttribute('aria-pressed', String(b.dataset.v === t));
+}
+function apSet(o){   // guarda só o que difere do padrão da central (se a central mudar, vale a mudança)
+  const c = prefsAv(), x = {};
+  if(o.som !== c.som) x.som = o.som;
+  if(o.vibrar !== (c.vibrar !== false)) x.vibrar = o.vibrar;
+  if(!o.juntar) x.juntar = false;
+  try{if(Object.keys(x).length) localStorage.setItem(AV_AP, JSON.stringify(x)); else localStorage.removeItem(AV_AP)}catch(_){/* sem armazenamento: vale o padrão */}
+}
+async function pfSalvar(el){
+  const v = id => $('dm-pf-' + id), prefs = {eventos: {}, silencio: {ligado: v('sil').checked, ini: v('ini').value, fim: v('fim').value}, urgente_fura: v('urg').checked};
+  for(const [k] of PF_EV) if(v('ev-' + k)) prefs.eventos[k] = v('ev-' + k).checked;
+  const ap = {som: v('som').value, vibrar: v('vib').checked, juntar: v('jun').checked || !num(prefsAv().agrupar_min)};
+  el.disabled = true;
+  const r = await call('aviso/prefs', {prefs}, {notake: true});
+  if(el.isConnected) el.disabled = false;
+  if(!r || !r.prefs) return;
+  D.av = r.prefs;
+  apSet(ap);
+  closeModal(); toast('🔔 Avisos salvos');
+}
+async function pfPadrao(el){
+  el.disabled = true;
+  const r = await call('aviso/prefs', {padrao: true}, {notake: true});
+  if(el.isConnected) el.disabled = false;
+  if(!r || !r.prefs) return;
+  D.av = r.prefs;
+  try{localStorage.removeItem(AV_AP)}catch(_){/* sem armazenamento */}
+  closeModal(); toast('🔔 Avisos de volta ao padrão');
 }
 
 /* ---------- modais ---------- */
@@ -1156,7 +1253,7 @@ async function openCfg(sec){
   if(D.srv !== 'maquina' || !root) return;
   const [rede, bk] = await Promise.all([sys('/api/rede'), sys('/api/backup')]);
   if(!rede || !bk) return;
-  D.cfg = {sec: sec === 'backup' ? 'backup' : 'rede', rede, bk};
+  D.cfg = {sec: ['backup', 'email', 'avisos', 'servidor'].includes(sec) ? sec : 'rede', rede, bk};
   openModal('', 'dm-cfgbox');
   renderCfg();
 }
@@ -1172,15 +1269,19 @@ function renderCfg(){
     c.mailPedido = true;
     sys('/api/email').then(m => {if(D.cfg === c){c.mail = m || {erro: true}; renderCfg()}});
   }
+  if(c.sec === 'avisos' && !c.avisos && !c.avisosPedido){
+    c.avisosPedido = true;
+    sys('/api/avisos').then(a => {if(D.cfg === c){c.avisos = a || {erro: true}; renderCfg()}});
+  }
   const mdot = c.mail && c.mail.estado && (c.mail.estado.pausada || c.mail.estado.falhas_24h) ? '<span class="dm-cfgdot"></span>' : '';
-  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot], ['email', '✉️ E-mail', mdot], ['servidor', '🖥️ Servidor', '']].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
+  const nav = [['rede', '🌐 Rede', ''], ['backup', '💾 Backup', dot], ['email', '✉️ E-mail', mdot], ['avisos', '🔔 Avisos', ''], ['servidor', '🖥️ Servidor', '']].map(([k, l, x]) => `<button type="button" data-act="cfg-sec" data-v="${k}"${c.sec === k ? ' aria-current="page"' : ''}>${l}${x}</button>`).join('');
   const tela = c.sec + (c.rest ? ':restaurar' : '');
   const corpo = box.querySelector('.dm-cfgbody'), topo = corpo && box.dataset.sec === tela ? corpo.scrollTop : 0;   // mesma tela: não pula para o topo
   box.setAttribute('aria-labelledby', 'dm-cfg-t');
   box.dataset.sec = tela;
   box.innerHTML = `<div class="dm-cfg"><div class="dm-cfghead"><h2 id="dm-cfg-t">⚙ Configurações</h2><small>Só neste computador</small><button type="button" class="dm-btn dm-sm" data-act="mclose" aria-label="Fechar">✕</button></div>
    <nav class="dm-cfgnav" aria-label="Seções das configurações">${nav}</nav>
-   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.sec === 'servidor' ? cfgServidor(c.srv) : c.sec === 'email' ? cfgEmail(c.mail) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
+   <div class="dm-cfgbody">${c.sec === 'rede' ? cfgRede(c.rede) : c.sec === 'servidor' ? cfgServidor(c.srv) : c.sec === 'email' ? cfgEmail(c.mail) : c.sec === 'avisos' ? cfgAvisos(c.avisos) : c.rest ? cfgRest(c.rest) : cfgBackup(c.bk)}</div></div>`;
   box.querySelector('.dm-cfgbody').scrollTop = topo;
 }
 function cfgRede(n){
@@ -1296,6 +1397,48 @@ async function mlPost(el, path, body, ok){
   renderCfg();
   if(ok) toast(ok);
   return r;
+}
+/* seção Avisos (mockup 02-configuracoes-avisos): padrões da central para quem nunca mexeu em "Meus avisos" */
+const AV_QUEM = [['new', '📥 Demanda nova para a pessoa', 'a pessoa escolhida (urgente: também o escritório)'], ['fila', '🗂️ Demanda nova na fila', 'todo o setor de destino'],
+  ['accepted', '▶ Aceita', 'quem pediu'], ['pause', '⏸ Pausada', 'quem pediu + escritório'], ['done', '✅ Concluída', 'quem pediu'],
+  ['nudge', '🔔 Cobrança', 'responsável (ou setor) + escritório'], ['late', '⏰ Prazo estourado', 'responsável (ou setor) + escritório'],
+  ['comment', '💬 Comentário', 'o outro lado da demanda'], ['canc', '✕ Cancelada', 'responsável (ou setor)']];
+function cfgAvisos(a){
+  if(!a) return '<section class="dm-cfgsec"><p class="dm-note">Lendo os padrões dos avisos…</p></section>';
+  if(a.erro) return '<section class="dm-cfgsec"><p class="dm-cfgerr">Não foi possível ler os padrões dos avisos.</p></section>';
+  const p = a.padrao, opt = (id, v, ops) => `<select id="dm-av-${id}">${ops.map(([x, l]) => `<option value="${x}"${String(v) === String(x) ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+  return `<section class="dm-cfgsec"><p class="dm-note" style="margin-top:0">Padrões da central. Cada pessoa pode mudar os seus em "Meus avisos"; aqui vale para quem nunca mexeu.</p>
+   <div class="dm-avst"><span aria-hidden="true">🟢</span><span><b>Avisos com a página aberta: ativos</b><small>Banner, som, vibração (Android) e contador na aba, em todos os aparelhos. Funciona em http.</small></span></div>
+   <div class="dm-avst"><span aria-hidden="true">🔒</span><span><b>HTTPS: ${location.protocol === 'https:' ? 'ligado' : 'desligado'}</b><small>Sem HTTPS, o navegador não deixa avisar com o app fechado.</small></span></div>
+   <div class="dm-avst"><span aria-hidden="true">📲</span><span><b>Avisos com o app fechado (push): indisponível</b><small>Depende do HTTPS (estudo 03). iPhone só com o app na Tela de Início.</small></span></div></section>
+  <section class="dm-cfgsec"><h3>Quem recebe o quê</h3>
+   <div class="dm-cfglista"><div class="dm-cfgcp dm-avq dm-cfgth"><span>Evento</span><span>Quem recebe</span><span>Ligado por padrão</span></div>${AV_QUEM.map(([k, l, q]) => `<div class="dm-cfgcp dm-avq"><span><b>${l}</b></span><span>${q}</span><span><label class="dm-cfgsw"><input type="checkbox" id="dm-av-ev-${k}"${p.eventos[k] !== false ? ' checked' : ''} aria-label="${esc(l)} ligado por padrão"><i aria-hidden="true"></i></label></span></div>`).join('')}</div>
+   <p class="dm-note">O sino sempre recebe; desligado, o aviso só não tem banner, som nem vibração.</p></section>
+  <section class="dm-cfgsec"><h3>Como e quando</h3><div class="dm-mlgrid dm-avgrid">
+   <div class="dm-fld"><label for="dm-av-som">Som padrão</label>${opt('som', p.som, [['curto', 'Curto (bipe duplo)'], ['sino', 'Sino'], ['desligado', 'Sem som']])}</div>
+   <div class="dm-fld"><label for="dm-av-jun">Juntar avisos da mesma demanda</label>${opt('jun', p.agrupar_min, [[10, 'Dentro de 10 min'], [5, 'Dentro de 5 min'], [0, 'Não juntar']])}</div>
+   <div class="dm-fld"><label for="dm-av-vib">Vibração padrão (Android)</label>${opt('vib', p.vibrar ? 1 : 0, [[1, 'Ligada'], [0, 'Desligada']])}</div>
+   <div class="dm-fld"><label for="dm-av-urg">Urgente no silêncio</label>${opt('urg', p.urgente_fura ? 1 : 0, [[1, 'Toca mesmo assim'], [0, 'Respeita o silêncio']])}</div></div>
+   <div class="dm-cfglinha"><label class="dm-cfgsw"><input type="checkbox" id="dm-av-sil"${p.silencio.ligado ? ' checked' : ''}><i aria-hidden="true"></i><b>Silêncio padrão</b></label><label for="dm-av-ini">das</label><input type="time" id="dm-av-ini" value="${esc(p.silencio.ini)}"><label for="dm-av-fim">às</label><input type="time" id="dm-av-fim" value="${esc(p.silencio.fim)}"></div>
+   <p class="dm-note">Atrasos: a central confere a cada minuto, mesmo sem ninguém mexer. Os aparelhos usam os padrões novos quando a tela for aberta de novo.</p></section>
+  <section class="dm-cfgsec"><h3>Outros canais</h3><div class="dm-avst"><span aria-hidden="true">✉️</span><span><b>E-mail</b><small>Avisos por e-mail ficam na seção E-mail.</small></span><button type="button" class="dm-btn dm-sm" data-act="cfg-sec" data-v="email">Abrir</button></div></section>
+  <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="av-salvar">Salvar padrões</button></div>`;
+}
+function avForm(){
+  const v = id => $('dm-av-' + id), b = {eventos: {}, som: v('som').value, agrupar_min: num(v('jun').value), vibrar: v('vib').value === '1',
+    urgente_fura: v('urg').value === '1', silencio: {ligado: v('sil').checked, ini: v('ini').value, fim: v('fim').value}};
+  for(const [k] of AV_QUEM) b.eventos[k] = v('ev-' + k).checked;
+  return b;
+}
+async function avSalvar(el){
+  el.disabled = true;
+  const r = await sys('/api/avisos', avForm());
+  if(el.isConnected) el.disabled = false;
+  if(!r || !D.cfg) return;
+  D.cfg.avisos = r;
+  renderCfg();
+  toast('🔔 Padrões dos avisos salvos');
+  if(D.role) loadPrefs();   // quem está nesta tela e não mexeu nos seus já recebe o padrão novo
 }
 /* seção Servidor (mockup 03-configuracoes-servidor): saúde, iniciar com o Windows, PC reserva e endereços */
 function cfgServidor(s){
@@ -1438,7 +1581,7 @@ function bkAlert(){
 // o rascunho fica no aparelho até a conexão voltar.
 const ESCRITA = new Set(['accept', 'resume', 'pause', 'finish', 'reassign', 'cancel', 'nudge', 'extend', 'comment', 'aadd', 'adel',
   'noteall', 'm-submit', 'm-pause-ok', 'm-finish-ok', 'm-ra-ok', 'm-cn-ok', 'cf-ok', 'sf-save', 'sf-toggle', 'sf-del', 'uf-save',
-  'uf-toggle', 'uf-del', 'bk-agora', 'bk-salvar', 'bk-rest', 'bk-rest-ok', 'cfg-pin']);
+  'uf-toggle', 'uf-del', 'bk-agora', 'bk-salvar', 'bk-rest', 'bk-rest-ok', 'cfg-pin', 'pf-salvar', 'pf-padrao']);
 function conexao(st){
   const caiu = !!st, voltou = !caiu && !!D.off;
   D.off = caiu ? {ultima: num(st.ultima, Date.now()), proxima: num(st.proxima, Date.now())} : null;
@@ -1550,6 +1693,12 @@ function act(a, d, el, ev){
     case 'bk-abrir': bkPost(el, '/api/backup/abrir', {}); break;
     case 'bk-salvar': bkSalvar(el); break;
     case 'ml-salvar': mlPost(el, '/api/email', mlForm(), 'Configuração do e-mail salva'); break;
+    case 'av-salvar': avSalvar(el); break;
+    case 'prefs': openPrefs(); break;
+    case 'pf-teste': if($('dm-pf-som').value === 'desligado') toast('O som está desligado neste aparelho.'); else tocar(false, $('dm-pf-som').value); break;
+    case 'pf-turno': pfTurno(d.v); break;
+    case 'pf-salvar': pfSalvar(el); break;
+    case 'pf-padrao': pfPadrao(el); break;
     case 'ml-semsenha': mlPost(el, '/api/email', {senha: ''}, 'Senha apagada'); break;
     case 'ml-teste': mlTeste(el); break;
     case 'ml-fila': mlPost(el, '/api/email/fila', {acao: d.v}, d.v === 'retomar' ? 'Fila retomada' : d.v === 'limpar_falhas' ? 'Falhas limpas' : 'Falhas de volta na fila'); break;

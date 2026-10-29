@@ -19,6 +19,7 @@ import threading
 import time
 from collections import OrderedDict
 
+import demandas_avisos as av
 import demandas_backup as bk
 import demandas_calc as calc
 import demandas_store as ds
@@ -1028,6 +1029,25 @@ def _entrar(body: dict, t: int) -> dict:
     return {"tk": _tk_novo(p["id"]), "eu": v["eu"], "vista": v}
 
 
+def _prefs(body: dict, papel) -> dict:
+    """"Meus avisos": {tk?} lê; {tk?, prefs: {...}} grava; {tk?, padrao: true} volta ao padrão. Cada um só as
+    próprias (o ADM = "adm"). Fica em data/avisos.json: não muda o rev do banco."""
+    with LOCK:
+        doc = ds.load()
+        ator = _ator(doc, body, papel)
+    chave = "adm" if ator is None else ator["id"]
+    try:
+        if body.get("padrao") is True:
+            out = av.salvar_de(chave, {"padrao": True})
+        elif "prefs" in body:
+            out = av.salvar_de(chave, body["prefs"] if isinstance(body["prefs"], dict) else None)
+        else:
+            out = av.de(chave)
+    except av.AvisoErro as exc:
+        raise ApiError(exc.status, str(exc)) from None
+    return {"prefs": out}
+
+
 def _anexo_enviar(body: dict, papel, t: int) -> dict:
     """Confere a permissão, grava o arquivo fora do LOCK e o metadado sob ele; falhou depois = arquivo apagado."""
     with LOCK:
@@ -1100,6 +1120,8 @@ def _handle(method: str, rest: str, body: dict, ctx: dict) -> dict:
         return _anexo_enviar(body, papel, t)
     if rest == "anexo/ler":
         return _ler_anexo(body.get("aid"), papel, body)
+    if rest == "aviso/prefs":
+        return _prefs(body, papel)
     acao = ESCRITAS.get(rest)
     leitura = LEITURAS.get(rest)
     if acao is None and leitura is None:

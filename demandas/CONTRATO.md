@@ -141,6 +141,7 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `POST anexo/apagar` | `{id, aid}` | ADM ou quem enviou, demanda ativa |
 | `POST nota/lida` | `{nid}` | quem vê a nota (ADM: as "adm"; pessoa: as do setor dela para o setor todo ou só para ela); marca só para quem pediu |
 | `POST nota/todas` | `{}` | idem, marca todas as que o ator vê |
+| `POST aviso/prefs` | `{}` lê · `{prefs: {eventos?, silencio?, urgente_fura?}}` grava · `{padrao: true}` volta ao padrão | cada um as próprias (ADM = `"adm"`) → `{prefs}` (padrão + diferenças, e `proprio`); não muda o `rev` |
 | `POST setor/salvar` | `{modo: "novo"\|"editar", id, nome, icone, cor, rev}` | ADM |
 | `POST setor/ativar` | `{id, rev}` (alterna) | ADM; desativar recusa com demanda aberta (400 com `abertas`) |
 | `POST setor/apagar` | `{id, rev}` | ADM; recusa se há histórico (principal ou arquivo) |
@@ -162,10 +163,29 @@ destino (+ adm se quem cobrou foi uma pessoa); prioridade urgente → `nudge` pa
 destino, uma vez por demanda (`atraso_avisado`), em qualquer gravação e a cada minuto pela thread de fundo
 (`api.tick(agora)`, que só grava se alguma demanda passou do prazo).
 
-Na tela (camada 1, `demandas.js`): aviso novo de outra pessoa toca um som curto (urgente: três notas), vibra
+Na tela (camada 1, `demandas.js`): aviso novo de outra pessoa toca um som (urgente: alarme de três notas), vibra
 onde há `navigator.vibrate` e, com a aba escondida, faz o título piscar até a pessoa voltar; o título fica
-"(N) Central de demandas". Avisos da mesma demanda em 10 min tocam uma vez; no máximo um som a cada 20 s. Som
-(`curto`/`alto`/`desligado`) e vibração valem por aparelho, em `localStorage["dm-avisos-aparelho"]`.
+"(N) Central de demandas". Avisos da mesma demanda dentro do tempo de juntar tocam uma vez; no máximo um som a cada
+20 s. Evento desligado pela pessoa fica só no sino (sem banner, som e vibração). No horário de silêncio (início
+incluído, fim não; início > fim atravessa a meia-noite; início = fim = sem silêncio) nada toca nem vibra, salvo urgente com "urgente fura"; o
+banner e o sino continuam.
+
+Preferências de aviso: `data/avisos.json` (`demandas_avisos.py`), fora do `demandas.json`:
+```json
+{"v": 1,
+ "padrao": {"eventos": {"new": true, "fila": true, "accepted": true, "pause": true, "done": true, "canc": true,
+                        "nudge": true, "late": true, "comment": true},
+            "som": "curto", "vibrar": true, "agrupar_min": 10,
+            "silencio": {"ligado": false, "ini": "22:00", "fim": "06:00"}, "urgente_fura": true},
+ "pessoas": {"p14": {"eventos": {"fila": false}, "silencio": {"ligado": true}}, "adm": {"eventos": {"pause": false}}}}
+```
+- Eventos: `new` = escolheram a pessoa (urgente do Escritório conta como `new`), `fila` = nova na fila do setor
+  (nota sem `pid`), os outros = o tipo da nota. Som: `curto`, `sino`, `desligado`. Agrupar: 0, 5 ou 10 min. Hora
+  `HH:MM`.
+- Da pessoa ficam só as diferenças de eventos, silêncio e `urgente_fura`; igual ao padrão = some do arquivo.
+- Som, vibração e "juntar" valem por aparelho, em `localStorage["dm-avisos-aparelho"]` (`{som?, vibrar?,
+  juntar?}`, só o que difere do padrão da central). Arquivo ausente ou ilegível = todo mundo no padrão.
+- Padrões da central: `GET/POST /api/avisos` (servidor.py, só o computador principal).
 
 ## Vista (resposta)
 Ver `contrato.json`. Campos:

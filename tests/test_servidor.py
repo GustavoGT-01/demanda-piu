@@ -354,6 +354,8 @@ class PelaRede(Base):
         v = self.ok("demanda/criar", {"tk": tk, "titulo": "Afiar a fresa 6 mm", "tipo": "man", "motivo": "Outro",
                                       "prio": "norm", "est": 30, "para": {"s": "CNC", "p": None}, "desc": ""}, h, rede=True)
         self.assertEqual((v["papel"], len(v["demandas"])), ("pessoa", 1))
+        p = self.ok("aviso/prefs", {"tk": tk, "prefs": {"eventos": {"fila": False}}}, h, rede=True)["prefs"]
+        self.assertEqual(p["eventos"]["fila"], False, "Meus avisos funciona no aparelho de operador")
         negadas = ["setor/salvar", "setor/ativar", "setor/apagar", "pessoa/salvar", "pessoa/ativar", "pessoa/apagar",
                    "demanda/prioridade", "demanda/estender", "crono", "historico", "entrar/", "entrar/../setor/salvar",
                    "demanda/criar/x", "demanda/"]
@@ -763,6 +765,46 @@ class Email(Base):
         m = servidor.email_mod()
         self.assertIs(m, sys.modules["email_envio"])
         self.assertIs(servidor.api_mod().mail, m, "o api.py usa o mesmo módulo (a mesma fila)")
+
+
+class Avisos(Base):
+    """/api/avisos: padrões da central; só o computador principal."""
+
+    def json(self, method, path, body=None, headers=None, rede=False):
+        st, _, raw = self.req(method, path, body, headers, rede)
+        return st, (json.loads(raw) if st == 200 else raw.decode("utf-8"))
+
+    def test_ler_e_salvar(self):
+        st, r = self.json("GET", "/api/avisos")
+        self.assertEqual((st, r["padrao"]["som"], r["padrao"]["silencio"]["ligado"]), (200, "curto", False))
+        st, r = self.json("POST", "/api/avisos", {"som": "sino", "eventos": {"late": False}})
+        self.assertEqual((st, r["padrao"]["som"], r["padrao"]["eventos"]["late"]), (200, "sino", False))
+        self.assertEqual(self.json("GET", "/api/avisos")[1], r)
+        self.assertEqual(self.json("POST", "/api/avisos", {"som": "x"}), (400, "Som inválido."))
+        self.assertEqual(self.json("POST", "/api/avisos", b"{x"), (400, "JSON inválido."))
+        self.assertEqual(self.json("POST", "/api/avisos", b"\xff"), (400, "JSON inválido."))
+        self.assertEqual(self.json("POST", "/api/avisos", [1]), (400, "Pedido inválido."))
+        self.assertEqual(self.json("POST", "/api/avisos")[1]["padrao"]["som"], "sino", "corpo vazio: nada muda")
+        self.assertEqual(self.json("GET", "/api/avisos/x"), (404, "Não encontrado."))
+        with mock.patch.object(servidor.avisos_mod().store, "atomic_write", side_effect=PermissionError("travado")), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(self.json("POST", "/api/avisos", {"som": "curto"}),
+                             (500, "Falha ao gravar os avisos: veja a janela do servidor."))
+        self.assertEqual(err.getvalue(), "[avisos] POST: PermissionError('travado')\n")
+
+    def test_pela_rede_nunca(self):
+        self.precisa_rede()
+        adm = self.login(servidor.net_config()["pin"])
+        for method in ("GET", "POST"):
+            self.assertEqual(self.json(method, "/api/avisos", {} if method == "POST" else None, adm, rede=True),
+                             (403, "Só no computador principal."), method)
+        op = self.login(servidor.net_config()["pin_op"])
+        self.assertEqual(self.json("GET", "/api/avisos", None, op, rede=True), (403, servidor.OPERADOR_MSG))
+
+    def test_avisos_mod(self):
+        m = servidor.avisos_mod()
+        self.assertIs(m, sys.modules["demandas_avisos"])
+        self.assertIs(servidor.api_mod().av, m, "o api.py usa o mesmo módulo (o mesmo LOCK)")
 
 
 class Saude(Base):

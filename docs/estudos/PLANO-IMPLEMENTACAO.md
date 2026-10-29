@@ -22,8 +22,8 @@ Estado em 28/10/2026 (fim do dia):
   `email_envio.py` com fila, envio e gancho (`de05203`), seção E-mail (`0e4f666`) e linhas ✉ na gaveta e link
   `#SOL-n` (`f5eaa88`); Etapa 4 fases a (avisos e leitura por pessoa, aviso de comentário, `3f6d76b`), b (atraso
   marcado pela thread de fundo, `5f09e2c`) e c (som, vibração, título da aba piscando, agrupamento e gaveta nova
-  do sino, commit seguinte).
-- Próximo: Etapa 4, fases d (preferências e "Meus avisos") e e (Notification API e Wake Lock no PC principal).
+  do sino, `1535eff`) e d (preferências em `data/avisos.json`, "Meus avisos" e seção Avisos, commit seguinte).
+- Próximo: Etapa 4, fase e (Notification API e Wake Lock no PC principal).
   Pendências que dependem do dono: instalar a tarefa agendada
   (`instalar-inicio.bat` como administrador); configurar a conta de e-mail quando o TI definir; a fase 3 da Etapa 1
   (destino extra do backup) e a fase 5 do estudo 04 (OAuth2 do Microsoft 365), se a conta for M365.
@@ -186,6 +186,9 @@ estudo correspondente inteiro**. Ele tem os detalhes, formatos JSON, rotas e a l
 **Etapa 4 (avisos)**: respondidas pelo dono em 28/10/2026
 - Avisos **por pessoa** (tabela 6.1 do estudo 02): pessoa escolhida recebe; fila do setor avisa o setor; leitura
   por pessoa. No tablet compartilhado, cada um vê os seus ao se identificar.
+- Fase 4d: silêncio padrão da central **desligado** (não cala o turno da noite); evento desligado em "Meus avisos"
+  **fica só no sino** (sem banner, som e vibração); o Escritório tem o **seu próprio** "Meus avisos", separado dos
+  padrões da central.
 - Aviso do Windows no PC principal (Notification API) **mostra o título** da demanda. Push com o app fechado
   (camada 2) continua só depois do HTTPS.
 

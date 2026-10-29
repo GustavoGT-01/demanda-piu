@@ -1153,6 +1153,39 @@ class Atrasos(Base):
         self.assertFalse(self.dem(d["id"])["atraso_avisado"])
 
 
+class Preferencias(Base):
+    """aviso/prefs: cada um só as próprias (ADM = "adm"), em data/avisos.json, sem mexer no rev do banco."""
+
+    def test_ler_gravar_e_voltar_ao_padrao(self):
+        r0 = self.rev()
+        p = self.pes(self.tk_c, "aviso/prefs")["prefs"]
+        self.assertEqual((p["eventos"]["fila"], p["silencio"]["ligado"], p["proprio"]), (True, False, False))
+        p = self.pes(self.tk_c, "aviso/prefs", {"prefs": {"eventos": {"fila": False}, "silencio": {"ligado": True}}})["prefs"]
+        self.assertEqual((p["eventos"]["fila"], p["silencio"]["ligado"], p["proprio"]), (False, True, True))
+        self.assertEqual(self.disco("avisos.json")["pessoas"], {self.carlos: {"eventos": {"fila": False}, "silencio": {"ligado": True}}})
+        self.assertFalse(self.pes(self.tk_b, "aviso/prefs")["prefs"]["proprio"], "o Bruno não vê as do Carlos")
+        self.assertEqual(self.adm("aviso/prefs", {"prefs": {"eventos": {"pause": False}}})["prefs"]["eventos"]["pause"], False)
+        self.assertEqual(sorted(self.disco("avisos.json")["pessoas"]), sorted([self.carlos, "adm"]))
+        self.assertFalse(self.pes(self.tk_c, "aviso/prefs", {"padrao": True})["prefs"]["proprio"])
+        self.assertEqual(list(self.disco("avisos.json")["pessoas"]), ["adm"])
+        self.assertEqual(self.rev(), r0, "preferência não muda o rev: as telas não recarregam")
+
+    def test_padrao_true_ganha_de_prefs(self):
+        self.pes(self.tk_c, "aviso/prefs", {"prefs": {"eventos": {"late": False}}})
+        p = self.pes(self.tk_c, "aviso/prefs", {"padrao": True, "prefs": {"eventos": {"done": False}}})["prefs"]
+        self.assertEqual((p["eventos"]["late"], p["eventos"]["done"], p["proprio"]), (True, True, False))
+        self.assertTrue(self.pes(self.tk_c, "aviso/prefs", {"padrao": 1, "prefs": {"eventos": {"done": False}}})["prefs"]["proprio"])
+
+    def test_erros(self):
+        self.assertEqual(self.msg(self.pes, self.tk_c, "aviso/prefs", {"prefs": {"silencio": {"ini": "25:00"}}}),
+                         "Horário de silêncio inválido: use HH:MM.")
+        self.assertEqual(self.erro(self.pes, self.tk_c, "aviso/prefs", {"prefs": [1]}), 400)
+        self.assertEqual(self.erro(self.pes, "tk-ruim", "aviso/prefs"), 401)
+        self.assertEqual(self.erro(api.handle, "POST", "aviso/prefs", {}, OP), 403, "operador sem tk não é o Escritório")
+        self.assertEqual(self.erro(api.handle, "GET", "aviso/prefs", {}, ADM), 404)
+        self.assertFalse((self.dir / "avisos.json").exists())
+
+
 class Notas(Base):
     def test_lida_e_todas(self):
         d = self.nova(prio="urg")

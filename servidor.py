@@ -70,7 +70,7 @@ OPERADOR_ROTAS = frozenset({
 })
 OPERADOR_RE = re.compile(r"GET /local/demandas/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,59}"
                          r"|POST /api/local/demandas/(entrar|sair|vista|demanda/(criar|aceitar|pausar|retomar|concluir"
-                         r"|cancelar|reatribuir|cobrar|comentar)|anexo/(enviar|ler|apagar)|nota/(lida|todas))")
+                         r"|cancelar|reatribuir|cobrar|comentar)|anexo/(enviar|ler|apagar)|nota/(lida|todas)|aviso/prefs)")
 OPERADOR_MSG = "Aparelho de operador: só a tela de operador das demandas."
 FILE_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}\.(js|css|woff2)$")
 
@@ -103,6 +103,13 @@ def email_mod():
     api_mod()
     import email_envio
     return email_envio
+
+
+def avisos_mod():
+    """demandas/demandas_avisos.py: os padrões de aviso da central; o api.py usa o mesmo módulo (e o mesmo LOCK)."""
+    api_mod()
+    import demandas_avisos
+    return demandas_avisos
 
 
 # ---------- thread de fundo ----------
@@ -492,6 +499,25 @@ class Handler(BaseHTTPRequestHandler):
             print("[e-mail] %s %s: %r" % (method, path, exc), file=sys.stderr)
             return self._fail(500, "Falha ao gravar a configuração do e-mail: veja a janela do servidor.")
 
+    def _avisos(self, method: str, raw: bytes) -> None:
+        """/api/avisos (GET: padrões da central; POST: salva os campos enviados). Só o computador principal."""
+        if not pode(self.papel, "configurar"):
+            return self._fail(403, "Só no computador principal.")
+        av = avisos_mod()
+        try:
+            if method == "POST":
+                try:
+                    body = json.loads(raw.decode("utf-8")) if raw else {}
+                except (UnicodeError, ValueError):
+                    return self._fail(400, "JSON inválido.")
+                return self._json({"padrao": av.salvar_padrao(body)})
+            return self._json({"padrao": av.padrao()})
+        except av.AvisoErro as exc:
+            return self._fail(exc.status, str(exc))
+        except OSError as exc:
+            print("[avisos] %s: %r" % (method, exc), file=sys.stderr)
+            return self._fail(500, "Falha ao gravar os avisos: veja a janela do servidor.")
+
     def _rede(self) -> dict:
         cfg = net_config()
         port = self.server.server_address[1]
@@ -517,6 +543,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._backup("GET", path, b"")
         if path == "/api/email" or path.startswith("/api/email/"):
             return self._email("GET", path, b"")
+        if path == "/api/avisos":
+            return self._avisos("GET", b"")
         if path == "/api/servidor":
             if not pode(self.papel, "configurar"):
                 return self._fail(403, "Só no computador principal.")
@@ -575,6 +603,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._backup("POST", path, data)
         if path == "/api/email" or path.startswith("/api/email/"):
             return self._email("POST", path, data)
+        if path == "/api/avisos":
+            return self._avisos("POST", data)
         if path.startswith("/api/local/demandas/"):
             return self._api("POST", path, data)
         self._fail(404, "Não encontrado.")

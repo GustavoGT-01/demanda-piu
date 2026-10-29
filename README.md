@@ -76,6 +76,13 @@ tentativas (1, 5, 15, 60 e 180 min). Senha recusada para a fila até alguém cli
 pelo Windows: só abre neste computador e com este usuário (num PC reserva, digite de novo). Todos os e-mails de uma
 demanda ficam no mesmo fio, `[SOL-n] título`, e o botão "Abrir a demanda" só funciona dentro da rede da fábrica.
 
+## Avisos na tela
+Com a tela aberta, cada aviso novo toca um som, vibra (Android) e mostra o número na aba; com a aba escondida, o
+título pisca. Cada pessoa escolhe em **Meus avisos** (pelo sino ou pelo nome no topo) o que avisa, o horário de
+silêncio e se o urgente toca mesmo assim; som e vibração são escolhidos em cada aparelho. Os padrões para quem nunca
+mexeu ficam em **⚙ Configurações → Avisos** (só no computador principal). Tudo fica em `data/avisos.json`, que entra
+no backup. Avisos com o app fechado (push) dependem de HTTPS e ainda não existem.
+
 Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.json` e `demandas-anexos/` para esta
 `data/` com o programa fechado. O formato é o mesmo do módulo Demandas do CutFlow, de onde este programa saiu.
 
@@ -85,7 +92,7 @@ Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.jso
 | `servidor.py` | servidor HTTP: página, arquivos do módulo, API, PIN, sessões e defesas (Host, Origin, CSP) |
 | `store.py` | gravação segura dos JSON |
 | `email_envio.py` | aviso por e-mail: configuração (senha protegida pelo Windows), fila, envio SMTP e registro |
-| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
+| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas_avisos.py` (preferências de aviso), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
 | `web/` | a página (`index.html`) e a casca (`app.js`: `api()`, avisos, atualização e o botão ⚙ Configurações) |
 | `tests/` | testes Python e o teste de tela em jsdom |
 

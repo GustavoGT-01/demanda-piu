@@ -89,6 +89,7 @@ async function avisosDaTela(w,until,click){
   const pede=(titulo,prio='high')=>direto('demanda/criar',{titulo,tipo:'mat',motivo:'Falta de material',prio,est:60,para:{s:'CNC',p:null},desc:'',de_s:'PCP'});
   ok(await until(()=>w.__sons.length===2&&w.__vib.length===1),'aviso novo toca (2 notas) e vibra: '+w.__sons.length+' / '+JSON.stringify(w.__vib));
   ok(JSON.stringify(w.__vib[0])==='[200,100,200]','vibração normal [200,100,200]');
+  ok(w.__sons.map(o=>o.frequency.value).join()==='880,660','som padrão: o bipe duplo curto');
   ok(badge()>0&&d.title==='('+badge()+') Central de demandas','título da aba com o número de não lidos: '+d.title);
   const P=(await idDe('Pedido feito em outro aparelho')).id,b0=badge();
   await direto('demanda/comentar',{id:P,texto:'Tem pressa'});
@@ -100,9 +101,10 @@ async function avisosDaTela(w,until,click){
   w.__dt=25000;w.localStorage.setItem('dm-avisos-aparelho',JSON.stringify({som:'desligado',vibrar:false}));
   let b1=badge();await pede('Terceiro pedido');
   ok(await until(()=>badge()===b1+1)&&w.__sons.length===2&&w.__vib.length===2,'aparelho com som e vibração desligados fica quieto');
-  w.localStorage.setItem('dm-avisos-aparelho',JSON.stringify({som:'alto'}));
+  w.localStorage.setItem('dm-avisos-aparelho',JSON.stringify({som:'sino'}));
   b1=badge();await pede('Quarto pedido');
-  ok(await until(()=>w.__sons.length===4)&&w.__vib.length===3,'passados 20 s, toca de novo: '+w.__sons.length);
+  ok(await until(()=>w.__sons.length===5)&&w.__vib.length===3,'passados 20 s, toca de novo: '+w.__sons.length);
+  ok(w.__sons.slice(2).map(o=>o.frequency.value).join()==='1318,1046,784','o aparelho escolheu o sino: três notas descendo');
   w.localStorage.removeItem('dm-avisos-aparelho');
   const Q=(await idDe('Quarto pedido')).id;await direto('demanda/prioridade',{id:Q,prio:'urg'});
   ok(await until(()=>w.__vib.length===4)&&JSON.stringify(w.__vib[3])==='[200,100,200,100,200]','urgente fura o agrupamento da mesma demanda: '+JSON.stringify(w.__vib[3]));
@@ -151,6 +153,147 @@ async function avisosDaTela(w,until,click){
   ok(/Nada novo/.test($('#dm-notif').textContent),'Não lidos vazio: "Nada novo."');
   click('[data-act=nf][data-v=todos]');click('#dm-notif [data-act=close]');
 }
+// "Meus avisos" (Carlos): evento desligado fica só no sino, silêncio com os limites exatos (relógio da página posto em
+// horários escolhidos), urgente fura o silêncio, som e vibração do aparelho, voltar ao padrão.
+async function prefsDaTela(w,until,click){
+  const d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  const badge=()=>$('#dm-badge').hidden?0:+$('#dm-badge').textContent,toast=()=>($('#dm-toast')||{}).textContent||'';
+  const av=()=>{try{return JSON.parse(fs.readFileSync(path.join(data,'avisos.json'),'utf8'))}catch(e){return{}}};
+  const ap=()=>w.localStorage.getItem('dm-avisos-aparelho');
+  const carlos=JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).pessoas.find(p=>p.nome==='Carlos').id;
+  const set=(id,v)=>{const el=$('#dm-pf-'+id);if(typeof v==='boolean')el.checked=v;else el.value=v};
+  const abre=async()=>{click('#dm-bell');await until(()=>$('#dm-notif [data-act=prefs]'));click('#dm-notif [data-act=prefs]');
+    return until(()=>$('#dm-mbox h2')&&$('#dm-mbox h2').textContent==='Meus avisos')};
+  const salva=async()=>{click('[data-act=pf-salvar]');return until(()=>/Avisos salvos/.test(toast())&&!$('#dm-modal').classList.contains('dm-on'))};
+  // o relógio da página (só ele) num horário do dia escolhido, sempre para a frente
+  const dia0=new Date();dia0.setHours(0,0,0,0);
+  const hora=(dia,hh,mm,ss)=>{const real=w.Date.now()-w.__dt;w.__dt=dia0.getTime()+(dia+2)*86400000+((hh*60+mm)*60+ss)*1000-real};
+  const ouve=async(titulo,prio='high',pessoa=null)=>{const b=badge(),s0=w.__sons.length,v0=w.__vib.length;
+    await direto('demanda/criar',{titulo,tipo:'mat',motivo:'Falta de material',prio,est:60,para:{s:'CNC',p:pessoa},desc:'',de_s:'PCP'});
+    const chegou=await until(()=>badge()===b+1);await sleep(100);return{chegou,sons:w.__sons.length-s0,vib:w.__vib.slice(v0)}};
+  ok(await abre()&&!$('#dm-notif').classList.contains('dm-on'),'"⚙ Meus avisos" na gaveta abre a tela (e fecha a gaveta)');
+  ok($$('[id^=dm-pf-ev-]').length===9&&$$('[id^=dm-pf-ev-]').every(c=>c.checked),'nove eventos, todos ligados no padrão');
+  ok(/fila do Corte CNC/.test($('#dm-pf-ev-fila').closest('label').textContent),'"Demanda nova na fila do Corte CNC"');
+  ok(!$('#dm-pf-sil').checked&&$('#dm-pf-ini').value==='22:00'&&$('#dm-pf-fim').value==='06:00'&&$('#dm-pf-urg').checked,'silêncio desligado no padrão; urgente fura ligado');
+  click('[data-act=pf-turno][data-v=C]');
+  ok($('#dm-pf-ini').value==='06:00'&&$('#dm-pf-fim').value==='22:00'&&$('#dm-pf-sil').checked&&$('[data-act=pf-turno][data-v=C]').getAttribute('aria-pressed')==='true'&&$('[data-act=pf-turno][data-v=A]').getAttribute('aria-pressed')==='false',
+    'Turno C (22–06): silêncio das 06:00 às 22:00, ligado');
+  let s0=w.__sons.length;set('som','sino');click('[data-act=pf-teste]');
+  ok(w.__sons.slice(s0).map(o=>o.frequency.value).join()==='1318,1046,784','"▶ Testar" toca o som escolhido');
+  s0=w.__sons.length;set('som','desligado');click('[data-act=pf-teste]');
+  ok(w.__sons.length===s0&&/som está desligado/.test(toast()),'"▶ Testar" com o som desligado avisa');
+  set('ev-fila',false);set('ini','22:00');set('fim','06:00');set('som','sino');set('vib',false);
+  ok(await salva(),'Salvar fecha e avisa');
+  ok(JSON.stringify(av().pessoas[carlos])==='{"eventos":{"fila":false},"silencio":{"ligado":true}}','no servidor só as diferenças: '+JSON.stringify(av().pessoas));
+  ok(ap()==='{"som":"sino","vibrar":false}','som e vibração ficam no aparelho: '+ap());
+  hora(0,12,0,0);
+  let r=await ouve('Fila desligada');
+  ok(r.chegou&&!r.sons&&!r.vib.length&&!$$('.dm-alert').some(a=>/Fila desligada/.test(a.textContent)),'evento desligado: fica só no sino, sem banner e sem som');
+  hora(0,12,1,0);r=await ouve('Escolheram o Carlos','high',carlos);
+  ok(r.chegou&&r.sons===3&&$$('.dm-alert').some(a=>/Escolheram o Carlos/.test(a.textContent)),'fila desligada não cala a demanda escolhida para ele '+JSON.stringify(r));
+  click('#dm-uchip');await until(()=>$('#dm-mbox [data-act=prefs]'));click('#dm-mbox [data-act=prefs]');
+  ok(await until(()=>$('#dm-pf-ev-fila')&&!$('#dm-pf-ev-fila').checked&&$('#dm-pf-sil').checked),'pelo "quem é você" também abre, com o que foi salvo');
+  set('ev-fila',true);set('vib',true);
+  ok(await salva()&&ap()==='{"som":"sino"}','vibração igual ao padrão sai do aparelho: '+ap());
+  hora(0,21,59,30);r=await ouve('Antes do silêncio');
+  ok(r.chegou&&r.sons===3&&r.vib.length===1,'21:59: toca e vibra '+JSON.stringify(r));
+  hora(0,22,0,10);r=await ouve('Começo do silêncio');
+  ok(r.chegou&&!r.sons&&!r.vib.length,'22:00 em ponto: silêncio '+JSON.stringify(r));
+  ok($$('.dm-alert').some(a=>/Começo do silêncio/.test(a.textContent)),'no silêncio a tela aberta ainda mostra o banner');
+  hora(1,5,59,30);r=await ouve('Fim do silêncio');
+  ok(r.chegou&&!r.sons&&!r.vib.length,'05:59 do dia seguinte: ainda silêncio (atravessa a meia-noite) '+JSON.stringify(r));
+  hora(1,6,0,10);r=await ouve('Depois do silêncio');
+  ok(r.chegou&&r.sons===3&&r.vib.length===1,'06:00: acabou o silêncio '+JSON.stringify(r));
+  hora(1,23,0,0);r=await ouve('Urgente no silêncio','urg');
+  ok(r.chegou&&r.sons===3&&JSON.stringify(r.vib)==='[[200,100,200,100,200]]','urgente toca mesmo no silêncio '+JSON.stringify(r));
+  ok(await abre(),'abre de novo');set('urg',false);ok(await salva(),'salva sem o urgente furar');
+  hora(1,23,30,0);r=await ouve('Urgente calado','urg');
+  ok(r.chegou&&!r.sons&&!r.vib.length,'"Urgente toca mesmo no silêncio" desligado: o urgente também fica quieto '+JSON.stringify(r));
+  ok(await abre(),'abre de novo');click('[data-act=pf-turno][data-v=C]');set('urg',true);ok(await salva(),'salva o Turno C (silêncio das 06 às 22)');
+  hora(2,6,0,0);r=await ouve('Começo do dia calado');
+  ok(r.chegou&&!r.sons,'silêncio de dia (sem atravessar a meia-noite): 06:00 em ponto já é silêncio '+JSON.stringify(r));
+  hora(2,21,59,0);r=await ouve('Fim do dia calado');
+  ok(r.chegou&&!r.sons,'21:59: ainda silêncio '+JSON.stringify(r));
+  hora(2,22,0,0);r=await ouve('Fim do turno');
+  ok(r.chegou&&r.sons===3,'22:00 em ponto: toca '+JSON.stringify(r));
+  ok(await abre(),'abre de novo');set('ini','12:30');set('fim','12:45');ok(await salva(),'salva o silêncio das 12:30 às 12:45');
+  hora(3,12,35,0);r=await ouve('Meio do almoço');
+  ok(r.chegou&&!r.sons,'12:35: silêncio (os minutos contam) '+JSON.stringify(r));
+  ok(await abre(),'abre de novo');set('ini','13:10');set('fim','13:10');ok(await salva(),'salva início igual ao fim');
+  hora(3,13,10,0);r=await ouve('Início igual ao fim');
+  ok(r.chegou&&r.sons===3,'início igual ao fim: não há silêncio '+JSON.stringify(r));
+  ok(await abre(),'abre para voltar ao padrão');set('sil',false);set('jun',false);ok(await salva(),'salva sem silêncio e sem juntar');
+  ok(ap()==='{"som":"sino","juntar":false}','não juntar fica no aparelho: '+ap());
+  hora(4,10,0,0);r=await ouve('Sem juntar');
+  const J=(await direto('vista',{})).demandas.find(x=>x.titulo==='Sem juntar').id;
+  hora(4,10,0,30);const b=badge(),s1=w.__sons.length;await direto('demanda/comentar',{id:J,texto:'Mais um'});
+  ok(r.sons===3&&await until(()=>badge()===b+1)&&await until(()=>w.__sons.length===s1+3),'sem juntar: o segundo aviso da mesma demanda toca de novo');
+  ok(await abre(),'abre mais uma vez');click('[data-act=pf-padrao]');
+  ok(await until(()=>/de volta ao padrão/.test(toast())),'"Voltar ao padrão" avisa');
+  ok(!(carlos in (av().pessoas||{}))&&ap()===null,'e apaga as diferenças no servidor e no aparelho');
+  w.__dt=25000;
+}
+// ⚙ Configurações · Avisos (PC principal) e o "Meus avisos" do Escritório, separado dos padrões.
+async function avisosDaCentral(){
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  const toast=()=>($('#dm-toast')||{}).textContent||'',av=()=>JSON.parse(fs.readFileSync(path.join(data,'avisos.json'),'utf8'));
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  await until(()=>$('.dm-tab[data-v=painel]'));
+  w.NestLocal.views.demandas.config('avisos');
+  ok(await until(()=>$('#dm-av-som')&&$('.dm-cfgnav [aria-current=page]').textContent==='🔔 Avisos'),'seção 🔔 Avisos nas Configurações');
+  ok($$('.dm-avq:not(.dm-cfgth)').length===9&&$$('[id^=dm-av-ev-]').every(c=>c.checked),'"Quem recebe o quê": nove eventos, ligados');
+  ok($('#dm-av-som').value==='curto'&&$('#dm-av-jun').value==='10'&&$('#dm-av-vib').value==='1'&&$('#dm-av-urg').value==='1'&&!$('#dm-av-sil').checked,'padrões: curto, 10 min, vibração, urgente fura, sem silêncio');
+  $('#dm-av-som').value='sino';$('#dm-av-jun').value='0';$('#dm-av-vib').value='0';$('#dm-av-urg').value='0';$('#dm-av-ev-late').checked=false;
+  $('#dm-av-sil').checked=true;$('#dm-av-ini').value='23:00';$('#dm-av-fim').value='05:00';
+  $('[data-act=av-salvar]').click();
+  ok(await until(()=>/Padrões dos avisos salvos/.test(toast())),'Salvar padrões '+toast());
+  const p=av().padrao;
+  ok(p.som==='sino'&&p.agrupar_min===0&&p.vibrar===false&&p.urgente_fura===false&&p.eventos.late===false&&p.eventos.new===true&&JSON.stringify(p.silencio)==='{"ligado":true,"ini":"23:00","fim":"05:00"}','gravado em data/avisos.json: '+JSON.stringify(p));
+  ok($('#dm-av-som').value==='sino'&&$('#dm-av-jun').value==='0'&&!$('#dm-av-ev-late').checked,'a seção mostra o que foi salvo');
+  // o Escritório não mexeu nos seus: o silêncio novo (23–05, urgente respeita) já vale nesta tela
+  const tk=(await direto('entrar',{pessoa:JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).pessoas.find(p=>p.nome==='Carlos').id,codigo:'1234'})).tk;
+  const urgente=async(win,titulo)=>{const s0=win.__sons.length;   // o sino do Escritório já passa de 99: espera o banner
+    await direto('demanda/criar',{tk,titulo,tipo:'mat',motivo:'Falta de material',prio:'urg',est:60,para:{s:'PCP',p:null},desc:''});
+    const chegou=await until(()=>[...win.document.querySelectorAll('.dm-alert')].some(a=>a.textContent.includes(titulo)),10000);
+    await sleep(100);return chegou?win.__sons.length-s0:'não chegou'};
+  const dia=new Date();dia.setHours(0,0,0,0);
+  const hora=(win,hh,mm)=>{win.__dt=dia.getTime()+86400000+(hh*60+mm)*60000-(win.Date.now()-win.__dt)};
+  hora(w,23,30);
+  ok(await urgente(w,'Urgente da madrugada')===0,'padrão novo da central vale na hora para quem não mexeu (silêncio, urgente respeita)');
+  hora(w,12,0);
+  ok(await urgente(w,'Urgente do meio-dia')===3,'(conferência: fora do silêncio o urgente toca)');
+  const w2=await boot(),$2=s=>w2.document.querySelector(s);
+  await until(()=>$2('[data-act=lgk][data-v=adm]'));$2('[data-act=lgk][data-v=adm]').click();$2('.dm-lgbtn').click();
+  await until(()=>$2('.dm-tab[data-v=painel]'));await sleep(500);
+  hora(w2,23,40);
+  ok(await urgente(w2,'Urgente na outra tela')===0,'tela aberta depois: já entra com as preferências do servidor');
+  w2.close();
+  $('#dm-av-ini').value='';$('[data-act=av-salvar]').click();
+  ok(await until(()=>/Horário de silêncio inválido/.test(toast())),'hora vazia: o servidor recusa '+toast());
+  $('[data-act=cfg-sec][data-v=email]').click();
+  ok(await until(()=>$('.dm-cfgnav [aria-current=page]').textContent.includes('E-mail')),'"Abrir" leva à seção E-mail');
+  $('[data-act=mclose]').click();
+  $('#dm-uchip').click();await until(()=>$('#dm-mbox [data-act=prefs]'));$('#dm-mbox [data-act=prefs]').click();
+  ok(await until(()=>$('#dm-pf-ev-new')),'o Escritório tem o seu "Meus avisos"');
+  ok(!$('#dm-pf-ev-fila')&&$$('[id^=dm-pf-ev-]').length===8,'sem a fila (o Escritório não tem fila)');
+  ok(!$('#dm-pf-ev-late').checked&&$('#dm-pf-sil').checked&&$('#dm-pf-ini').value==='23:00'&&$('#dm-pf-som').value==='sino'&&!$('#dm-pf-vib').checked&&!$('#dm-pf-jun').checked,'quem não mexeu recebe os padrões novos');
+  ok(/não juntar/.test($('#dm-pf-jun').closest('label').textContent),'"não juntar" da central aparece na tela');
+  $('#dm-pf-ev-pause').checked=false;$('[data-act=pf-salvar]').click();
+  ok(await until(()=>/Avisos salvos/.test(toast())),'o Escritório salva os seus');
+  ok(JSON.stringify(av().pessoas.adm)==='{"eventos":{"pause":false}}'&&av().padrao.eventos.pause===true,'os do Escritório ficam separados dos padrões: '+JSON.stringify(av().pessoas));
+  ok(w.localStorage.getItem('dm-avisos-aparelho')===null,'aparelho igual ao padrão da central: nada guardado');
+  $('#dm-uchip').click();await until(()=>$('#dm-mbox [data-act=prefs]'));$('#dm-mbox [data-act=prefs]').click();
+  await until(()=>$('#dm-pf-ev-new'));$('#dm-pf-ev-new').checked=false;$('[data-act=pf-salvar]').click();
+  await until(()=>!$('#dm-modal').classList.contains('dm-on'));
+  hora(w,12,5);const s0=w.__sons.length;
+  await direto('demanda/criar',{tk,titulo:'Urgente com nova desligada',tipo:'mat',motivo:'Falta de material',prio:'urg',est:60,para:{s:'PCP',p:null},desc:''});
+  const naGaveta=async()=>{$('#dm-bell').click();await sleep(100);const ok1=/Urgente com nova desligada/.test($('#dm-notif').textContent);$('#dm-notif [data-act=close]').click();return ok1};
+  let chegou=false;for(let i=0;i<20&&!chegou;i++){await sleep(500);chegou=await naGaveta()}
+  const semBanner=!$$('.dm-alert').some(a=>/Urgente com nova desligada/.test(a.textContent));
+  ok(chegou&&w.__sons.length===s0&&semBanner,'"Demanda nova" desligado no Escritório: o urgente fica só no sino '+JSON.stringify({chegou,sons:w.__sons.length-s0,semBanner}));
+  w.close();
+}
 // O link do e-mail (…/#SOL-1001) abre a demanda depois de entrar; o ADM vê as linhas ✉ do registro de envio.
 async function linkDoEmail(){
   fs.writeFileSync(path.join(data,'email-log.json'),JSON.stringify({v:1,itens:[{t:Date.now(),dem:'SOL-1001',ev:'created',para:['corte@empresa.com'],status:'ok',tent:1,erro:''}]}));
@@ -183,7 +326,8 @@ async function restaurarPelaTela(){
   ok(await until(()=>$$('[data-act=bk-rest]').length===1),'a cópia aparece com o botão Restaurar');
   $('[data-act=bk-rest]').click();
   ok(await until(()=>$('#dm-rs-c')&&/Vai se perder/.test($('#dm-rs-perde').textContent)),'confirmação mostra o que vai se perder');
-  ok(/^SOL-100[1-9]$/.test($('#dm-rs-prox').textContent)&&$('#dm-rs-prox').textContent!=='SOL-1001','próximo número continua do maior já usado: '+$('#dm-rs-prox').textContent);
+  const seq=JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8')).seq.demanda;
+  ok($('#dm-rs-prox').textContent==='SOL-'+(seq+1),'próximo número continua do maior já usado: '+$('#dm-rs-prox').textContent+' (esperado SOL-'+(seq+1)+')');
   ok($('#dm-rs-ok').disabled,'"Restaurar" começa desligado');
   const c=$('#dm-rs-c');c.value='restaura';c.dispatchEvent(new w.Event('input',{bubbles:true}));
   ok($('#dm-rs-ok').disabled,'texto incompleto não liga o botão');
@@ -386,9 +530,11 @@ async function restaurarPelaTela(){
     click('[data-act=opf][data-v=pend]');
     ok(await until(()=>$$('.dm-ocard h3').some(h=>h.textContent==='Pedido feito em outro aparelho'),8000),'mudança de outro aparelho aparece sozinha');
     await avisosDaTela(w,until,click);
+    await prefsDaTela(w,until,click);
     w.close();
     await aparelhoOperador();
     await linkDoEmail();
+    await avisosDaCentral();
     await restaurarPelaTela();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso
     try{fs.rmSync(base,{recursive:true,force:true,maxRetries:10,retryDelay:200})}catch(e){console.log('aviso: pasta temporária ficou em '+base)}}

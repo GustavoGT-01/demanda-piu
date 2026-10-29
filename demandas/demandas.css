@@ -513,6 +513,15 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-cfgtipo[data-t=antes-restaurar]{color:var(--dm-s-pause);border-color:color-mix(in srgb,var(--dm-s-pause) 40%,var(--dm-line))}
 /* seção E-mail */
 #dmboard .dm-mlgrid{display:grid;grid-template-columns:2fr 1fr 1.4fr;gap:4px 10px}
+/* avisos: linhas de estado, "quem recebe o quê" e as chaves de "Meus avisos" */
+#dmboard .dm-cfgcp.dm-avq{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 120px}
+#dmboard .dm-avgrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+#dmboard .dm-avst{display:flex;gap:10px;align-items:flex-start;margin:6px 0;font-size:13px}
+#dmboard .dm-avst>span:first-child{flex:none;width:22px;text-align:center}
+#dmboard .dm-avst>span:nth-child(2){flex:1;min-width:0}
+#dmboard .dm-avst small{display:block;color:var(--dm-muted);font-size:12px}
+#dmboard .dm-pfrow{padding:7px 0;border-top:1px solid var(--dm-line)}
+#dmboard .dm-pfrow b{font-weight:600}
 #dmboard .dm-mlgrid .dm-fld:nth-child(5){grid-column:2/-1}
 #dmboard .dm-mlgrid .dm-fld:nth-child(6){grid-column:1/-1}
 #dmboard .dm-mlev{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin:4px 0 8px}
@@ -589,6 +598,7 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
   #dmboard .dm-mlgrid .dm-fld:nth-child(5){grid-column:auto}
   #dmboard .dm-cfgcp{grid-template-columns:minmax(0,1fr) auto auto}
   #dmboard .dm-cfgcp>:nth-child(2){display:none}
+  #dmboard .dm-cfgcp.dm-avq{grid-template-columns:minmax(0,1fr) auto}
   #dmboard .dm-rscmp{grid-template-columns:1fr}
   #dmboard .dm-rsseta{transform:rotate(90deg);justify-self:center}
   #dmboard .dm-cfgdest{grid-template-columns:auto minmax(0,1fr)}
