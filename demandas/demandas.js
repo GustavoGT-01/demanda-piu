@@ -187,7 +187,7 @@ function apply(v){
   bkAlert();
   restCheck();
   if(firstLoad) setTimeout(abrirHash, 0);   // depois do render que vem logo em seguida
-  if(firstLoad) loadPrefs();
+  if(firstLoad){loadPrefs(); telaAcesa()}
 }
 async function loadPub(){
   try{
@@ -239,7 +239,30 @@ function apGet(){   // o que foi escolhido neste aparelho (só o que foi escolhi
 function aparelho(){   // o que vale neste aparelho
   const p = apGet(), c = prefsAv();
   return {som: SONS.includes(p.som) ? p.som : c.som, vibrar: typeof p.vibrar === 'boolean' ? p.vibrar : c.vibrar !== false,
-    juntar: p.juntar !== false};
+    juntar: p.juntar !== false, sistema: p.sistema === true && noPc(), tela: p.tela === true && noPc()};
+}
+/* só no computador principal (http://127.0.0.1 é contexto seguro): aviso do Windows e tela acesa; nos celulares da rede
+   o navegador não deixa sem HTTPS. A permissão só é pedida num toque (Salvar em "Meus avisos"), nunca ao abrir. */
+const noPc = () => ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+const sisOk = () => noPc() && typeof window.Notification === 'function';
+const sisPerm = () => sisOk() ? Notification.permission : 'indisponivel';
+function notificar(n){   // só com a aba escondida (com ela à vista já há banner e som); a mesma demanda substitui o aviso anterior
+  if(!document.hidden || sisPerm() !== 'granted') return;
+  const r = byId(n.dem), t = NT[n.tipo] || ['🔔', 'Aviso'];
+  if(!r) return;
+  try{
+    const x = new Notification(t[1] + ' · ' + r.id, {body: r.titulo, tag: r.id});
+    x.onclick = () => {try{window.focus()}catch(_){/* sem foco */} x.close(); openDrawer(r.id)};
+  }catch(_){/* o navegador recusou: o resto do aviso já aconteceu */}
+}
+async function telaAcesa(){   // pede (ou solta) a tela acesa conforme a escolha deste aparelho; o navegador solta sozinho ao esconder a aba
+  const quer = aparelho().tela && !document.hidden && !!navigator.wakeLock;
+  try{
+    if(quer && !D.wl){
+      D.wl = await navigator.wakeLock.request('screen');
+      D.wl.addEventListener('release', () => {D.wl = null});
+    }else if(!quer && D.wl){const w = D.wl; D.wl = null; await w.release()}
+  }catch(_){D.wl = null}   // bateria fraca ou recusado: segue sem
 }
 // new com pessoa = escolheram você; new sem pessoa = a fila do setor; urgente (só do Escritório) conta como nova
 const evDe = n => n.tipo === 'urg' ? 'new' : n.tipo === 'new' && !n.pid && !isAdm() ? 'fila' : n.tipo;
@@ -284,6 +307,7 @@ function avisar(n){
   if(emSilencio(p.silencio, new Date(agora)) && !(urg && p.urgente_fura)) return;   // silêncio: o sino continua contando
   if(ap.som !== 'desligado' && (!D.avSom || agora - D.avSom >= AV_SOM_MIN) && tocar(urg, ap.som)) D.avSom = agora;
   if(ap.vibrar && navigator.vibrate) try{navigator.vibrate(urg ? [200, 100, 200, 100, 200] : [200, 100, 200])}catch(_){/* sem vibração */}
+  if(ap.sistema) notificar(n);
 }
 /* título da aba: "(3) Central de demandas"; com a aba escondida, pisca com o aviso até a pessoa voltar */
 const TITULO = 'Central de demandas';
@@ -849,6 +873,8 @@ function prefsHtml(p, ap){
    <div class="dm-secx">Neste aparelho</div>
    <div class="dm-avst"><span aria-hidden="true">🟢</span><span><b>Avisos com o app aberto: ativos</b><small>Banner, som, vibração e contador na aba.</small></span></div>
    <div class="dm-avst"><span aria-hidden="true">🔒</span><span><b>Avisos com o app fechado: disponível só com HTTPS</b><small>Este endereço é ${esc(location.origin)}.</small></span></div>
+   ${noPc() ? `${sw('dm-pf-sis', ap.sistema, '🖥️ Aviso do Windows neste computador', sisOk() ? ({granted: 'Com a aba escondida, mostra o título da demanda. Permitido pelo navegador.', denied: 'O navegador bloqueou: libere em Configurações do site, no cadeado da barra de endereço.', default: 'Com a aba escondida, mostra o título da demanda. O navegador pergunta ao salvar.'}[sisPerm()] || '') : 'Este navegador não tem aviso do sistema.')}
+   ${sw('dm-pf-tela', ap.tela, '💡 Manter a tela acesa', navigator.wakeLock ? 'Enquanto a página estiver à vista.' : 'Este navegador não deixa manter a tela acesa.')}` : `<div class="dm-avst"><span aria-hidden="true">🖥️</span><span><b>Aviso do Windows e tela acesa</b><small>Disponíveis só no computador principal (endereço 127.0.0.1).</small></span></div>`}
    <div class="dm-secx">O que me avisa</div><p class="dm-note" style="margin-top:0">Vale em qualquer aparelho em que você entrar. Desligado, o aviso fica só no sino.</p>
    ${evs.map(([k, ic, l, s]) => sw('dm-pf-ev-' + k, p.eventos[k] !== false, ic + ' ' + (k === 'fila' ? fila : l), s)).join('')}
    <div class="dm-secx">Como me avisa</div><p class="dm-note" style="margin-top:0">Só neste aparelho: o tablet do chão pode tocar e o seu celular não.</p>
@@ -875,18 +901,26 @@ function apSet(o){   // guarda só o que difere do padrão da central (se a cent
   if(o.som !== c.som) x.som = o.som;
   if(o.vibrar !== (c.vibrar !== false)) x.vibrar = o.vibrar;
   if(!o.juntar) x.juntar = false;
+  if(o.sistema) x.sistema = true;
+  if(o.tela) x.tela = true;
   try{if(Object.keys(x).length) localStorage.setItem(AV_AP, JSON.stringify(x)); else localStorage.removeItem(AV_AP)}catch(_){/* sem armazenamento: vale o padrão */}
 }
 async function pfSalvar(el){
   const v = id => $('dm-pf-' + id), prefs = {eventos: {}, silencio: {ligado: v('sil').checked, ini: v('ini').value, fim: v('fim').value}, urgente_fura: v('urg').checked};
   for(const [k] of PF_EV) if(v('ev-' + k)) prefs.eventos[k] = v('ev-' + k).checked;
-  const ap = {som: v('som').value, vibrar: v('vib').checked, juntar: v('jun').checked || !num(prefsAv().agrupar_min)};
+  const ap = {som: v('som').value, vibrar: v('vib').checked, juntar: v('jun').checked || !num(prefsAv().agrupar_min),
+    sistema: !!v('sis') && v('sis').checked, tela: !!v('tela') && v('tela').checked};
+  if(ap.sistema && sisPerm() === 'default'){   // o pedido do navegador precisa nascer deste toque, antes de qualquer espera
+    try{await Notification.requestPermission()}catch(_){/* navegador antigo: fica como estava */}
+  }
+  if(ap.sistema && sisPerm() !== 'granted'){ap.sistema = false; toast('O navegador não permitiu o aviso do Windows.')}
   el.disabled = true;
   const r = await call('aviso/prefs', {prefs}, {notake: true});
   if(el.isConnected) el.disabled = false;
   if(!r || !r.prefs) return;
   D.av = r.prefs;
   apSet(ap);
+  telaAcesa();
   closeModal(); toast('🔔 Avisos salvos');
 }
 async function pfPadrao(el){
@@ -896,6 +930,7 @@ async function pfPadrao(el){
   if(!r || !r.prefs) return;
   D.av = r.prefs;
   try{localStorage.removeItem(AV_AP)}catch(_){/* sem armazenamento */}
+  telaAcesa();
   closeModal(); toast('🔔 Avisos de volta ao padrão');
 }
 
@@ -1934,7 +1969,7 @@ const SKELETON = '<div class="dm-scroll" id="dm-scroll"><div class="dm-wrap">'
   root.addEventListener('submit', onSubmit);
   document.addEventListener('keydown', onKey);
   window.addEventListener('hashchange', abrirHash);
-  document.addEventListener('visibilitychange', () => {if(!document.hidden) paraDePiscar()});
+  document.addEventListener('visibilitychange', () => {if(!document.hidden) paraDePiscar(); telaAcesa()});
   document.addEventListener('pointerdown', audio, {passive: true});   // libera o som no primeiro toque
   setInterval(tick, 1000);
   window.NestLocal = window.NestLocal || {views: {}};

@@ -42,6 +42,12 @@ async function boot(papel,hash=''){
     w.AudioContext=class{constructor(){this.state='suspended';this.currentTime=0;this.destination={};w.__ctxs.push(this)}resume(){this.state='running'}
       createOscillator(){const o={type:'',frequency:{},connect(){},start(){},stop(){}};w.__sons.push(o);return o}
       createGain(){return{gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}}}};
+    // aviso do sistema e tela acesa falsos: __perm é a resposta do navegador ao pedido de permissão
+    w.__notifs=[];w.__pedidos=0;w.__perm='granted';w.__wl=[];
+    w.Notification=class{constructor(t,o){this.title=t;this.body=o&&o.body;this.tag=o&&o.tag;this.fechada=false;w.__notifs.push(this)}close(){this.fechada=true}
+      static get permission(){return w.__atual}static requestPermission(){w.__pedidos++;w.__atual=w.__perm;return Promise.resolve(w.__perm)}};
+    w.__atual='default';
+    Object.defineProperty(w.navigator,'wakeLock',{configurable:true,value:{request:async()=>{const l={soltou:false,ls:[],addEventListener(e,f){l.ls.push(f)},release:async()=>{l.soltou=true;l.ls.forEach(f=>f())}};w.__wl.push(l);return l}}});
     Object.defineProperty(w.navigator,'vibrate',{configurable:true,value:p=>{w.__vib.push(p);return true}});
   }});
   const w=dom.window;
@@ -232,6 +238,57 @@ async function prefsDaTela(w,until,click){
   ok(await until(()=>/de volta ao padrão/.test(toast())),'"Voltar ao padrão" avisa');
   ok(!(carlos in (av().pessoas||{}))&&ap()===null,'e apaga as diferenças no servidor e no aparelho');
   w.__dt=25000;
+}
+// Só no PC principal (127.0.0.1): aviso do Windows com o título da demanda (aba escondida) e tela acesa.
+async function sistemaDaTela(w,until,click){
+  const d=w.document,$=s=>d.querySelector(s),toast=()=>($('#dm-toast')||{}).textContent||'';
+  const ap=()=>w.localStorage.getItem('dm-avisos-aparelho');
+  const abre=async()=>{click('#dm-bell');await until(()=>$('#dm-notif [data-act=prefs]'));click('#dm-notif [data-act=prefs]');return until(()=>$('#dm-pf-sis'))};
+  const salva=()=>{click('[data-act=pf-salvar]');return until(()=>/Avisos salvos|não permitiu/.test(toast())&&!$('#dm-modal').classList.contains('dm-on'))};
+  const escondida=v=>{Object.defineProperty(d,'hidden',{configurable:true,get:()=>v});d.dispatchEvent(new w.Event('visibilitychange'))};
+  const ouve=async t=>{const n0=w.__notifs.length;await direto('demanda/criar',{titulo:t,tipo:'mat',motivo:'Falta de material',prio:'norm',est:60,para:{s:'CNC',p:null},desc:'',de_s:'PCP'});
+    await until(()=>[...d.querySelectorAll('.dm-alert')].some(a=>a.textContent.includes(t))||w.__notifs.length>n0,10000);await sleep(150);return w.__notifs.length-n0};
+  w.__dt=25000;
+  ok(await abre()&&!$('#dm-pf-sis').checked&&!$('#dm-pf-tela').checked&&/O navegador pergunta ao salvar/.test($('#dm-pf-sis').closest('label').textContent),'no PC principal: aviso do Windows e tela acesa, desligados, antes de pedir a permissão');
+  ok(w.__pedidos===0,'abrir a tela não pede permissão');
+  $('#dm-pf-sis').checked=true;ok(await salva(),'salva ligando o aviso do Windows');
+  ok(w.__pedidos===1&&ap()==='{"sistema":true}','a permissão é pedida no Salvar e a escolha fica no aparelho: '+w.__pedidos+' '+ap());
+  escondida(false);ok(await ouve('Com a aba à vista')===0,'aba à vista: sem aviso do Windows (já há banner)');
+  escondida(true);
+  ok(await ouve('Com a aba atrás')===1,'aba escondida: um aviso do Windows');
+  const n=w.__notifs[w.__notifs.length-1];
+  ok(/^Nova solicitação · SOL-\d+$/.test(n.title)&&n.body==='Com a aba atrás'&&n.tag===n.title.split(' · ')[1],'mostra o título da demanda: '+n.title+' / '+n.body+' / '+n.tag);
+  escondida(false);n.onclick();
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')&&$('#dm-drawer h2').textContent==='Com a aba atrás')&&n.fechada,'clicar no aviso abre a demanda e fecha o aviso');
+  click('#dm-drawer [data-act=close]');
+  w.__atual='denied';escondida(true);
+  ok(await ouve('Permissão negada')===0,'permissão retirada no navegador: nada aparece');
+  escondida(false);
+  ok(await abre()&&/bloqueou/.test($('#dm-pf-sis').closest('label').textContent),'a tela explica o bloqueio');
+  $('#dm-pf-sis').checked=false;ok(await salva()&&ap()===null,'desligar tira do aparelho: '+ap());
+  w.__atual='granted';escondida(true);
+  ok(await ouve('Permitido mas desligado')===0,'permissão do navegador sem a escolha do aparelho: nada aparece');
+  escondida(false);w.__atual='denied';
+  ok(await abre(),'abre');$('#dm-pf-sis').checked=true;ok(await salva()&&/não permitiu/.test(toast())||ap()===null,'ligar com o navegador bloqueando: avisa e não guarda '+ap());
+  ok(ap()===null,'e não guarda a escolha');
+  w.__atual='default';w.__perm='denied';
+  ok(await abre(),'abre');$('#dm-pf-sis').checked=true;await salva();
+  ok(w.__pedidos===2&&ap()===null&&w.__atual==='denied','o pedido negado pelo usuário também não guarda: pedidos='+w.__pedidos);
+  // tela acesa
+  ok(await abre(),'abre');$('#dm-pf-tela').checked=true;ok(await salva(),'liga a tela acesa');
+  ok(await until(()=>w.__wl.length===1&&!w.__wl[0].soltou)&&ap()==='{"tela":true}','pede a tela acesa e guarda a escolha: '+w.__wl.length);
+  escondida(true);ok(await until(()=>w.__wl.length===1),'(conferência) escondida não pede de novo');
+  escondida(false);ok(await until(()=>w.__wl.length===2&&!w.__wl[1].soltou),'ao voltar para a aba, pede de novo (o navegador solta ao esconder)');
+  await sleep(50);w.__wl[1].release();await sleep(50);escondida(false);ok(await until(()=>w.__wl.length===3),'se o navegador soltar, a próxima volta pede de novo '+w.__wl.map(l=>l.soltou).join());
+  ok(await abre(),'abre');$('#dm-pf-tela').checked=false;await salva();
+  ok(await until(()=>w.__wl[2].soltou)&&ap()===null,'desligar solta a tela acesa');
+  ok(await abre(),'abre');$('#dm-pf-tela').checked=true;await salva();ok(await until(()=>w.__wl.length===4&&!w.__wl[3].soltou),'liga de novo');
+  ok(await abre(),'abre');click('[data-act=pf-padrao]');
+  ok(await until(()=>w.__wl[3].soltou)&&ap()===null,'"Voltar ao padrão" também solta a tela acesa');
+  Object.defineProperty(w.navigator,'wakeLock',{configurable:true,value:{request:async()=>{throw new Error('bateria fraca')}}});
+  w.localStorage.setItem('dm-avisos-aparelho','{"tela":true}');const e0=[];w.addEventListener('error',e=>e0.push(e));escondida(true);escondida(false);await sleep(100);
+  ok(!e0.length,'o navegador recusando a tela acesa não quebra nada');
+  w.localStorage.removeItem('dm-avisos-aparelho');
 }
 // ⚙ Configurações · Avisos (PC principal) e o "Meus avisos" do Escritório, separado dos padrões.
 async function avisosDaCentral(){
@@ -531,6 +588,7 @@ async function restaurarPelaTela(){
     ok(await until(()=>$$('.dm-ocard h3').some(h=>h.textContent==='Pedido feito em outro aparelho'),8000),'mudança de outro aparelho aparece sozinha');
     await avisosDaTela(w,until,click);
     await prefsDaTela(w,until,click);
+    await sistemaDaTela(w,until,click);
     w.close();
     await aparelhoOperador();
     await linkDoEmail();

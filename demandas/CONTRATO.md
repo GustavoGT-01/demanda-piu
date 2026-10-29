@@ -185,6 +185,7 @@ Preferências de aviso: `data/avisos.json` (`demandas_avisos.py`), fora do `dema
 - Da pessoa ficam só as diferenças de eventos, silêncio e `urgente_fura`; igual ao padrão = some do arquivo.
 - Som, vibração e "juntar" valem por aparelho, em `localStorage["dm-avisos-aparelho"]` (`{som?, vibrar?,
   juntar?}`, só o que difere do padrão da central). Arquivo ausente ou ilegível = todo mundo no padrão.
+- Só em `127.0.0.1`/`localhost` (contexto seguro): `sistema` (Notification API, só com a aba escondida; título `<tipo> · SOL-n`, corpo = título da demanda, `tag` = id) e `tela` (Screen Wake Lock, pedido de novo ao voltar à aba) no mesmo `localStorage`. A permissão só é pedida no Salvar.
 - Padrões da central: `GET/POST /api/avisos` (servidor.py, só o computador principal).
 
 ## Vista (resposta)

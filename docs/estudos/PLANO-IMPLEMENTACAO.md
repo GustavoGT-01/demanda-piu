@@ -23,7 +23,8 @@ Estado em 28/10/2026 (fim do dia):
   `#SOL-n` (`f5eaa88`); Etapa 4 fases a (avisos e leitura por pessoa, aviso de comentário, `3f6d76b`), b (atraso
   marcado pela thread de fundo, `5f09e2c`) e c (som, vibração, título da aba piscando, agrupamento e gaveta nova
   do sino, `1535eff`) e d (preferências em `data/avisos.json`, "Meus avisos" e seção Avisos, commit seguinte).
-- Próximo: Etapa 4, fase e (Notification API e Wake Lock no PC principal).
+  Fase e: aviso do Windows com o título e tela acesa no PC principal (commit seguinte). Etapa 4 completa.
+- Próximo: Etapa 5 (calendário e cronograma), com duas perguntas abertas.
   Pendências que dependem do dono: instalar a tarefa agendada
   (`instalar-inicio.bat` como administrador); configurar a conta de e-mail quando o TI definir; a fase 3 da Etapa 1
   (destino extra do backup) e a fase 5 do estudo 04 (OAuth2 do Microsoft 365), se a conta for M365.

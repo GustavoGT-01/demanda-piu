@@ -81,7 +81,7 @@ Com a tela aberta, cada aviso novo toca um som, vibra (Android) e mostra o núme
 título pisca. Cada pessoa escolhe em **Meus avisos** (pelo sino ou pelo nome no topo) o que avisa, o horário de
 silêncio e se o urgente toca mesmo assim; som e vibração são escolhidos em cada aparelho. Os padrões para quem nunca
 mexeu ficam em **⚙ Configurações → Avisos** (só no computador principal). Tudo fica em `data/avisos.json`, que entra
-no backup. Avisos com o app fechado (push) dependem de HTTPS e ainda não existem.
+no backup. No computador principal (endereço 127.0.0.1) **Meus avisos** também liga o aviso do Windows, que mostra o título da demanda quando a aba está escondida (o navegador pergunta a permissão ao salvar), e manter a tela acesa. Avisos com o app fechado (push) dependem de HTTPS e ainda não existem.
 
 Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.json` e `demandas-anexos/` para esta
 `data/` com o programa fechado. O formato é o mesmo do módulo Demandas do CutFlow, de onde este programa saiu.
