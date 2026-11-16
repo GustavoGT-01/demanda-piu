@@ -25,6 +25,9 @@ import servidor  # noqa: E402
 
 XSS = '<img src=x onerror="alert(1)">'
 TAB = "aaaaaaaa-1111"
+# Marca que o finge_rede() lê para contar um pedido como "da rede" numa máquina sem placa. O servidor não
+# conhece este cabeçalho: ele só existe enquanto o _remote está trocado, e só nessa máquina.
+H_REDE = "X-Teste-Rede"
 
 
 def ip_rede():
@@ -45,6 +48,12 @@ class Base(unittest.TestCase):
         cls.port = cls.srv.server_address[1]
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.ip = ip_rede()
+        # Os três papéis do endereço num pedido "da rede". Com placa, os dois últimos são o IP dela e o
+        # _remote real é exercitado. Sem placa, o Host leva um IP literal fixo (é o que o ip_host do
+        # servidor exige), a conexão sai pelo loopback e quem faz o pedido contar como "da rede" é o
+        # finge_rede() abaixo: essa faixa é escopo crítico da mutação e não pode ficar sem teste.
+        cls.ip_host = cls.ip or "10.0.0.5"   # vai no cabeçalho Host
+        cls.ip_visto = cls.ip or "127.0.0.1"   # para onde a conexão vai, e o que o servidor vê em client_address
 
     @classmethod
     def tearDownClass(cls):
@@ -69,11 +78,13 @@ class Base(unittest.TestCase):
 
     def req(self, method, path, body=None, headers=None, rede=False):
         """rede=True: pede pelo IP da máquina (conta como aparelho da rede)."""
-        host = self.ip if rede else "127.0.0.1"
-        c = http.client.HTTPConnection(host, self.port, timeout=30)
+        host = self.ip_host if rede else "127.0.0.1"
+        c = http.client.HTTPConnection(self.ip_visto if rede else "127.0.0.1", self.port, timeout=30)
         try:
             c.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
             h = {"Host": "%s:%d" % (host, self.port)}
+            if rede and not self.ip:
+                h[H_REDE] = "1"
             h.update(headers or {})
             raw = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
             if raw is not None:
@@ -97,13 +108,31 @@ class Base(unittest.TestCase):
         self.assertEqual(st, 200, raw.decode("utf-8", "replace"))
         return json.loads(raw)
 
+    def finge_rede(self):
+        """Sem placa, faz contar como "da rede" só o pedido marcado com H_REDE; com placa, não mexe em nada.
+
+        A marca é por pedido de propósito: um _remote que dissesse True para tudo faria o pedido do próprio
+        PC também parecer da rede, e os testes que comparam os dois lados no mesmo caso perderiam o sentido.
+        """
+        if self.ip:
+            return
+        original = servidor.Handler._remote
+
+        def _remote(h):
+            return bool(h.headers.get(H_REDE)) or original(h)
+
+        p = mock.patch.object(servidor.Handler, "_remote", _remote)
+        p.start()
+        self.addCleanup(p.stop)
+
     def precisa_rede(self):
-        if not self.ip:
-            self.skipTest("sem IP de rede nesta máquina")
+        """Liga o acesso pela rede, com o pedido contando como "da rede"."""
+        self.finge_rede()
         servidor.NET_ON = True
 
     def login(self, pin):
-        form = {"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://%s:%d" % (self.ip, self.port)}
+        form = {"Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "http://%s:%d" % (self.ip_host, self.port)}
         st, h, _ = self.req("POST", "/api/login", ("pin=" + pin).encode(), form, rede=True)
         self.assertEqual(st, 303)
         return {"Cookie": h["Set-Cookie"].split(";")[0]}
@@ -366,8 +395,7 @@ class Pins(Base):
 
 class PelaRede(Base):
     def test_rede_desligada_recusa(self):
-        if not self.ip:
-            self.skipTest("sem IP de rede nesta máquina")
+        self.finge_rede()   # sem ligar NET_ON: é a rede desligada que está sob teste
         self.assertEqual(self.req("GET", "/", rede=True)[0], 421)   # Host com IP só vale com a rede ligada
         servidor.NET_ON = True
         servidor.NET_ON = False
@@ -435,10 +463,12 @@ class PelaRede(Base):
         """Uma resposta só: uma checagem que mandasse o 403 e deixasse seguir escreveria outra."""
         self.precisa_rede()
         h = self.login(servidor.net_config()["pin_op"])
-        s = socket.create_connection((self.ip, self.port), timeout=30)
+        s = socket.create_connection((self.ip_visto, self.port), timeout=30)
         try:
-            lines = ["POST /api/local/demandas/setor/salvar HTTP/1.1", "Host: %s:%d" % (self.ip, self.port),
+            lines = ["POST /api/local/demandas/setor/salvar HTTP/1.1", "Host: %s:%d" % (self.ip_host, self.port),
                      "Cookie: " + h["Cookie"], "Content-Length: 2"]
+            if not self.ip:
+                lines.append("%s: 1" % H_REDE)
             s.sendall(("\r\n".join(lines) + "\r\n\r\n").encode() + b"{}")
             raw = b""
             while True:
@@ -463,8 +493,9 @@ class Detalhes(Base):
 
     def raw(self, linhas, corpo=b"", rede=False):
         """Pedido cru; devolve (quantas respostas HTTP vieram, a primeira linha)."""
-        host = self.ip if rede else "127.0.0.1"
-        s = socket.create_connection((host, self.port), timeout=30)
+        s = socket.create_connection((self.ip_visto if rede else "127.0.0.1", self.port), timeout=30)
+        if rede and not self.ip:
+            linhas = [*linhas, "%s: 1" % H_REDE]
         try:
             s.sendall(("\r\n".join(linhas) + "\r\n\r\n").encode() + corpo)
             raw = b""
@@ -613,10 +644,31 @@ class Detalhes(Base):
         n, linha = self.raw(["POST /api/local/demandas/vista HTTP/1.1", "Host: evil.com", "Content-Length: 2"], b"{}")
         self.assertEqual((n, linha.split(" ")[1]), (1, "421"))
 
+    def test_endereco_ilegivel_conta_como_rede(self):
+        """client_address que não é IP: o pedido conta como da rede, nunca como o próprio computador.
+
+        É o ramo de erro do _remote. Falhar para o lado fechado importa: dar "maquina" a um endereço que
+        não se consegue ler entregaria as Configurações e os dois PINs.
+        """
+        h = servidor.Handler.__new__(servidor.Handler)
+        h.client_address = ("nao-e-um-ip", 0)
+        self.assertIs(h._remote(), True)
+        h.client_address = ("127.0.0.1", 0)
+        self.assertIs(h._remote(), False)
+
+    def test_pagina_de_pin_sem_erro_na_primeira_vez(self):
+        """A página de entrada só mostra o parágrafo de erro depois de um PIN errado."""
+        self.precisa_rede()
+        raw = self.req("GET", "/", rede=True)[2]
+        self.assertIn(b'name="pin"', raw)
+        self.assertNotIn(b'class="e"', raw)
+        form = {"Content-Type": "application/x-www-form-urlencoded"}
+        errada = self.req("POST", "/api/login", b"pin=0", form, rede=True)[2]
+        self.assertIn(b'class="e"', errada)   # o contraste: com erro, o parágrafo aparece
+
     def test_pela_rede_textos_login_e_cookie(self):
-        if not self.ip:
-            self.skipTest("sem IP de rede nesta máquina")
-        rede_host = "%s:%d" % (self.ip, self.port)
+        self.finge_rede()   # NET_ON é ligado no meio do teste: o começo testa a rede desligada
+        rede_host = "%s:%d" % (self.ip_host, self.port)
         n, linha = self.raw(["GET /api/eu HTTP/1.1", "Host: 127.0.0.1:%d" % self.port], rede=True)
         self.assertEqual((n, linha.split(" ")[1]), (1, "403"))   # rede desligada: uma resposta só
         self.assertEqual(self.texto("GET", "/api/eu", headers={"Host": "127.0.0.1:%d" % self.port}, rede=True),
@@ -638,7 +690,7 @@ class Detalhes(Base):
         form = {"Content-Type": "application/x-www-form-urlencoded"}
         st, txt = self.texto("POST", "/api/login", b"pin=0", form, rede=True)
         self.assertIn('<p class="e">PIN errado. Depois de 5 erros, espere 5 minutos.</p>', txt)
-        self.assertIn(self.ip, servidor.FAILS)   # o erro conta para o IP de quem tentou (o login certo abaixo zera)
+        self.assertIn(self.ip_visto, servidor.FAILS)   # o erro conta para o IP de quem tentou (o login certo abaixo zera)
         self.assertEqual(self.texto("POST", "/api/rede", {"on": False}, self.login(servidor.net_config()["pin"]), rede=True),
                          (403, "Só no computador principal."))
         sessao = self.login(servidor.net_config()["pin"])

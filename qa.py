@@ -30,6 +30,13 @@ ROOT = Path(__file__).resolve().parent
 OUT = ROOT / ".qa"
 PY = sys.executable
 META = 80.0   # % mínimo de cobertura de linhas e de mutação no escopo crítico (docs/QUALIDADE.md)
+# Metas mais altas por arquivo: docs/QUALIDADE.md pede 90% nos cálculos de tempo (seções 3, 6 e 7).
+META_ARQ = {"demandas/demandas_calc.py": 90.0}
+
+
+def meta_de(f: str) -> float:
+    """A meta de cobertura e de mutação deste arquivo: a do META_ARQ, ou META."""
+    return META_ARQ.get(Path(f).as_posix(), META)
 
 # Escopo crítico: arquivo -> (testes que o exercitam, funções a mutar ou None = arquivo inteiro).
 # Os testes de cada alvo são os rápidos e diretos: o mutante roda contra eles, não contra a suíte inteira.
@@ -144,8 +151,12 @@ def cmd_lint(_a) -> int:
     return run([PY, "-m", "ruff", "check", "."])
 
 
-def _js() -> tuple:
-    """(código, linhas do resultado). Os checks de tela rodam juntos: cada um sobe o próprio servidor (porta 0)."""
+def _js(sem_jsdom: bool = False) -> tuple:
+    """(código, linhas do resultado). Os checks de tela rodam juntos: cada um sobe o próprio servidor (porta 0).
+
+    Sem jsdom instalado o resultado é falha, não sucesso: a tela é grande e não tem teste unitário, então
+    passar verde sem rodar o check é falso positivo. Para pular de propósito: --sem-jsdom.
+    """
     node = shutil.which("node")
     if not node:
         return 1, ["js: node não encontrado"]
@@ -163,8 +174,12 @@ def _js() -> tuple:
     tem_jsdom = subprocess.call([node, "-e", "require.resolve('jsdom')"], cwd=ROOT, env=os.environ,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
     checks = ["tests/demandas_check.js"] if tem_jsdom else []
-    if not tem_jsdom:
-        linhas.append("js: jsdom não encontrado (NODE_PATH); checks de tela pulados")
+    if not tem_jsdom and sem_jsdom:
+        linhas.append("js: jsdom não encontrado; checks de tela pulados a pedido (--sem-jsdom)")
+    elif not tem_jsdom:
+        erro += 1
+        linhas.append("js: jsdom não encontrado (NODE_PATH); a tela ficou sem check. "
+                      "Instale com `npm install jsdom` dentro de tests/, ou passe --sem-jsdom para pular.")
 
     def um(c):
         try:   # check travado vira falha; sem limite, o qa.py esperava para sempre
@@ -176,15 +191,16 @@ def _js() -> tuple:
         ok = p.returncode == 0 and not falhas
         return ok, "%s: %s" % (c, "OK" if ok else "FALHOU (%d) %s" % (p.returncode, " | ".join(falhas[:5])))
 
-    with cf.ThreadPoolExecutor(len(checks)) as ex:
-        for ok, ln in ex.map(um, checks):
-            linhas.append(ln)
-            erro += not ok
+    if checks:   # ThreadPoolExecutor(0) levanta ValueError: sem check a rodar, não abre pool
+        with cf.ThreadPoolExecutor(len(checks)) as ex:
+            for ok, ln in ex.map(um, checks):
+                linhas.append(ln)
+                erro += not ok
     return (1 if erro else 0), linhas
 
 
-def cmd_js(_a) -> int:
-    code, linhas = _js()
+def cmd_js(a) -> int:
+    code, linhas = _js(a.sem_jsdom)
     print("\n".join(linhas))
     return code
 
@@ -207,7 +223,8 @@ def cmd_cover(a) -> int:
     run([PY, "-m", "coverage", "json", "--rcfile", str(ROOT / ".coveragerc"), "-q", "-o", str(OUT / "cobertura.json")], env=env)
     dados = json.loads((OUT / "cobertura.json").read_text(encoding="utf-8"))["files"]
     por_nome = {Path(k).resolve(): v["summary"] for k, v in dados.items()}
-    print("\nEscopo crítico (meta %.0f%% de linhas):" % META)
+    extra = ", ".join("%.0f%% em %s" % (m, f) for f, m in sorted(META_ARQ.items()))
+    print("\nEscopo crítico (meta %.0f%% de linhas%s):" % (META, "; " + extra if extra else ""))
     abaixo = []
     for f in critico_existente():
         s = por_nome.get((ROOT / f).resolve())
@@ -218,7 +235,7 @@ def cmd_cover(a) -> int:
         linhas = 100.0 * s["covered_lines"] / max(1, s["num_statements"])
         ramos = 100.0 * s.get("covered_branches", 0) / max(1, s.get("num_branches", 0)) if s.get("num_branches") else 100.0
         print("  %-42s linhas %5.1f%%  branches %5.1f%%" % (f, linhas, ramos))
-        if linhas < META:
+        if linhas < meta_de(f):
             abaixo.append(f)
     if falhou:
         print("cover: testes falharam em " + ", ".join(falhou))
@@ -536,7 +553,7 @@ def cmd_mutate(a) -> int:
                   "  cache %4d  -> %5.1f%%  (%.0f s)"
                   % (alvo, len(ids), cont["morto"], cont["timeout"], cont["sobreviveu"], cont["sem_teste"],
                      cont["invalido"], reaproveitados, nota, seg), flush=True)
-            if nota < META:
+            if nota < meta_de(alvo):
                 total_ok = False
     finally:
         shutil.rmtree(base, ignore_errors=True)
@@ -551,7 +568,7 @@ def cmd_all(a) -> int:
     """lint, depois js (em segundo plano) junto com a cobertura, que já roda todos os testes uma vez só."""
     lint = cmd_lint(a)
     with cf.ThreadPoolExecutor(1) as ex:
-        js = ex.submit(_js)
+        js = ex.submit(_js, a.sem_jsdom)
         cover = cmd_cover(a)
         code_js, linhas = js.result()
     print("\n".join(linhas))
@@ -569,6 +586,8 @@ def main() -> int:
     ap.add_argument("--tudo", action="store_true", help="mutate: o escopo crítico inteiro, não só o que mudou")
     ap.add_argument("--sem-cache", action="store_true", help="mutate: ignora .qa/mutacao-cache.json")
     ap.add_argument("--estrito", action="store_true", help="cover: falha se o escopo crítico ficar abaixo da meta")
+    ap.add_argument("--sem-jsdom", action="store_true",
+                    help="js: sem jsdom instalado, pula os checks de tela em vez de falhar")
     a = ap.parse_args()
     return {"unit": cmd_unit, "js": cmd_js, "lint": cmd_lint, "cover": cmd_cover, "mutate": cmd_mutate, "all": cmd_all}[a.cmd](a)
 
