@@ -291,6 +291,89 @@ async function sistemaDaTela(w,until,click){
   w.localStorage.removeItem('dm-avisos-aparelho');
 }
 // ⚙ Configurações · Avisos (PC principal) e o "Meus avisos" do Escritório, separado dos padrões.
+// Aba Calendário: derivada da vista, sem rota nova. É aqui que a fronteira de mês, semana e dia é
+// conferida, porque ela é calculada no navegador com o fuso do aparelho.
+async function calendarioDaTela(){
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  await until(()=>$('.dm-tab[data-v=painel]'));
+  // a aba existe, entre Histórico e Cronoanálise, com ícone próprio
+  const abas=$$('.dm-tab').map(b=>b.dataset.v);
+  ok(abas.indexOf('cal')===abas.indexOf('hist')+1&&abas.indexOf('crono')===abas.indexOf('cal')+1,'aba Calendário entre Histórico e Cronoanálise: '+abas.join(','));
+  ok($('.dm-tab[data-v=cal] use')&&$('.dm-tab[data-v=cal] use').getAttribute('href')==='#dm-i-cal','a aba tem o ícone dm-i-cal');
+  ok(!!d.getElementById('dm-i-cal'),'o símbolo dm-i-cal está registrado');
+  $('.dm-tab[data-v=cal]').click();
+  ok(await until(()=>$('.cal-grid')),'Calendário abre no mês');
+  ok($$('.cal-day').length===42,'a grade do mês tem 42 dias, tem '+$$('.cal-day').length);
+  ok($$('.cal-day.cal-today').length===1,'exatamente um dia marcado como hoje');
+  ok($$('.cal-dow span').length===7&&$('.cal-dow span').textContent==='dom','cabeçalho com sete dias começando no domingo');
+  ok($$('.cal-day.cal-out').length>0,'dias dos meses vizinhos marcados com cal-out');
+  ok($$('.cal-day.cal-we').length===12,'doze dias de fim de semana nas seis semanas, tem '+$$('.cal-day.cal-we').length);
+  // a demanda criada no fluxo aparece como chip no dia do prazo dela
+  const chip=()=>$$('.cal-chip').find(c=>/SOL-/.test(c.textContent));
+  ok(await until(()=>!!chip()),'a solicitação aparece como chip no mês');
+  const diaDoChip=chip().closest('.cal-day');
+  ok(diaDoChip&&!diaDoChip.classList.contains('cal-out'),'o chip cai num dia do mês corrente');
+  ok(['new','prog','pause','late','done','canc'].includes(chip().dataset.st),'o chip carrega o status: '+chip().dataset.st);
+  // título com <img onerror> continua texto
+  ok(!$('#dmboard img')&&w.__xss===undefined,'título hostil continua texto no calendário');
+  // clicar num dia marca e enche a lateral
+  const comChip=chip().closest('.cal-day'),nChips=comChip.querySelectorAll('.cal-chip').length;
+  comChip.click();
+  ok(await until(()=>$('.cal-day.cal-sel')),'clicar num dia marca cal-sel');
+  ok(await until(()=>$$('.cal-list .dm-card').length>=nChips||$$('.cal-list .dm-ocard').length>=nChips||/solicitaç/.test($('.cal-side').textContent)),'a lateral mostra o dia escolhido');
+  ok($$('.cal-dens span').length===4,'a lateral tem as quatro faixas de densidade');
+  // clicar no chip abre a gaveta
+  chip().click();
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')),'clicar no chip abre a gaveta');
+  $('#dm-drawer [data-act=close]').click();
+  // ‹ e › mudam o mês; o botão do meio volta
+  const tit=()=>$('.cal-tit').textContent;
+  const t0=tit();
+  $('[data-act=calnav][data-v="-1"]').click();
+  ok(await until(()=>tit()!==t0),'‹ muda o mês: '+tit());
+  ok($$('.cal-day').length===42,'o mês anterior também tem 42 dias');
+  ok($$('.cal-day.cal-today').length===0,'no mês anterior nenhum dia é hoje');
+  $('[data-act=calnav][data-v="0"]').click();
+  ok(await until(()=>tit()===t0),'"Este mês" volta para o mês corrente');
+  // semana: sete colunas, faixa de horas, linha do agora só hoje
+  $('[data-act=calmode][data-v=semana]').click();
+  ok(await until(()=>$('.cal-week')),'visão semana monta');
+  ok($$('.cal-col').length===7,'a semana tem sete colunas, tem '+$$('.cal-col').length);
+  ok($('.cal-wb').style.getPropertyValue('--dm-cols')==='7','a grade da semana emite --dm-cols:7');
+  const hs=$$('.cal-hours2 span').map(x=>x.textContent);
+  ok(hs[0]==='06h'&&hs[hs.length-1]==='22h','faixa de horas de 06h a 22h, tem '+hs.length+' marcas');
+  ok($$('.cal-now').length===1,'a linha do agora aparece só na coluna de hoje');
+  ok($$('.cal-col.cal-we').length===2,'sábado e domingo marcados na semana');
+  ok($$('.cal-off').length===14,'faixa de expediente nas sete colunas (duas por coluna)');
+  // dia: uma coluna
+  $('[data-act=calmode][data-v=dia]').click();
+  ok(await until(()=>$('.cal-week')&&$$('.cal-col').length===1),'visão dia tem uma coluna');
+  ok($('.cal-wb').style.getPropertyValue('--dm-cols')==='1','a grade do dia emite --dm-cols:1');
+  // filtro por setor: um setor sem solicitação zera os chips
+  $('[data-act=calmode][data-v=mes]').click();
+  ok(await until(()=>$('.cal-grid')&&!!chip()),'volta para o mês com os chips');
+  // o select é remontado a cada render, então cada mudança precisa buscar o elemento de novo
+  const poeSetor=v=>{const s=d.getElementById('dm-calSec');s.value=v;s.dispatchEvent(new w.Event('change',{bubbles:true}))};
+  const sel=d.getElementById('dm-calSec');
+  ok(sel&&[...sel.options].some(o=>o.value==='ALM'),'o filtro lista os setores');
+  poeSetor('ALM');
+  ok(await until(()=>$$('.cal-chip').length===0),'filtrar por um setor sem solicitação zera os chips');
+  ok(d.getElementById('dm-calSec').value==='ALM','o filtro mantém o setor escolhido depois do render');
+  poeSetor('');
+  ok(await until(()=>!!chip()),'tirar o filtro traz os chips de volta');
+  // adiantando o relógio da página, o chip de uma ativa vira atrasado
+  const ativo=()=>$$('.cal-chip').find(c=>['new','prog','pause'].includes(c.dataset.st));
+  if(ativo()){
+    w.__dt=400*60*60*1000;   // bem depois de qualquer prazo criado no fluxo
+    $('[data-act=calnav][data-v="0"]').click();
+    ok(await until(()=>$$('.cal-chip[data-st=late]').length>0||$$('.cal-day.cal-lt').length>0),'com o relógio adiantado o prazo vencido aparece atrasado');
+    w.__dt=0;
+  }else ok(true,'sem ativa no mês para conferir o atraso (fluxo concluiu todas)');
+  w.close();
+}
+
 // Cronoanálise: a janela de 13 h continua como era, e os modos novos (Dia, Semana, Mês) pedem a rota
 // cronograma. É aqui que a fronteira de dia, semana e mês é conferida, porque ela é calculada no
 // navegador, com o fuso do aparelho.
@@ -653,6 +736,7 @@ async function restaurarPelaTela(){
     w.close();
     await aparelhoOperador();
     await linkDoEmail();
+    await calendarioDaTela();
     await cronogramaDaTela();
     await avisosDaCentral();
     await restaurarPelaTela();

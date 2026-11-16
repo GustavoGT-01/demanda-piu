@@ -28,6 +28,7 @@ const D = {
   tab: 'painel', opTab: 'recv', opF: 'mine', view: 'board', mapSort: 'crit', q: '', fSt: '', fSec: '', fPrio: '', fType: '',
   hq: '', hSt: '', hFrom: '', hTo: '', hArq: '', arq: null, period: 7, crono: null, cronoP: 0,
   cr: {modo: '13h', por: 'setor', desl: 0, dados: null, chave: ''},   // cronograma multidia
+  cal: {modo: 'mes', desl: 0, dia: 0, sec: '', arq: null, arqMes: ''},   // aba Calendário
   admSub: 'sectors', uq: '', uSec: '', uSt: '', open: null, notif: false, mod: null, form: null, sform: null, uform: null,
   lg: {k: 'op', sec: '', user: '', code: '', show: false, err: ''}, seen: null, feedSeen: null, lastKey: '', noIntro: false,
   dirty: false, ticks: 0, pubErr: '',
@@ -456,7 +457,7 @@ function renderTabs(){
   const el = $('dm-tabs');
   if(!D.role){el.innerHTML = ''; return}
   let t, cur;
-  if(isAdm()){t = [['painel', 'Painel', ''], ['sol', 'Solicitações', reqs().filter(isAct).length], ['hist', 'Histórico', ''], ['crono', 'Cronoanálise', ''], ['admin', 'Administração', '']]; cur = D.tab}
+  if(isAdm()){t = [['painel', 'Painel', ''], ['sol', 'Solicitações', reqs().filter(isAct).length], ['hist', 'Histórico', ''], ['cal', 'Calendário', ''], ['crono', 'Cronoanálise', ''], ['admin', 'Administração', '']]; cur = D.tab}
   else{const me = meId(); t = [['recv', '📥 Recebidas', reqs().filter(r => r.para.p === me && isAct(r)).length], ['sent', '📤 Enviadas', reqs().filter(r => r.de.p === me && isAct(r)).length]]; cur = D.opTab}
   el.innerHTML = t.map(([k, l, n]) => `<button type="button" class="dm-tab" data-act="tab" data-v="${k}" aria-pressed="${k === cur}">${isAdm() ? tabIco(k) : ''}${l}${n !== '' ? `<span class="dm-cnt">${n}</span>` : ''}</button>`).join('');
 }
@@ -584,6 +585,137 @@ async function loadArq(){
   const r = await call('historico', {de: N - days * DAY, ate: N}, {notake: true});
   D.arq = r && Array.isArray(r.demandas) ? r.demandas.map(fix) : [];
   if(isAdm() && D.tab === 'hist') renderView();
+}
+
+/* ---------- ADM: calendário ----------
+   Tudo derivado da vista que a API já devolve, mais o arquivo morto pelo histórico: nenhuma rota nova.
+   As fronteiras de mês, semana e dia são calculadas aqui porque dependem do fuso do aparelho. */
+const CAL_H0 = 6, CAL_H1 = 22, CAL_PX = 38;   // faixa de horas das visões semana e dia, e altura da hora
+const CAL_EXP = [7, 17];                      // expediente só como referência visual: turno é fase 3
+const CAL_CHIPS = 3;                          // chips por dia na visão mês, antes do "+ n"
+const MES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro',
+  'outubro', 'novembro', 'dezembro'];
+/* Quando a solicitação entra no calendário: a ativa pelo prazo, a encerrada pela conclusão. */
+const calWhen = r => isAct(r) ? num(r.prazo) : (num(r.fim) || num(r.prazo));
+/* A janela da visão. Reaproveita o crJanela do cronograma: mesma aritmética de data, um lugar só. */
+const calJanela = () => crJanela(D.cal.modo, D.cal.desl);
+/* Vista + arquivo morto, sem repetir id (o principal vence, como o _todas do api.py), já filtrado por setor. */
+function calBase(){
+  const vis = reqs(), vistos = new Set(vis.map(r => r.id));
+  const todas = vis.concat((D.cal.arq || []).filter(r => !vistos.has(r.id)));
+  return D.cal.sec ? todas.filter(r => r.para.s === D.cal.sec) : todas;
+}
+function calPorDia(GS, GE){
+  const m = new Map();
+  for(const r of calBase()){
+    const t = calWhen(r);
+    if(!t || t < GS || t >= GE) continue;
+    const d = new Date(t); d.setHours(0, 0, 0, 0);
+    const k = d.getTime();
+    if(!m.has(k)) m.set(k, []);
+    m.get(k).push(r);
+  }
+  for(const l of m.values()) l.sort((a, b) => calWhen(a) - calWhen(b));
+  return m;
+}
+/* O arquivo morto do mês visível, quando ele termina antes de hoje. A janela vai 31 dias para trás porque
+   o historico filtra por `criado` e o calendário mostra por prazo (limitação registrada no estudo 05). */
+async function loadCalArq(){
+  const [GS, GE] = calJanela(), chave = D.cal.modo + '|' + D.cal.desl;
+  if(GE >= now()){D.cal.arq = null; D.cal.arqMes = chave; return}
+  if(D.cal.arqMes === chave) return;
+  const r = await call('historico', {de: GS - 31 * DAY, ate: GE}, {notake: true});
+  if(r && Array.isArray(r.demandas)){
+    D.cal.arq = r.demandas.map(fix).filter(x => {const t = calWhen(x); return t >= GS && t < GE});
+    D.cal.arqMes = chave;
+  }
+  if(isAdm() && D.tab === 'cal' && !busyUI()) renderView();
+}
+function calBar(){
+  const c = D.cal, [GS, GE] = calJanela();
+  const d = new Date(GS);
+  const titulo = c.modo === 'mes' ? MES_NOME[d.getMonth()] + ' de ' + d.getFullYear()
+    : c.modo === 'semana' ? fD(GS) + ' a ' + fD(GE - 1) : DOW[d.getDay()] + ', ' + fD(GS);
+  const base = calBase().filter(r => {const t = calWhen(r); return t >= GS && t < GE});
+  const atrasadas = base.filter(lateNow).length, feitas = base.filter(r => r.status === 'done');
+  const noPrazo = feitas.filter(r => !lateDone(r)).length;
+  const pct = feitas.length ? Math.round(noPrazo / feitas.length * 100) + '%' : '—';
+  const hoje = c.modo === 'mes' ? 'Este mês' : c.modo === 'semana' ? 'Esta semana' : 'Hoje';
+  const modos = [['mes', 'Mês'], ['semana', 'Semana'], ['dia', 'Dia']];
+  return `<div class="dm-filters cal-bar"><h3 class="dm-h3">Calendário de prazos</h3>
+   <div class="cal-nav"><button type="button" class="dm-btn dm-sm" data-act="calnav" data-v="-1" aria-label="Anterior">‹</button><button type="button" class="dm-btn dm-sm" data-act="calnav" data-v="0">${hoje}</button><button type="button" class="dm-btn dm-sm" data-act="calnav" data-v="1" aria-label="Seguinte">›</button></div>
+   <b class="cal-tit">${esc(titulo)}</b><span class="dm-spacer"></span>
+   <div class="cal-sum"><span>${base.length} no período</span><span class="${atrasadas ? 'dm-badc' : ''}">${atrasadas} atrasada${atrasadas === 1 ? '' : 's'}</span><span>${pct} no prazo</span></div>
+   <select id="dm-calSec" aria-label="Setor">${opt('', 'Todos os setores', c.sec)}${secOpts(c.sec, true)}</select>
+   <div class="dm-seg" role="group" aria-label="Visão">${modos.map(([v, l]) => `<button type="button" data-act="calmode" data-v="${v}" aria-pressed="${c.modo === v}">${l}</button>`).join('')}</div></div>`;
+}
+function calChip(r){
+  const ds = dispSt(r);
+  return `<button type="button" class="cal-chip" data-st="${esc(ds)}" data-act="open" data-id="${esc(r.id)}" title="${esc(r.id + ' · ' + r.titulo + ' · ' + fT(calWhen(r)))}"><i>${fT(calWhen(r))}</i><b>${esc(r.id)}</b><span>${esc(r.titulo)}</span></button>`;
+}
+function calMes(){
+  const [GS, GE] = calJanela(), porDia = calPorDia(GS, GE);
+  const ini = new Date(GS); ini.setDate(ini.getDate() - ini.getDay());   // começa no domingo, como o DOW
+  const hoje = crJanela('dia', 0)[0], mes = new Date(GS).getMonth();
+  let cel = '';
+  for(let i = 0; i < 42; i++){
+    const d = new Date(ini); d.setDate(d.getDate() + i); d.setHours(0, 0, 0, 0);
+    const k = d.getTime(), l = porDia.get(k) || [], fora = d.getMonth() !== mes;
+    const atras = l.some(lateNow);
+    const chips = l.slice(0, CAL_CHIPS).map(calChip).join('')
+      + (l.length > CAL_CHIPS ? `<button type="button" class="cal-more" data-act="calday" data-v="${k}">+ ${l.length - CAL_CHIPS} mais</button>` : '');
+    cel += `<div class="cal-day${fora ? ' cal-out' : ''}${d.getDay() === 0 || d.getDay() === 6 ? ' cal-we' : ''}${k === hoje ? ' cal-today' : ''}${k === D.cal.dia ? ' cal-sel' : ''}${atras ? ' cal-lt' : ''}" data-act="calday" data-v="${k}"><div class="cal-dh"><span class="cal-dn">${d.getDate()}</span>${l.length ? `<span class="dm-s">${l.length}</span>` : ''}</div><div class="cal-chips">${chips}</div></div>`;
+  }
+  return `<div class="cal-wrap"><div><div class="cal-dow">${DOW.map(x => `<span>${x}</span>`).join('')}</div><div class="cal-grid">${cel}</div></div>${calSide()}</div>`;
+}
+function calGrade(dias){
+  const porDia = calPorDia(dias[0], dias[dias.length - 1] + DAY);
+  const hoje = crJanela('dia', 0)[0], H = CAL_H1 - CAL_H0;
+  const horas = [];
+  for(let h = CAL_H0; h <= CAL_H1; h++) horas.push(`<span style="top:${(h - CAL_H0) * CAL_PX}px">${p2(h)}h</span>`);
+  const topo = t => {const d = new Date(t); return (d.getHours() + d.getMinutes() / 60 - CAL_H0) * CAL_PX};
+  const cols = dias.map(k => {
+    const d = new Date(k), l = porDia.get(k) || [];
+    const blocos = l.map(r => {
+      const fim = calWhen(r), ini = Math.max(num(r.iniciado) || num(r.criado), k);
+      const a = Math.max(0, topo(ini)), b = Math.min(H * CAL_PX, topo(fim));
+      const corta = topo(fim) > H * CAL_PX || topo(ini) < 0;
+      return `<button type="button" class="cal-blk${corta ? ' cal-cut' : ''}" data-st="${esc(dispSt(r))}" data-act="open" data-id="${esc(r.id)}" style="top:${a.toFixed(1)}px;height:${Math.max(18, b - a).toFixed(1)}px" title="${esc(r.id + ' · ' + r.titulo)}"><b class="cal-bt">${esc(r.id)}</b><span class="cal-bn">${esc(r.titulo)}</span><i class="cal-bh">${fT(fim)}</i></button>`;
+    }).join('');
+    const agora = now(), nd = new Date(agora); nd.setHours(0, 0, 0, 0);
+    const linhaAgora = nd.getTime() === k ? `<i class="cal-now" style="top:${Math.max(0, Math.min(H * CAL_PX, topo(agora))).toFixed(1)}px"></i>` : '';
+    return `<div class="cal-col${k === hoje ? ' cal-today' : ''}${d.getDay() === 0 || d.getDay() === 6 ? ' cal-we' : ''}"><i class="cal-off" style="top:0;height:${Math.max(0, (CAL_EXP[0] - CAL_H0) * CAL_PX)}px"></i><i class="cal-off" style="top:${(CAL_EXP[1] - CAL_H0) * CAL_PX}px;bottom:0"></i>${blocos}${linhaAgora}</div>`;
+  }).join('');
+  const cab = dias.map(k => {const d = new Date(k); return `<span class="${k === hoje ? 'cal-today' : ''}"><b>${DOW[d.getDay()]}</b> ${fD(k)}</span>`}).join('');
+  return `<div class="cal-week"><div class="cal-wh" style="--dm-cols:${dias.length}"><span class="cal-tcol"></span>${cab}</div><div class="cal-wb" style="--dm-cols:${dias.length};height:${H * CAL_PX}px"><div class="cal-hours2">${horas.join('')}</div>${cols}</div><div class="dm-note">A faixa clara é só referência de expediente (${p2(CAL_EXP[0])}h às ${p2(CAL_EXP[1])}h). O programa ainda não tem turnos nem feriados.</div></div>`;
+}
+function calSemana(){
+  const [GS] = calJanela(), dias = [];
+  for(let i = 0; i < 7; i++){const d = new Date(GS); d.setDate(d.getDate() + i); d.setHours(0, 0, 0, 0); dias.push(d.getTime())}
+  return `<div class="cal-wrap"><div>${calGrade(dias)}</div>${calSide()}</div>`;
+}
+function calDia(){
+  const [GS] = calJanela();
+  return `<div class="cal-wrap"><div>${calGrade([GS])}</div>${calSide()}</div>`;
+}
+function calSide(){
+  const c = D.cal, [GS, GE] = calJanela();
+  const dia = c.dia && c.dia >= GS && c.dia < GE ? c.dia : (c.modo === 'mes' ? 0 : GS);
+  if(!dia) return `<div class="cal-side"><div class="dm-empty">Clique num dia para ver as solicitações dele.</div></div>`;
+  const l = calPorDia(dia, dia + DAY).get(dia) || [];
+  const faixas = [[0, 6, 'madrugada'], [6, 12, 'manhã'], [12, 18, 'tarde'], [18, 24, 'noite']];
+  const cont = faixas.map(([a, b, nome]) => ({nome, n: l.filter(r => {const h = new Date(calWhen(r)).getHours(); return h >= a && h < b}).length}));
+  const pico = Math.max(1, ...cont.map(x => x.n));
+  const dens = cont.map(x => `<span class="${x.n === pico && x.n ? 'cal-pk' : ''}"><i style="height:${Math.round(x.n / pico * 100)}%"></i><small>${x.nome}</small><b>${x.n}</b></span>`).join('');
+  const d = new Date(dia);
+  return `<div class="cal-side"><div class="dm-ph"><h3>${DOW[d.getDay()]}, ${fD(dia)}</h3><span class="dm-s">${l.length} solicitaç${l.length === 1 ? 'ão' : 'ões'}</span></div>
+   <div class="cal-dens">${dens}</div>
+   <div class="cal-list">${l.map(card).join('') || '<div class="dm-empty">Nada neste dia.</div>'}</div></div>`;
+}
+function vCal(){
+  const c = D.cal;
+  const corpo = c.modo === 'mes' ? calMes() : c.modo === 'semana' ? calSemana() : calDia();
+  return calBar() + corpo;
 }
 
 /* ---------- ADM: cronoanálise ---------- */
@@ -1318,10 +1450,11 @@ const busyUI = () => modalOn() || !!D.open || D.notif || typing();
 function renderView(){
   const el = $('dm-view');
   if(!D.role || !D.v){el.innerHTML = ''; return}
-  const key = D.role + '|' + (D.imp || '') + '|' + (isAdm() ? D.tab + (D.tab === 'admin' ? D.admSub : '') : D.opTab), intro = key !== D.lastKey && !D.noIntro;
+  const sub = D.tab === 'admin' ? D.admSub : D.tab === 'cal' ? D.cal.modo : D.tab === 'crono' ? D.cr.modo : '';
+  const key = D.role + '|' + (D.imp || '') + '|' + (isAdm() ? D.tab + sub : D.opTab), intro = key !== D.lastKey && !D.noIntro;
   D.lastKey = key;
   const sc = $('dm-scroll'), top = sc.scrollTop, a = document.activeElement, fid = a && el.contains(a) && a.id ? a.id : '', sel = fid && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
-  el.innerHTML = !isAdm() ? vOp() : D.tab === 'painel' ? vPainel(intro) : D.tab === 'sol' ? vSol() : D.tab === 'hist' ? vHist() : D.tab === 'crono' ? vCrono() : vAdmin();
+  el.innerHTML = !isAdm() ? vOp() : D.tab === 'painel' ? vPainel(intro) : D.tab === 'sol' ? vSol() : D.tab === 'hist' ? vHist() : D.tab === 'cal' ? vCal() : D.tab === 'crono' ? vCrono() : vAdmin();
   if(intro) sc.scrollTop = 0; else sc.scrollTop = top;
   if(fid){const f = $(fid); if(f){f.focus(); if(sel && f.setSelectionRange) try{f.setSelectionRange(sel[0], sel[1])}catch(_){/* tipo sem seleção */}}}
   if(intro) countUp(el);
@@ -1751,7 +1884,7 @@ function act(a, d, el, ev){
   switch(a){
     case 'conn-retry': if(window.NestLocal.tentarAgora) window.NestLocal.tentarAgora(); break;
     case 'tab':
-      if(isAdm()){D.tab = d.v; if(d.v === 'crono' && (!D.crono || D.cronoP !== D.period)) loadCrono()}
+      if(isAdm()){D.tab = d.v; if(d.v === 'crono' && (!D.crono || D.cronoP !== D.period)) loadCrono(); if(d.v === 'cal') loadCalArq()}
       else{D.opTab = d.v; D.opF = d.v === 'recv' ? 'mine' : 'pend'}
       closePanels(); render(); break;
     case 'kpi': D.fSec = ''; D.fPrio = ''; D.fType = ''; D.q = ''; if(d.v === 'urg'){D.fPrio = 'urg'; D.fSt = 'open'} else D.fSt = d.v; D.tab = 'sol'; render(); break;
@@ -1768,6 +1901,9 @@ function act(a, d, el, ev){
     case 'view': D.view = d.v; renderView(); break;
     case 'opf': D.opF = d.v; renderView(); break;
     case 'period': D.period = num(d.v, 7); renderView(); loadCrono(); break;
+    case 'calmode': D.cal.modo = d.v; D.cal.desl = 0; D.cal.dia = 0; renderView(); loadCalArq(); break;
+    case 'calnav': D.cal.desl = num(d.v) === 0 ? 0 : D.cal.desl + num(d.v); D.cal.dia = 0; renderView(); loadCalArq(); break;
+    case 'calday': D.cal.dia = num(d.v); renderView(); break;
     case 'crwin': D.cr.modo = d.v; D.cr.desl = 0; renderView(); loadCronograma(); break;
     case 'crby': D.cr.por = d.v; renderView(); loadCronograma(); break;
     case 'crnav': D.cr.desl = num(d.v) === 0 ? 0 : D.cr.desl + num(d.v); renderView(); loadCronograma(); break;
@@ -1942,6 +2078,7 @@ function onChange(e){
   const id = e.target.id, v = e.target.value;
   if(id === 'dm-fSt'){D.fSt = v; renderView()}
   else if(id === 'dm-fSec'){D.fSec = v; renderView()}
+  else if(id === 'dm-calSec'){D.cal.sec = v; renderView()}
   else if(id === 'dm-fPrio'){D.fPrio = v; renderView()}
   else if(id === 'dm-fType'){D.fType = v; renderView()}
   else if(id === 'dm-hSt'){D.hSt = v; renderView()}
@@ -2018,6 +2155,7 @@ function symbols(host){
   S('dm-i-painel', '0 0 16 16', [['rect', {x: '1.2', y: '1.2', width: '5.4', height: '5.4'}], ['rect', {x: '9.4', y: '1.2', width: '5.4', height: '5.4'}], ['rect', {x: '1.2', y: '9.4', width: '5.4', height: '5.4'}], ['rect', {x: '9.4', y: '9.4', width: '5.4', height: '5.4'}]]);
   S('dm-i-sol', '0 0 16 16', [['rect', {x: '1.2', y: '2.2', width: '9.2', height: '11.6'}], ['path', {d: 'M12.2 6.2H15M13.4 4.6 15 6.2 13.4 7.8'}]]);
   S('dm-i-hist', '0 0 16 16', [['path', {d: 'M1.4 3.2H6.2M8.6 3.2h2.2v2.2'}], ['path', {d: 'M1.4 8H14.6'}], ['path', {d: 'M1.4 12.8H14.6'}]]);
+  S('dm-i-cal', '0 0 16 16', [['rect', {x: '1.4', y: '2.8', width: '13.2', height: '11.8', rx: '1.4'}], ['path', {d: 'M1.4 6.4H14.6M5 1.4v2.4M11 1.4v2.4'}]]);
   S('dm-i-crono', '0 0 16 16', [['path', {d: 'M1.2 8h3.6M6.2 8h3.6M11.2 8h3.6'}]]);
   S('dm-i-admin', '0 0 16 16', [['path', {d: 'M1.2 4.6H14.8'}], ['rect', {x: '4.2', y: '2.6', width: '3.2', height: '4'}], ['path', {d: 'M1.2 11.4H14.8'}], ['rect', {x: '8.6', y: '9.4', width: '3.2', height: '4'}]]);
 }
