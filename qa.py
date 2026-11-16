@@ -38,7 +38,17 @@ CRITICO = {
                     ["_pin_ok", "_pin_novo", "net_config", "net_save", "sessions_load", "check_pin", "session_ok", "ip_host",
                      "rev", "static_files", "_host_ok", "_remote", "_auth_ok", "_operador_ok", "end_headers", "_static", "_api",
                      "do_GET", "do_POST", "backup_mod", "fundo", "iniciar_fundo", "pode", "_backup", "registra", "_roda_filho",
-                     "sempre", "ligado", "tarefa_instalada", "_tamanho", "saude", "email_mod", "_email", "avisos_mod", "_avisos"]),
+                     "sempre", "ligado", "tarefa_instalada", "_tamanho", "saude", "email_mod", "_email", "avisos_mod", "_avisos",
+                     "dados_reais", "erro_modo"]),
+    # demo.py: as funções. Fora ficam só as tabelas de texto do módulo (títulos, nomes, comentários, e-mails
+    # fictícios): mutá-las só mede se um teste copia o texto palavra por palavra, não comportamento. As
+    # constantes de comportamento (MIN, DIAS, QUANTAS, TITULO_MAX, MISTURA, ARQUIVOS...) são conferidas em
+    # tests/test_demo.py (Modulo.test_constantes_da_demonstracao) e usadas pelos testes de fluxo.
+    "demo.py": (["tests/test_demo.py", "tests/test_demo_e2e.py"],
+                ["destino", "_p", "populada", "de_demonstracao", "limpar", "ligada", "carrega_api", "_util",
+                 "_hora", "_criado", "_passos", "_pessoas_de", "_elenco", "_titulo", "_criar", "rnd_setor_de",
+                 "_acao", "_dias_atras", "_fechada", "_aberta", "plano", "_numera", "aplicar", "_tk",
+                 "_sem_backup", "_marcador", "seed", "_mostra", "main"]),
     "store.py": (["tests/test_store.py", "tests/test_demandas_store.py"], None),
     "demandas/demandas_store.py": (["tests/test_demandas_store.py"], None),
     "demandas/demandas_calc.py": (["tests/test_demandas_calc.py"], None),
@@ -48,7 +58,7 @@ CRITICO = {
     "demandas/demandas_avisos.py": (["tests/test_demandas_avisos.py"], None),
 }
 # o que não entra na cópia usada pela mutação (pesado ou fora do código)
-NAO_COPIA = {".git", ".qa", "data", "node_modules", "docs", "__pycache__", ".mutmut-cache", ".claude"}
+NAO_COPIA = {".git", ".qa", "data", "data-demo", "node_modules", "docs", "__pycache__", ".mutmut-cache", ".claude"}
 
 
 def arquivos_de_teste() -> list:

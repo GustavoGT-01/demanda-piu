@@ -60,6 +60,9 @@ $('cx-cfg').onclick = () => {
 (async () => {
   const eu = await api('/api/eu').catch(() => null);
   if(eu && eu.papel === 'maquina') $('cx-cfg').hidden = false;   // o servidor recusa /api/rede e /api/backup vindos da rede de qualquer jeito
+  // DEMANDAS_MODO=demo: o selo fica à vista para ninguém confundir a apresentação com os dados de verdade
+  // (o título da aba é do módulo, que o reescreve com os avisos não lidos: o selo é só na tela)
+  if(eu && eu.modo === 'demo') $('cx-demo').hidden = false;
   // o módulo carrega logo depois e se abre sozinho (o <main> já está em data-view="demandas")
   for(let i = 0; i < 100 && !window.NestLocal.views.demandas; i++) await new Promise(r => setTimeout(r, 50));
   if(!window.NestLocal.views.demandas) toast('Não foi possível abrir a Central de demandas.');

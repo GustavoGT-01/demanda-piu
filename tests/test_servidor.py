@@ -138,7 +138,7 @@ class Arquivos(Base):
 
 class Api(Base):
     def test_maquina_e_adm(self):
-        self.assertEqual(json.loads(self.req("GET", "/api/eu")[2]), {"papel": "maquina"})
+        self.assertEqual(json.loads(self.req("GET", "/api/eu")[2]), {"papel": "maquina", "modo": "normal"})
         v = json.loads(self.req("GET", "/api/local/demandas")[2])
         self.assertEqual((v["papel"], v["demandas"]), ("adm", []))
 
@@ -209,6 +209,68 @@ class Api(Base):
         self.assertEqual(r2["pin"], r["pin"])
         self.assertNotEqual(r2["pin_op"], r["pin_op"])
         self.assertEqual(self.req("POST", "/api/rede", b"[x")[0], 400)
+
+
+class Modo(Base):
+    """Modo demonstração (DEMANDAS_MODO=demo): a tela ganha o selo e o servidor não sobe sobre a base real."""
+
+    def test_eu_diz_o_modo(self):
+        with mock.patch.object(servidor, "MODO", "demo"):
+            self.assertEqual(json.loads(self.req("GET", "/api/eu")[2]), {"papel": "maquina", "modo": "demo"})
+        self.assertEqual(json.loads(self.req("GET", "/api/eu")[2])["modo"], "normal")
+
+    def test_saude_diz_o_modo(self):
+        self.assertEqual(servidor.saude(self.port)["modo"], "normal")
+        with mock.patch.object(servidor, "MODO", "demo"):
+            self.assertEqual(servidor.saude(self.port)["modo"], "demo")
+
+    def test_modo_vem_do_ambiente(self):
+        for valor, esperado in (("demo", "demo"), ("DEMO", "demo"), (" demo ", "demo"), ("", "normal"),
+                                ("demonstracao", "normal"), ("1", "normal"), ("normal", "normal")):
+            with mock.patch.dict(os.environ, {"DEMANDAS_MODO": valor}):
+                modo = "demo" if (os.environ.get("DEMANDAS_MODO") or "").strip().lower() == "demo" else "normal"
+            self.assertEqual(modo, esperado, valor)
+
+    def test_dados_reais_reconhece_a_base_do_programa(self):
+        self.assertFalse(servidor.dados_reais())   # a pasta do teste é temporária
+        with mock.patch.object(servidor.store, "data_dir", return_value=servidor.ROOT / "data"):
+            self.assertTrue(servidor.dados_reais())
+        with mock.patch.object(servidor.store, "data_dir", return_value=servidor.ROOT / "demandas" / ".." / "data"):
+            self.assertTrue(servidor.dados_reais())
+        with mock.patch.object(servidor.store, "data_dir", return_value=servidor.ROOT / "data-demo"):
+            self.assertFalse(servidor.dados_reais())
+
+    def test_erro_modo_so_na_demonstracao_sobre_a_base_real(self):
+        self.assertIsNone(servidor.erro_modo())
+        with mock.patch.object(servidor, "MODO", "demo"):
+            self.assertIsNone(servidor.erro_modo())          # pasta temporária: pode
+            with mock.patch.object(servidor, "dados_reais", return_value=True):
+                self.assertEqual(servidor.erro_modo(),
+                                 "Modo demonstração apontado para a base real (data/): use o iniciar-demo.bat,"
+                                 " que aponta DEMANDAS_DATA para a pasta data-demo.")
+        with mock.patch.object(servidor, "dados_reais", return_value=True):
+            self.assertIsNone(servidor.erro_modo())          # modo normal na base real: é o de sempre
+
+    def test_main_recusa_a_demonstracao_na_base_real(self):
+        with mock.patch.object(servidor, "MODO", "demo"), \
+                mock.patch.object(servidor, "dados_reais", return_value=True), \
+                mock.patch.object(servidor, "net_config") as net, \
+                mock.patch.object(servidor, "Server") as srv, \
+                mock.patch("sys.stdout", io.StringIO()) as saida:
+            with self.assertRaises(SystemExit) as c:
+                servidor.main([])
+        self.assertEqual(c.exception.code, 1)
+        self.assertIn("iniciar-demo.bat", saida.getvalue())
+        net.assert_not_called()   # nem leu a configuração da rede: não escreve nada na base real
+        srv.assert_not_called()
+
+    def test_a_tela_tem_o_selo_ligado_ao_modo(self):
+        html = self.req("GET", "/")[2].decode("utf-8")
+        self.assertIn('id="cx-demo"', html)
+        self.assertIn("hidden", html.split('id="cx-demo"')[1].split(">")[0])   # escondido até o app.js mostrar
+        js = self.req("GET", "/app.js")[2].decode("utf-8")
+        self.assertIn("eu.modo === 'demo'", js)
+        self.assertIn("cx-demo", js)
 
 
 class Pins(Base):
@@ -330,7 +392,8 @@ class PelaRede(Base):
     def test_escritorio_tem_tudo_menos_a_rede(self):
         self.precisa_rede()
         h = self.login(servidor.net_config()["pin"])
-        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]), {"papel": "completo"})
+        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]),
+                         {"papel": "completo", "modo": "normal"})
         self.assertEqual(json.loads(self.req("GET", "/api/local/demandas", headers=h, rede=True)[2])["papel"], "adm")
         self.assertEqual(self.post("setor/salvar", {"modo": "novo", "id": "PCP", "nome": "Planejamento", "icone": "🗂️",
                                                     "cor": "#6366F1", "rev": 0}, h, rede=True)[0], 200)
@@ -345,7 +408,8 @@ class PelaRede(Base):
         h = self.login(servidor.net_config()["pin_op"])
         for path in ("/", "/index.html", "/app.js", "/local/demandas/demandas.js", "/local/demandas/figtree.woff2", "/api/rev"):
             self.assertEqual(self.req("GET", path, headers=h, rede=True)[0], 200, path)
-        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]), {"papel": "operador"})
+        self.assertEqual(json.loads(self.req("GET", "/api/eu", headers=h, rede=True)[2]),
+                         {"papel": "operador", "modo": "normal"})
         pub = json.loads(self.req("GET", "/api/local/demandas", headers=h, rede=True)[2])
         self.assertEqual(sorted(pub), ["pessoas", "setores"])   # só o necessário para o "quem é você?"
         self.assertNotIn("sal", json.dumps(pub))
@@ -439,7 +503,7 @@ class Detalhes(Base):
         self.assertEqual(h["Referrer-Policy"], "same-origin")
 
     def test_query_string_nao_muda_a_rota(self):
-        self.assertEqual(json.loads(self.req("GET", "/api/eu?x=1")[2]), {"papel": "maquina"})
+        self.assertEqual(json.loads(self.req("GET", "/api/eu?x=1")[2]), {"papel": "maquina", "modo": "normal"})
         self.assertEqual(self.req("GET", "/app.js?v=2")[0], 200)
         self.assertEqual(self.req("POST", "/api/local/demandas/vista?x=1", {})[0], 200)
         self.assertEqual(self.req("GET", "/api/local/demandasX")[0], 404)
@@ -1126,6 +1190,14 @@ class Fundo(unittest.TestCase):
         self.assertEqual((cls.call_args.args[0], net), (("0.0.0.0", servidor.PORT), True))
         self.assertEqual(out.splitlines()[1], "Acesso pela rede ligado (com PIN): http://10.0.0.5:%d, http://10.0.0.6:%d"
                          % (servidor.PORT, servidor.PORT))
+
+    def test_main_avisa_o_modo_demonstracao(self):
+        with mock.patch.object(servidor, "MODO", "demo"):
+            _cls, _fundo, out, _fim, _net, _sl = self.roda_main(False)
+        self.assertEqual(out.splitlines()[0], "MODO DEMONSTRAÇÃO: dados fictícios em %s" % servidor.store.data_dir())
+        self.assertIn("Central de demandas aberta", out.splitlines()[1])
+        _cls, _fundo, out, _fim, _net, _sl = self.roda_main(False)
+        self.assertNotIn("DEMONSTRAÇÃO", out)
 
     def test_main_porta_ocupada_nao_liga_nada(self):
         cls, fundo, out, fim, net, sl = self.roda_main(False, server=OSError("em uso"))

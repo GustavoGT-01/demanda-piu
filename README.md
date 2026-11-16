@@ -33,6 +33,27 @@ Feche a janela preta do servidor para desligar.
    ("Restore on AC power loss = Power On"), **IP fixo** reservado no roteador e **no-break no PC e no roteador**.
    Um PC que "dorme", ou um roteador sem energia, deixa todos os aparelhos sem a Central.
 
+## Modo demonstração (apresentação com dados fictícios)
+Para mostrar o sistema sem tocar nos dados de verdade, dê dois cliques em `iniciar-demo.bat`:
+
+- base de dados própria em `data-demo/` (a real, `data/`, não é lida nem escrita);
+- porta 8091 (`http://127.0.0.1:8091`), então a Central de verdade pode ficar ligada ao mesmo tempo;
+- selo discreto **DEMONSTRAÇÃO · dados fictícios** no alto da tela;
+- na primeira vez ele gera 150 demandas fictícias de uns 4 meses, com 6 setores e 12 pessoas, em todos os
+  status, algumas atrasadas, com pausas, comentários, cobranças e repasses;
+- backup e e-mail ficam desligados na demonstração: ela não gera cópia nem manda mensagem para ninguém.
+
+O programa se recusa a abrir em modo demonstração sobre a pasta `data/`.
+
+```bash
+py -3 demo.py seed --refazer
+```
+
+Isso zera `data-demo/` e gera tudo de novo (bom entre apresentações); **feche antes a janela da
+demonstração** — com ela aberta o comando avisa e não mexe em nada. O comando imprime os códigos de 4
+números de cada pessoa, que é o que você digita para entrar como operador. Com `--rede` ele também liga o
+acesso pela rede da demonstração (os PINs aparecem em ⚙ Configurações), para mostrar a tela do tablet.
+
 ## Dados
 Ficam em `data/` (fora do Git):
 
@@ -94,9 +115,11 @@ Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.jso
 | `email_envio.py` | aviso por e-mail: configuração (senha protegida pelo Windows), fila, envio SMTP e registro |
 | `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas_avisos.py` (preferências de aviso), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
 | `web/` | a página (`index.html`) e a casca (`app.js`: `api()`, avisos, atualização e o botão ⚙ Configurações) |
+| `demo.py` | gerador dos dados fictícios do modo demonstração (`iniciar-demo.bat`) |
 | `tests/` | testes Python e o teste de tela em jsdom |
 
-Variáveis opcionais: `DEMANDAS_PORT` (porta, padrão 8090) e `DEMANDAS_DATA` (pasta de dados).
+Variáveis opcionais: `DEMANDAS_PORT` (porta, padrão 8090), `DEMANDAS_DATA` (pasta de dados) e
+`DEMANDAS_MODO` (`demo` mostra o selo de demonstração na tela).
 
 ## Qualidade
 Regra em [docs/QUALIDADE.md](docs/QUALIDADE.md). Ferramentas de desenvolvimento em `requirements-dev.txt`

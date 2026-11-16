@@ -17,11 +17,14 @@ main{display:grid;height:100vh;height:100dvh;grid-template-rows:minmax(0,1fr)}
 [hidden]{display:none!important}
 .cx-cfg{position:fixed;left:12px;bottom:12px;z-index:70;border:1px solid #263457;background:#151E38;color:#93A0BF;border-radius:999px;padding:6px 12px;font:600 12px "Segoe UI",system-ui;cursor:pointer;opacity:.85}
 .cx-cfg:hover{opacity:1;color:#E7ECFA}
+/* Selo do modo demonstração (DEMANDAS_MODO=demo): discreto, fora do <main>, sem mexer no layout do módulo. */
+.cx-demo{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:80;border:1px solid #B45309;background:#2A1E07;color:#FBBF24;border-radius:999px;padding:4px 12px;font:700 11px "Segoe UI",system-ui;letter-spacing:.04em;pointer-events:none;opacity:.92}
 .cx-toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:90;background:#E7ECFA;color:#0C1224;padding:9px 15px;border-radius:12px;font-weight:600;max-width:calc(100% - 32px)}
 </style>
 </head>
 <body>
 <main data-view="demandas"></main>
+<div class="cx-demo" id="cx-demo" role="status" hidden>DEMONSTRAÇÃO · dados fictícios</div>
 <button type="button" class="cx-cfg" id="cx-cfg" hidden>⚙ Configurações</button>
 <div class="cx-toast" id="cx-toast" role="status" hidden></div>
 <script src="/app.js"></script>

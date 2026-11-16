@@ -35,6 +35,9 @@ MOD = ROOT / "demandas"
 WEB = ROOT / "web"
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DEMANDAS_PORT") or 8090)   # DEMANDAS_PORT troca a porta
+# DEMANDAS_MODO=demo (iniciar-demo.bat): dados fictícios em outra pasta e outra porta. A tela mostra o selo
+# "DEMONSTRAÇÃO" e o servidor se recusa a subir sobre a base real.
+MODO = "demo" if (os.environ.get("DEMANDAS_MODO") or "").strip().lower() == "demo" else "normal"
 VERSAO = "1.0.0"
 INICIO_MS = int(time.time() * 1000)   # vai no /api/rev: mudou = o servidor reiniciou
 LOG_MAX = 500                         # linhas guardadas em data/servidor.log
@@ -532,7 +535,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok() or not self._auth_ok() or not self._operador_ok(self.command, path):
             return
         if path == "/api/eu":
-            return self._json({"papel": self.papel})
+            return self._json({"papel": self.papel, "modo": MODO})
         if path == "/api/rev":
             return self._json({"rev": rev(), "inicio": INICIO_MS})
         if path == "/api/rede":
@@ -705,13 +708,27 @@ def saude(porta: int, agora: float | None = None) -> dict:
     with NET_LOCK:
         sessoes = sum(1 for s in SESSIONS.values() if s["exp"] > agora)
     anexos = ds.uso_anexos()
-    return {"versao": VERSAO, "inicio": INICIO_MS, "python": platform.python_version(), "sistema": platform.platform(terse=True),
+    return {"versao": VERSAO, "modo": MODO, "inicio": INICIO_MS, "python": platform.python_version(),
+            "sistema": platform.platform(terse=True),
             "nome_pc": socket.gethostname(), "porta": porta, "rede": NET_ON, "sessoes_rede": sessoes,
             "urls": ["http://%s:%d" % (a, porta) for a in lan_addresses()] if NET_ON else [],
             "disco": disco, "dados": {"demandas": _tamanho(ds.path()), "arquivo": _tamanho(ds.arquivo_path()),
                                       "anexos": anexos["bytes"], "cota": anexos["cota"]},
             "backup": {"ultimo": ok["t"] if ok else None, "copias": len(bk.listar(bk.pasta_local(bk.config())))},
             "tarefa": tarefa_instalada(), "log": log}
+
+
+def dados_reais() -> bool:
+    """A pasta de dados em uso é a base real (data/, ao lado do programa)?"""
+    return store.data_dir().resolve() == (ROOT / "data").resolve()
+
+
+def erro_modo():
+    """Mensagem que impede o servidor de subir, ou None. A demonstração nunca roda sobre os dados reais."""
+    if MODO == "demo" and dados_reais():
+        return ("Modo demonstração apontado para a base real (data/): use o iniciar-demo.bat, que aponta "
+                "DEMANDAS_DATA para a pasta data-demo.")
+    return None
 
 
 def ligado(porta: int = PORT, timeout: float = 2) -> bool:
@@ -731,6 +748,10 @@ def main(argv=None) -> None:
         sys.exit(0 if ligado() else 1)
     if argv[:1] == ["--sempre"]:
         sys.exit(sempre([sys.executable, str(ROOT / "servidor.py")]))
+    impedimento = erro_modo()
+    if impedimento:
+        print(impedimento)
+        sys.exit(1)
     global NET_ON
     NET_ON = net_config()["on"]
     sessions_load()
@@ -742,6 +763,8 @@ def main(argv=None) -> None:
         sys.exit(1)
     # só depois de abrir a porta: um segundo servidor não faz backup nem manda e-mail
     iniciar_fundo([backup_mod().tarefa, api_mod().tick, email_mod().tarefa])   # atraso antes do e-mail: sai na mesma rodada
+    if MODO == "demo":
+        print("MODO DEMONSTRAÇÃO: dados fictícios em " + str(store.data_dir()))
     print(f"Central de demandas aberta em http://{HOST}:{PORT}")
     if NET_ON:
         print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))
