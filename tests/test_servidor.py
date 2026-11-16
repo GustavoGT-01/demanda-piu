@@ -449,8 +449,8 @@ class PelaRede(Base):
         p = self.ok("aviso/prefs", {"tk": tk, "prefs": {"eventos": {"fila": False}}}, h, rede=True)["prefs"]
         self.assertEqual(p["eventos"]["fila"], False, "Meus avisos funciona no aparelho de operador")
         negadas = ["setor/salvar", "setor/ativar", "setor/apagar", "pessoa/salvar", "pessoa/ativar", "pessoa/apagar",
-                   "demanda/prioridade", "demanda/estender", "crono", "historico", "entrar/", "entrar/../setor/salvar",
-                   "demanda/criar/x", "demanda/"]
+                   "demanda/prioridade", "demanda/estender", "crono", "cronograma", "historico", "entrar/",
+                   "entrar/../setor/salvar", "demanda/criar/x", "demanda/"]
         for rest in negadas:
             st, _, raw = self.post(rest, {"tk": tk}, h, rede=True)
             self.assertEqual((st, raw.decode()), (403, servidor.OPERADOR_MSG), rest)

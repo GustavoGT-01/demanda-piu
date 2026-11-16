@@ -48,6 +48,8 @@ CORES = ("#6366F1", "#3B82F6", "#0EA5E9", "#06B6D4", "#0D9488", "#10B981", "#65A
 EST_MAX = 43200
 ESTENDER_MAX = 1440
 HIST_MAX = 5000            # demandas por pedido de histórico (a tela mostra 400)
+CRONO_MAX = 31 * calc.DIA  # janela máxima do cronograma: o maior mês
+CRONO_POR = ("setor", "pessoa")
 ITER = 100_000             # pbkdf2-sha256, igual à Produção: o bloqueio online é a defesa principal
 TENTATIVAS = 5
 BLOQUEIO_S = 60
@@ -894,6 +896,18 @@ def _crono(doc: dict, ator, body: dict, t: int) -> dict:
     return calc.crono(_todas(doc), t, dias)
 
 
+def _cronograma(doc: dict, ator, body: dict, t: int) -> dict:
+    """Cronograma multidia da janela pedida, agrupado por setor ou por pessoa. Só leitura: nada muda no rev.
+    O teto de linhas é do servidor (calc.GANTT_MULTI); a tela recebe `cortado` e avisa."""
+    _so_adm(ator)
+    de = _int(body.get("de"), "Início", 0, 10 ** 15)
+    ate = _int(body.get("ate"), "Fim", de + 1, 10 ** 15)
+    if ate - de > CRONO_MAX:
+        raise ApiError(400, "Período de até 31 dias.")
+    por = _de(body.get("por"), CRONO_POR, "Agrupamento")
+    return calc.gantt(_todas(doc), t, de, ate, por)
+
+
 def _vista_de(doc: dict, ator, t: int) -> dict:
     if ator is not None:
         return calc.vista(doc, t, ator)
@@ -915,7 +929,7 @@ ESCRITAS = {
     "setor/salvar": _setor_salvar, "setor/ativar": _setor_ativar, "setor/apagar": _setor_apagar,
     "pessoa/salvar": _pessoa_salvar, "pessoa/ativar": _pessoa_ativar, "pessoa/apagar": _pessoa_apagar,
 }
-LEITURAS = {"vista": _vista, "historico": _historico, "crono": _crono}
+LEITURAS = {"vista": _vista, "historico": _historico, "crono": _crono, "cronograma": _cronograma}
 
 
 # ---------- e-mail: quem recebe e o que vai (a fila e o envio ficam no email_envio.py) ----------

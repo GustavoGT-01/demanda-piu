@@ -149,6 +149,7 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `POST pessoa/ativar` | `{id, rev}` | ADM; desativar devolve as demandas dela à fila do setor |
 | `POST pessoa/apagar` | `{id, rev}` | ADM; recusa se há histórico |
 | `POST crono` | `{dias: 1\|7\|30}` | ADM → objeto de cronoanálise (abaixo) |
+| `POST cronograma` | `{de, ate, por: "setor"\|"pessoa"}` | ADM → objeto de cronograma (abaixo); janela de até 31 dias |
 
 Pessoa usa `tk` em todas as rotas de ação; ADM não manda `tk`. As regras de negócio são as de
 `DEMANDA/src/models/requests.js` e `factory.js` (ver plano), com autorização acrescentada.
@@ -214,6 +215,21 @@ anexos_uso {bytes, cota}                            # só ADM
  gantt: {ini, fim, linhas: [{id, de, para, titulo, segs: [{k: "wait"|"exec"|"pause", a, b}], prazo, atrasada, viva}]}}
 ```
 Médias `null` quando não há dado. Gantt: janela agora−10h a agora+3h, 14 ativas por atenção + 4 concluídas recentes.
+
+## Cronograma multidia (`POST cronograma`)
+```
+{ini, fim, por, agora, cortado,
+ grupos: [{chave, n, ativas,
+           linhas: [{id, de, para, titulo, segs, prazo, atrasada, viva, p, plano: {a, b}}]}]}
+```
+Mesma janela e os mesmos trechos do gantt, só com outro recorte: `{de, ate}` em ms (até 31 dias; invertida é
+ordenada), `por` agrupando por sigla de setor ou por `pid` (`chave: null` é a fila do setor, um grupo só).
+Grupos ordenados por `ativas` desc, `n` desc, `chave`; linhas de cada grupo por `criado`. Entram as ativas e as
+concluídas que cruzam a janela ou cujo prazo cai nela — cancelada não entra. O teto é `calc.GANTT_MULTI` (120)
+linhas, escolhidas pela atenção (atrasada e urgente primeiro), e `cortado` diz se sobrou alguma de fora.
+
+`p` (a pessoa) e `plano` (a barra `criado` → `prazo`) existem **só** aqui: a linha do `crono.gantt` continua
+exatamente com as oito chaves listadas acima, e `por`, `agora`, `grupos` e `cortado` não existem lá.
 
 ## Frontend
 - `STATIC` (CSS, JS e fontes) é tudo o que o servidor entrega desta pasta. `REV_FILE = "demandas.json"`.

@@ -736,7 +736,8 @@ class Identidade(Base):
                            ("setor/ativar", {"id": "CNC", "rev": 0}), ("setor/apagar", {"id": "CNC", "rev": 0}),
                            ("pessoa/salvar", {"modo": "novo", "nome": "Ze", "setor": "CNC", "codigo": "1234", "rev": 0}),
                            ("pessoa/ativar", {"id": self.bruno, "rev": 0}), ("pessoa/apagar", {"id": self.bruno, "rev": 0}),
-                           ("historico", {"de": 0, "ate": T0}), ("crono", {"dias": 7})):
+                           ("historico", {"de": 0, "ate": T0}), ("crono", {"dias": 7}),
+                           ("cronograma", {"de": 0, "ate": T0, "por": "setor"})):
             self.assertEqual(self.erro(self.pes, self.tk_c, rest, body), 403, rest)
             self.assertEqual(self.msg(self.pes, self.tk_c, rest, body), "Só o escritório pode fazer isso.")
 
@@ -1680,11 +1681,73 @@ class Leituras(Base):
         for ruim in (2, True, "7", None):
             self.assertEqual(self.erro(self.adm, "crono", {"dias": ruim}), 400, ruim)
 
+    def test_cronograma(self):
+        d = self.nova(self.tk_h)
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        morta = dict(self.dem(d["id"]), id="SOL-5", status="done", fim=self.t)
+        (self.dir / "demandas-arquivo.json").write_text(json.dumps({"v": 1, "demandas": [morta]}), encoding="utf-8")
+        de, ate = T0 - 86400000, self.t + 86400000
+        g = self.adm("cronograma", {"de": de, "ate": ate, "por": "setor"})
+        self.assertEqual(set(g), {"ini", "fim", "por", "agora", "cortado", "grupos"})
+        self.assertEqual((g["ini"], g["fim"], g["por"], g["agora"]), (de, ate, "setor", self.t))
+        ids = [ln["id"] for x in g["grupos"] for ln in x["linhas"]]
+        self.assertIn("SOL-5", ids)   # o arquivo morto entra, como no histórico
+        self.assertIn(d["id"], ids)
+        self.assertIn("plano", g["grupos"][0]["linhas"][0])
+        por_pessoa = self.adm("cronograma", {"de": de, "ate": ate, "por": "pessoa"})
+        self.assertEqual(por_pessoa["por"], "pessoa")
+        for ruim, txt in (({"de": de, "ate": de, "por": "setor"}, "Fim inválido."),
+                          ({"de": de, "ate": de - 1, "por": "setor"}, "Fim inválido."),
+                          ({"ate": ate, "por": "setor"}, "Início inválido."),
+                          ({"de": -1, "ate": ate, "por": "setor"}, "Início inválido."),
+                          ({"de": "0", "ate": ate, "por": "setor"}, "Início inválido."),
+                          ({"de": True, "ate": ate, "por": "setor"}, "Início inválido."),
+                          ({"de": de, "ate": ate}, "Agrupamento inválido."),
+                          ({"de": de, "ate": ate, "por": "setor "}, "Agrupamento inválido."),
+                          ({"de": de, "ate": ate, "por": True}, "Agrupamento inválido."),
+                          ({"de": de, "ate": ate, "por": 1}, "Agrupamento inválido.")):
+            self.assertEqual(self.erro(self.adm, "cronograma", ruim), 400, ruim)
+            self.assertEqual(self.msg(self.adm, "cronograma", ruim), txt, ruim)
+        self.adm("cronograma", {"de": 0, "ate": api.CRONO_MAX, "por": "setor"})   # 31 dias cabe
+        self.assertEqual(self.msg(self.adm, "cronograma", {"de": 0, "ate": api.CRONO_MAX + 1, "por": "setor"}),
+                         "Período de até 31 dias.")
+
+    def test_cronograma_e_leitura(self):
+        self.assertIn("cronograma", api.LEITURAS)
+        self.assertNotIn("cronograma", api.ESCRITAS)
+
+    def test_cronograma_limites_exatos(self):
+        """As bordas da validação, uma a uma: é onde o teste de mutação cobra."""
+        self.assertEqual(api.CRONO_MAX, 31 * 86400000)   # 31 dias; um teste que lesse a constante não a travaria
+        self.assertEqual(api.CRONO_POR, ("setor", "pessoa"))
+        de = T0 - 86400000
+        self.adm("cronograma", {"de": de, "ate": de + 1, "por": "setor"})   # fim = início + 1 ms já vale
+        self.assertEqual(self.erro(self.adm, "cronograma", {"de": de, "ate": de, "por": "setor"}), 400)
+        # o teto do _int é 10**15, nos dois campos
+        self.adm("cronograma", {"de": 10 ** 15 - 1, "ate": 10 ** 15, "por": "setor"})
+        self.assertEqual(self.msg(self.adm, "cronograma", {"de": 10 ** 15 + 1, "ate": 10 ** 15 + 2, "por": "setor"}),
+                         "Início inválido.")
+        self.assertEqual(self.msg(self.adm, "cronograma", {"de": 10 ** 15 - 1, "ate": 10 ** 15 + 1, "por": "setor"}),
+                         "Fim inválido.")
+        # a janela longa demais é 400, não 401: o status vai para a tela
+        longa = {"de": 0, "ate": api.CRONO_MAX + 1, "por": "setor"}
+        self.assertEqual(self.erro(self.adm, "cronograma", longa), 400)
+        self.assertEqual(self.msg(self.adm, "cronograma", longa), "Período de até 31 dias.")
+
+    def test_cronograma_corta_no_teto(self):
+        for _ in range(5):
+            self.nova()
+        with mock.patch.object(api.calc, "GANTT_MULTI", 2):
+            g = self.adm("cronograma", {"de": T0 - 86400000, "ate": self.t + 86400000, "por": "setor"})
+        self.assertIs(g["cortado"], True)
+        self.assertEqual(sum(len(x["linhas"]) for x in g["grupos"]), 2)
+
     def test_leitura_nao_grava(self):
         self.nova()
         r0 = self.rev()
         self.adm("historico", {"de": 0, "ate": T0})
         self.adm("crono", {"dias": 7})
+        self.adm("cronograma", {"de": T0 - 86400000, "ate": T0, "por": "setor"})
         self.adm("vista")
         self.assertEqual(self.rev(), r0)
 

@@ -19,6 +19,8 @@ EVL = {"created": "Solicitação criada", "started": "Iniciada",   # "assigned" 
        "nudge": "Cobrança enviada", "late": "Prazo estourado", "attach": "Anexo enviado"}
 FEED_N = 14
 GANTT_ATIVAS, GANTT_FEITAS = 14, 4
+GANTT_ATRAS, GANTT_FRENTE = 10 * HORA, 3 * HORA   # a janela de hoje da linha do tempo
+GANTT_MULTI = 120   # teto de linhas do cronograma multidia (o mês cheio encheria a tela)
 
 
 def dur(m: int) -> str:
@@ -302,14 +304,58 @@ def crono(demandas: list, agora: int, dias: int) -> dict:
             "ranking": ranking[:6], "gantt": gantt(demandas, agora)}
 
 
-def gantt(demandas: list, agora: int) -> dict:
-    """Janela agora-10h a agora+3h: as 14 ativas mais urgentes e as 4 concluídas mais recentes nela, pela criação."""
-    ini, fim = agora - 10 * HORA, agora + 3 * HORA
-    vivas = sorted((d for d in demandas if ativa(d)), key=lambda d: chave_atencao(d, agora))[:GANTT_ATIVAS]
-    feitas = sorted((d for d in demandas if d.get("status") == "done" and d.get("fim") is not None and d["fim"] >= ini),
-                    key=lambda d: -d["fim"])[:GANTT_FEITAS]
-    linhas = [{"id": d["id"], "de": d["de"]["s"], "para": d["para"]["s"], "titulo": d.get("titulo"),
-               "segs": segs(d, agora), "prazo": prazo(d),
-               "atrasada": atrasada(d, agora) or atrasou_concluida(d), "viva": ativa(d)}
-              for d in sorted(vivas + feitas, key=lambda d: d["criado"])]
-    return {"ini": ini, "fim": fim, "linhas": linhas}
+def _janela(agora: int, ini=None, fim=None) -> tuple:
+    """A janela em ms. Sem limites, a de hoje (agora-10h a agora+3h); invertida, ordenada."""
+    a = agora - GANTT_ATRAS if ini is None else ini
+    b = agora + GANTT_FRENTE if fim is None else fim
+    return (a, b) if a <= b else (b, a)
+
+
+def _na_janela(d: dict, ini: int, fim: int, agora: int) -> bool:
+    """A demanda tem o que mostrar nesta janela: o prazo cai dentro, ou algum trecho a cruza."""
+    if ini <= prazo(d) <= fim:
+        return True
+    return any(s["a"] < fim and s["b"] > ini for s in segs(d, agora))
+
+
+def _linha(d: dict, agora: int, plano: bool = False) -> dict:
+    """Uma linha da linha do tempo. `plano` acrescenta a pessoa e a barra criado->prazo, que só o
+    cronograma multidia desenha: a linha da janela de hoje mantém exatamente as chaves de sempre."""
+    ln = {"id": d["id"], "de": d["de"]["s"], "para": d["para"]["s"], "titulo": d.get("titulo"),
+          "segs": segs(d, agora), "prazo": prazo(d),
+          "atrasada": atrasada(d, agora) or atrasou_concluida(d), "viva": ativa(d)}
+    if plano:
+        ln["p"] = d["para"]["p"]
+        ln["plano"] = {"a": d["criado"], "b": prazo(d)}
+    return ln
+
+
+def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None) -> dict:
+    """A linha do tempo. Sem `por`: a janela de hoje (agora-10h a agora+3h), com as 14 ativas mais
+    urgentes e as 4 concluídas mais recentes nela, pela criação — a saída de sempre, inalterada.
+
+    Com `por` ("setor" ou "pessoa"): o cronograma multidia da janela pedida, agrupado, com no máximo
+    `limite` linhas (padrão GANTT_MULTI) e `cortado` dizendo se sobrou gente de fora. Só este modo
+    acrescenta `por`, `agora`, `grupos`, `cortado` e, em cada linha, `p` e `plano`.
+    """
+    ini, fim = _janela(agora, ini, fim)
+    if por is None:
+        vivas = sorted((d for d in demandas if ativa(d)), key=lambda d: chave_atencao(d, agora))[:GANTT_ATIVAS]
+        feitas = sorted((d for d in demandas if d.get("status") == "done" and d.get("fim") is not None and d["fim"] >= ini),
+                        key=lambda d: -d["fim"])[:GANTT_FEITAS]
+        linhas = [_linha(d, agora) for d in sorted(vivas + feitas, key=lambda d: d["criado"])]
+        return {"ini": ini, "fim": fim, "linhas": linhas}
+    teto = GANTT_MULTI if limite is None else limite
+    elegiveis = [d for d in demandas
+                 if (ativa(d) or d.get("status") == "done") and _na_janela(d, ini, fim, agora)]
+    # O corte segue a atenção (atrasada e urgente primeiro), nunca a ordem do arquivo.
+    escolhidas = sorted(elegiveis, key=lambda d: chave_atencao(d, agora))[:max(0, teto)]
+    por_chave: dict = {}
+    for d in escolhidas:
+        por_chave.setdefault(d["para"]["p"] if por == "pessoa" else d["para"]["s"], []).append(d)
+    grupos = [{"chave": k, "n": len(l), "ativas": sum(1 for x in l if ativa(x)),
+               "linhas": [_linha(d, agora, plano=True) for d in sorted(l, key=lambda d: d["criado"])]}
+              for k, l in por_chave.items()]
+    grupos.sort(key=lambda g: (-g["ativas"], -g["n"], str(g["chave"])))
+    return {"ini": ini, "fim": fim, "por": por, "agora": agora,
+            "cortado": len(elegiveis) > len(escolhidas), "grupos": grupos}

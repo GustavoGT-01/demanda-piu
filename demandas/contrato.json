@@ -366,6 +366,102 @@
    ]
   }
  },
+ "cronograma_exemplo": {
+  "ini": 1799913600000,
+  "fim": 1800086400000,
+  "por": "setor",
+  "agora": 1800000000000,
+  "cortado": false,
+  "grupos": [
+   {
+    "chave": "CNC",
+    "n": 2,
+    "ativas": 2,
+    "linhas": [
+     {
+      "id": "SOL-1041",
+      "de": "PCP",
+      "para": "CNC",
+      "titulo": "Demanda 1041",
+      "segs": [
+       {
+        "k": "wait",
+        "a": 1799992800000,
+        "b": 1799996400000
+       },
+       {
+        "k": "exec",
+        "a": 1799996400000,
+        "b": 1800000000000
+       }
+      ],
+      "prazo": 1799998200000,
+      "atrasada": true,
+      "viva": true,
+      "p": "p2",
+      "plano": {
+       "a": 1799992800000,
+       "b": 1799998200000
+      }
+     },
+     {
+      "id": "SOL-1042",
+      "de": "PCP",
+      "para": "CNC",
+      "titulo": "Demanda 1042",
+      "segs": [
+       {
+        "k": "wait",
+        "a": 1799992800000,
+        "b": 1800000000000
+       }
+      ],
+      "prazo": 1799998200000,
+      "atrasada": true,
+      "viva": true,
+      "p": null,
+      "plano": {
+       "a": 1799992800000,
+       "b": 1799998200000
+      }
+     }
+    ]
+   },
+   {
+    "chave": "SLD",
+    "n": 1,
+    "ativas": 0,
+    "linhas": [
+     {
+      "id": "SOL-1043",
+      "de": "PCP",
+      "para": "SLD",
+      "titulo": "Demanda 1043",
+      "segs": [
+       {
+        "k": "wait",
+        "a": 1799985600000,
+        "b": 1799989200000
+       },
+       {
+        "k": "exec",
+        "a": 1799989200000,
+        "b": 1799996400000
+       }
+      ],
+      "prazo": 1799991000000,
+      "atrasada": true,
+      "viva": false,
+      "p": "p3",
+      "plano": {
+       "a": 1799985600000,
+       "b": 1799991000000
+      }
+     }
+    ]
+   }
+  ]
+ },
  "entrar_exemplo": {
   "tk": "q8V...",
   "eu": {

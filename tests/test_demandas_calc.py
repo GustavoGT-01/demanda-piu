@@ -500,5 +500,184 @@ class Sobreviventes(unittest.TestCase):
                          ["Falta de material", "Outro", "Retrabalho"])
 
 
+class GanttJanela(unittest.TestCase):
+    """A janela do cronograma: cálculo de tempo, por isso meta de 90% de cobertura e de mutação."""
+
+    LINHA = {"id", "de", "para", "titulo", "segs", "prazo", "atrasada", "viva"}
+
+    def test_janela_de_hoje_inalterada(self):
+        """Sem `por`, a saída é a de sempre: nem chave nova no objeto, nem na linha."""
+        g = calc.gantt([dem(1)], T0 + MIN)
+        self.assertEqual(set(g), {"ini", "fim", "linhas"})
+        self.assertEqual(set(g["linhas"][0]), self.LINHA)
+        self.assertEqual((g["ini"], g["fim"]), (T0 + MIN - 10 * HORA, T0 + MIN + 3 * HORA))
+
+    def test_janela_explicita_sem_agrupar(self):
+        """ini/fim valem sem `por`, e a seleção de 14 ativas + 4 concluídas continua a mesma."""
+        rows = [dem(i) for i in range(20)] + [dem(100 + i, status="done", fim=T0 + MIN) for i in range(6)]
+        g = calc.gantt(rows, T0 + MIN, T0 - 2 * HORA, T0 + 2 * HORA)
+        self.assertEqual((g["ini"], g["fim"]), (T0 - 2 * HORA, T0 + 2 * HORA))
+        self.assertEqual(set(g), {"ini", "fim", "linhas"})
+        self.assertEqual(len(g["linhas"]), calc.GANTT_ATIVAS + calc.GANTT_FEITAS)
+
+    def test_janela(self):
+        self.assertEqual(calc._janela(T0), (T0 - 10 * HORA, T0 + 3 * HORA))
+        self.assertEqual(calc._janela(T0, T0 + HORA, T0 - HORA), (T0 - HORA, T0 + HORA))   # invertida, ordenada
+        self.assertEqual(calc._janela(T0, T0, T0), (T0, T0))                               # vazia, não estoura
+        self.assertEqual(calc._janela(T0, T0 + HORA, None), (T0 + HORA, T0 + 3 * HORA))
+        self.assertEqual(calc._janela(T0, None, T0 - HORA), (T0 - 10 * HORA, T0 - HORA))
+        self.assertEqual(calc._janela(T0, 0, 0), (0, 0))   # 0 é limite, não "não informado"
+
+    def test_na_janela_um_caso_por_ramo(self):
+        j = (T0, T0 + 4 * HORA)
+        # prazo dentro da janela, trechos fora: entra pelo prazo
+        self.assertIs(calc._na_janela(dem(1, criado=T0 - 10 * HORA, est=11 * 60, fim=T0 - 9 * HORA, status="done"),
+                                      *j, T0 + 5 * HORA), True)
+        # concluída inteiramente antes: sai
+        self.assertIs(calc._na_janela(dem(2, criado=T0 - 10 * HORA, est=60, fim=T0 - 9 * HORA, status="done"),
+                                      *j, T0 + 5 * HORA), False)
+        # concluída com um trecho cruzando o começo da janela: entra
+        self.assertIs(calc._na_janela(dem(3, criado=T0 - HORA, est=60, iniciado=T0 - HORA, fim=T0 + HORA,
+                                          status="done"), *j, T0 + 5 * HORA), True)
+        # engloba a janela inteira: entra
+        self.assertIs(calc._na_janela(dem(4, criado=T0 - 10 * HORA, est=60, iniciado=T0 - 10 * HORA,
+                                          fim=T0 + 10 * HORA, status="done"), *j, T0 + 20 * HORA), True)
+        # toda depois: sai
+        self.assertIs(calc._na_janela(dem(5, criado=T0 + 9 * HORA, est=60, fim=T0 + 10 * HORA, status="done"),
+                                      *j, T0 + 11 * HORA), False)
+        # encosta na borda sem cruzar: sai (fim exatamente em ini)
+        self.assertIs(calc._na_janela(dem(6, criado=T0 - HORA, est=600, fim=T0, status="done"),
+                                      *j, T0 + 5 * HORA), False)
+
+    def test_por_setor(self):
+        rows = [dem(1, para={"s": "CNC", "p": "a"}), dem(2, para={"s": "CNC", "p": "b"}),
+                dem(3, para={"s": "ALM", "p": "c"}, status="done", fim=T0 + MIN),
+                dem(4, para={"s": "SLD", "p": "d"})]
+        g = calc.gantt(rows, T0 + MIN, T0 - HORA, T0 + 2 * HORA, "setor")
+        self.assertEqual(set(g), {"ini", "fim", "por", "agora", "cortado", "grupos"})
+        self.assertEqual((g["por"], g["agora"], g["cortado"]), ("setor", T0 + MIN, False))
+        # CNC tem 2 ativas, SLD 1 ativa, ALM nenhuma: ativas desc, depois total desc, depois a sigla
+        self.assertEqual([x["chave"] for x in g["grupos"]], ["CNC", "SLD", "ALM"])
+        self.assertEqual([(x["n"], x["ativas"]) for x in g["grupos"]], [(2, 2), (1, 1), (1, 0)])
+        ids = [ln["id"] for x in g["grupos"] for ln in x["linhas"]]
+        self.assertEqual(sorted(ids), ["SOL-1", "SOL-2", "SOL-3", "SOL-4"])   # nenhuma repetida entre grupos
+        self.assertEqual(len(ids), len(set(ids)))
+
+    def test_por_setor_desempata_pela_sigla(self):
+        rows = [dem(1, para={"s": "ZZZ", "p": "a"}), dem(2, para={"s": "AAA", "p": "b"})]
+        g = calc.gantt(rows, T0 + MIN, T0 - HORA, T0 + 2 * HORA, "setor")
+        self.assertEqual([x["chave"] for x in g["grupos"]], ["AAA", "ZZZ"])
+
+    def test_por_pessoa(self):
+        rows = [dem(1, para={"s": "CNC", "p": "ana"}), dem(2, para={"s": "CNC", "p": "ana"}),
+                dem(3, para={"s": "CNC", "p": None}), dem(4, para={"s": "ALM", "p": None})]
+        g = calc.gantt(rows, T0 + MIN, T0 - HORA, T0 + 2 * HORA, "pessoa")
+        chaves = [x["chave"] for x in g["grupos"]]
+        self.assertEqual(sorted(chaves, key=str), [None, "ana"])   # a fila do setor é um grupo só
+        porc = {x["chave"]: x for x in g["grupos"]}
+        self.assertEqual(porc["ana"]["n"], 2)   # duas da mesma pessoa no mesmo grupo
+        self.assertEqual(porc[None]["n"], 2)    # SOL-3 e SOL-4 juntas, sem pessoa
+        self.assertEqual([ln["id"] for ln in porc["ana"]["linhas"]], ["SOL-1", "SOL-2"])   # por criação
+
+    def test_plano_e_pessoa_so_no_multidia(self):
+        d = dem(1, criado=T0, est=90, para={"s": "CNC", "p": "ana"})
+        ln = calc.gantt([d], T0 + MIN, T0 - HORA, T0 + 4 * HORA, "setor")["grupos"][0]["linhas"][0]
+        self.assertEqual(set(ln), self.LINHA | {"p", "plano"})
+        self.assertEqual(ln["plano"], {"a": T0, "b": T0 + 90 * MIN})
+        self.assertEqual(ln["p"], "ana")
+        self.assertNotIn("plano", calc.gantt([d], T0 + MIN)["linhas"][0])   # ausente na janela de hoje
+        self.assertNotIn("p", calc.gantt([d], T0 + MIN)["linhas"][0])
+
+    def test_plano_com_est_grande_e_pequeno(self):
+        grande = dem(1, criado=T0, est=calc.DIA // MIN)   # prazo muito depois do fim da janela
+        ln = calc.gantt([grande], T0 + MIN, T0 - HORA, T0 + HORA, "setor")["grupos"][0]["linhas"][0]
+        self.assertEqual(ln["plano"], {"a": T0, "b": T0 + calc.DIA})
+        curto = dem(2, criado=T0, est=0)
+        ln2 = calc.gantt([curto], T0 + MIN, T0 - HORA, T0 + HORA, "setor")["grupos"][0]["linhas"][0]
+        self.assertEqual(ln2["plano"], {"a": T0, "b": T0})   # est=0: plano de duração zero, sem estourar
+
+    def test_limite_e_cortado(self):
+        rows = [dem(i, criado=T0 + i * MIN) for i in range(5)]
+        j = (T0 - HORA, T0 + 6 * HORA)
+        g = calc.gantt(rows, T0 + MIN, *j, "setor", limite=2)
+        self.assertIs(g["cortado"], True)
+        self.assertEqual(sum(len(x["linhas"]) for x in g["grupos"]), 2)
+        cabe = calc.gantt(rows, T0 + MIN, *j, "setor", limite=5)
+        self.assertIs(cabe["cortado"], False)
+        self.assertEqual(sum(len(x["linhas"]) for x in cabe["grupos"]), 5)
+        zero = calc.gantt(rows, T0 + MIN, *j, "setor", limite=0)
+        self.assertEqual((zero["grupos"], zero["cortado"]), ([], True))
+
+    def test_teto_padrao(self):
+        rows = [dem(i, criado=T0 + i * MIN) for i in range(calc.GANTT_MULTI + 30)]
+        g = calc.gantt(rows, T0 + MIN, T0 - HORA, T0 + 200 * HORA, "setor")
+        self.assertEqual(sum(len(x["linhas"]) for x in g["grupos"]), calc.GANTT_MULTI)
+        self.assertIs(g["cortado"], True)
+
+    def test_corte_respeita_a_atencao(self):
+        """Com o teto estourado, a atrasada e a urgente ficam; a tranquila sai."""
+        j = (T0 - 10 * HORA, T0 + 10 * HORA)
+        agora = T0 + 5 * HORA
+        atras = dem(1, criado=T0, est=60)                      # prazo T0+1h, já estourado em agora
+        urg = dem(2, criado=T0 + 4 * HORA, est=600, prio="urg")
+        calma = dem(3, criado=T0 + 4 * HORA, est=600, prio="low")
+        g = calc.gantt([calma, urg, atras], agora, *j, "setor", limite=2)
+        self.assertEqual(sorted(ln["id"] for x in g["grupos"] for ln in x["linhas"]), ["SOL-1", "SOL-2"])
+        self.assertIs(g["cortado"], True)
+
+    def test_cancelada_nunca_entra(self):
+        """O multidia mostra ativas e concluídas; cancelada fica fora mesmo dentro da janela."""
+        c = dem(1, status="canc", criado=T0, est=60, fim=T0 + MIN)
+        self.assertEqual(calc.gantt([c], T0 + MIN, T0 - HORA, T0 + 2 * HORA, "setor")["grupos"], [])
+
+    def test_janela_nao_usa_fuso(self):
+        """A janela é só aritmética de ms: o mesmo instante dá o mesmo resultado em qualquer fuso."""
+        rows = [dem(1, criado=T0, est=60)]
+        a = calc.gantt(rows, T0 + MIN, T0 - 31 * calc.DIA, T0, "setor")
+        b = calc.gantt(rows, T0 + MIN, T0 - 31 * calc.DIA, T0, "setor")
+        self.assertEqual(a, b)
+        self.assertEqual((a["ini"], a["fim"]), (T0 - 31 * calc.DIA, T0))
+
+    def test_constantes(self):
+        """Os números são contrato com a tela e com o CONTRATO.md; um teste que os lesse não os travaria."""
+        self.assertEqual((calc.GANTT_ATIVAS, calc.GANTT_FEITAS), (14, 4))
+        self.assertEqual((calc.GANTT_ATRAS, calc.GANTT_FRENTE), (10 * HORA, 3 * HORA))
+        self.assertEqual(calc.GANTT_MULTI, 120)
+
+    def test_na_janela_nas_bordas_exatas(self):
+        j = (T0, T0 + 4 * HORA)
+        agora = T0 + 10 * HORA
+        # prazo exatamente no começo da janela: entra
+        self.assertIs(calc._na_janela(dem(1, criado=T0 - HORA, est=60, fim=T0 - 30 * MIN, status="done"),
+                                      *j, agora), True)
+        # prazo exatamente no fim da janela: entra
+        self.assertIs(calc._na_janela(dem(2, criado=T0 + 3 * HORA, est=60, fim=T0 + 3 * HORA + MIN,
+                                          status="done"), *j, agora), True)
+        # um trecho que começa exatamente no fim da janela, com o prazo depois: não entra
+        self.assertIs(calc._na_janela(dem(3, criado=T0 + 4 * HORA, est=60, fim=T0 + 6 * HORA, status="done"),
+                                      *j, agora), False)
+        # um trecho que termina exatamente no começo da janela: não entra
+        self.assertIs(calc._na_janela(dem(4, criado=T0 - 2 * HORA, est=600, fim=T0, status="done"),
+                                      *j, agora), False)
+        # prazo exatamente no fim da janela e nenhum trecho cruzando: entra só pelo prazo. Isola o ramo do
+        # prazo do ramo dos trechos, que no caso acima respondia pelos dois.
+        so_prazo = dem(5, criado=T0 + 4 * HORA, est=0, fim=T0 + 4 * HORA, status="done")
+        self.assertEqual([(s["a"], s["b"]) for s in calc.segs(so_prazo, agora)], [(T0 + 4 * HORA, T0 + 4 * HORA)])
+        self.assertIs(calc._na_janela(so_prazo, *j, agora), True)
+
+    def test_grupos_desempatam_pelo_total_antes_da_chave(self):
+        """Com as mesmas ativas, ganha quem tem mais linhas — e isso vem antes da ordem alfabética."""
+        rows = [dem(1, para={"s": "ZZZ", "p": "a"}),
+                dem(2, para={"s": "ZZZ", "p": "b"}, status="done", fim=T0 + MIN),
+                dem(3, para={"s": "ZZZ", "p": "c"}, status="done", fim=T0 + MIN),
+                dem(4, para={"s": "AAA", "p": "d"})]
+        g = calc.gantt(rows, T0 + MIN, T0 - HORA, T0 + 2 * HORA, "setor")
+        self.assertEqual([(x["chave"], x["n"], x["ativas"]) for x in g["grupos"]], [("ZZZ", 3, 1), ("AAA", 1, 1)])
+
+    def test_crono_continua_chamando_a_janela_de_hoje(self):
+        g = calc.crono([dem(1)], T0 + MIN, 7)["gantt"]
+        self.assertEqual(set(g), {"ini", "fim", "linhas"})
+
+
 if __name__ == "__main__":
     unittest.main()
