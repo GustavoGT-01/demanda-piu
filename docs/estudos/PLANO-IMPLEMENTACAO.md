@@ -24,7 +24,19 @@ Estado em 28/10/2026 (fim do dia):
   marcado pela thread de fundo, `5f09e2c`) e c (som, vibração, título da aba piscando, agrupamento e gaveta nova
   do sino, `1535eff`) e d (preferências em `data/avisos.json`, "Meus avisos" e seção Avisos, commit seguinte).
   Fase e: aviso do Windows com o título e tela acesa no PC principal (commit seguinte). Etapa 4 completa.
-- Próximo: Etapa 5 (calendário e cronograma), com duas perguntas abertas.
+Estado em 16/11/2026:
+- Etapa 5 fase 1 feita, e com ela as duas perguntas que estavam abertas respondidas pelo dono: o cronograma
+  multidia fica **dentro da aba Cronoanálise**, como um modo dela (não em aba própria), e o operador **não**
+  ganha "Minha agenda de hoje". Commits: cronograma no backend, com `calc.gantt` generalizado e a leitura
+  `cronograma {de, ate, por}` (`64a5cbc`); cronograma na tela, com `--dm-gcols` e os modos Dia, Semana e Mês
+  (`81e6ac3`); aba Calendário com as visões mês, semana e dia (`a3258cb`).
+- Junto, fora das etapas: o modo demonstração entrou no Git (`308905f`); a régua de qualidade foi acertada —
+  meta de 90% por arquivo nos cálculos de tempo, `qa.py js` deixando de passar verde sem jsdom, e os três
+  testes da faixa de autorização de rede que eram pulados em máquina sem placa (`d1c800d`); a recusa 413 passou
+  a drenar o corpo antes de fechar, em vez de virar RST no Windows (`f00d146`); e o `CONTRATO.md` voltou ao que
+  o código faz, inclusive sem as referências a outro projeto (`02d46ee`).
+- Próximo: o bloco "Depois" da seção 4 — nada dele começa sem um ok do dono. O primeiro item, se a hospedagem
+  for aprovada, é a fase 1 do estudo 03: é ela que corrige o loopback virar Escritório sem PIN.
   Pendências que dependem do dono: instalar a tarefa agendada
   (`instalar-inicio.bat` como administrador); configurar a conta de e-mail quando o TI definir; a fase 3 da Etapa 1
   (destino extra do backup) e a fase 5 do estudo 04 (OAuth2 do Microsoft 365), se a conta for M365.
