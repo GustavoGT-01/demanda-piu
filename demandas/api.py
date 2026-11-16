@@ -1,4 +1,4 @@
-"""Demandas: rotas, autorização e regras (porte de DEMANDA/src/models/requests.js e factory.js).
+"""Demandas: rotas, autorização e regras de negócio, portadas de um projeto anterior e hoje mantidas aqui.
 
 Contrato em CONTRATO.md. Banco em demandas_store (o LOCK dele é segurado aqui em toda leitura+escrita);
 cálculos de tempo e vista em demandas_calc. Pessoa age com um token (tk); o servidor guarda só o sha256 dele, em

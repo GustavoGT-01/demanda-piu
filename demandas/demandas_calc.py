@@ -1,7 +1,7 @@
 """Demandas: regras de tempo (puras, com `agora` em ms como parâmetro), vista por ator e cronoanálise.
 
-Porte de DEMANDA/public/app.js (waitMin, execMin, pausedMin, totalMin, slaPct, attention, segsOf, renderCrono,
-ganttHtml) e do feed de requests.js. Formatos em CONTRATO.md.
+As regras de tempo (espera, execução, pausa, total, cumprimento do prazo, atenção, trechos da linha do tempo,
+cronoanálise e feed) vieram portadas de um projeto anterior e hoje vivem aqui. Formatos em CONTRATO.md.
 """
 
 from __future__ import annotations

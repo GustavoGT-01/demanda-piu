@@ -9,8 +9,8 @@ Pasta `demandas/` da Central de demandas, porte da central do projeto DEMANDA. R
 |---|---|---|
 | `demandas_store.py` | banco | carga/gravação de `data/demandas.json`, arquivo morto, anexos em `data/demandas-anexos/` |
 | `api.py`, `demandas_calc.py` | backend | rotas, regras, autorização, vista, cálculos de tempo |
-| `demandas.js`, `demandas.css` | frontend | tela (porte do mockup v3 + telas do DEMANDA) |
-| `contrato.json` | coordenação | exemplo da vista devolvida pela API (o front desenvolve contra ele) |
+| `demandas.js`, `demandas.css` | frontend | tela |
+| `contrato.json` | coordenação | exemplos do que a API devolve (o front desenvolve contra eles) |
 
 O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a gravação segura que o `demandas_store.py` usa.
 
@@ -52,7 +52,8 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
   resposta anterior se perdeu e a tela mandou de novo: devolve a vista sem gravar.
 - `data/demandas-arquivo.json`: `{"v": 1, "demandas": [...]}` com concluídas/canceladas antigas tiradas do
   principal quando ele passa do teto (mesmo formato de demanda). Nunca volta ao principal.
-- Ambos são `*.json` no topo de `data/`, então entram sozinhos no backup `.cfbak`.
+- Ambos são `*.json` no topo de `data/`, então entram sozinhos no backup, que é um `.zip` com
+  `manifesto.json` e SHA-256 por arquivo (`demandas_backup.py`).
 
 ## Domínios fixos (iguais ao DEMANDA)
 - `tipo`: `dem` Demanda 📌 · `alt` Alteração ✏️ · `set` Entre setores 🔁 · `man` Manutenção 🛠️ · `mat` Material 📦
@@ -104,13 +105,19 @@ demanda sob o `LOCK`. Se a gravação do JSON falhar depois, o api.py apaga o ar
 
 ## Identidade e papéis
 - `ctx["papel"]` vem do servidor: `"maquina"` (o próprio PC), `"completo"` (PIN do escritório) ou `"operador"`
-  (PIN do chão; só a partir da fase 5).
+  (PIN dos operadores, pedido uma vez por aparelho).
 - **ADM / Escritório**: papel `maquina` ou `completo` agindo sem pessoa. Registrado como `"Escritório"`.
 - **Pessoa**: `POST entrar {pessoa, codigo}` confere o código (bloqueio: 5 erros = 60 s por pessoa, 429) e
-  devolve `{tk, eu, vista}`. `tk` = token aleatório (`secrets.token_urlsafe(24)`) guardado só em memória
-  (`tk -> {pessoa, exp}`), validade 12 h, máx. 500 (descarta o mais antigo); cai ao desativar a pessoa ou
-  trocar o código. Toda ação como pessoa manda `"tk"` no corpo. `tk` ruim/vencido = 401 "Identifique-se de novo."
+  devolve `{tk, eu, vista}`. `tk` = token aleatório (`secrets.token_urlsafe(24)`) guardado em memória e em
+  `data/pessoas-sessoes.json`, só como `sha256(tk) -> (pessoa, vence)` — o token em claro nunca vai para o
+  disco, e a página também o guarda só em memória. Validade 12 h, máx. 500 (descarta o mais antigo); cai ao
+  desativar a pessoa, trocar o código ou restaurar uma cópia. Como está no disco, reiniciar o servidor não
+  derruba ninguém. Toda ação como pessoa manda `"tk"` no corpo. `tk` ruim/vencido = 401 "Identifique-se de novo."
 - Papel `operador` só age como pessoa (sem `tk` = 403).
+- `tenant` ainda não existe: tudo roda numa empresa só. Ele chega com a fase 1 do estudo 03, junto da
+  interface de armazenamento (`Banco`/`BancoJson`) e do `papel_do_pedido` que substitui a decisão por
+  `ctx["papel"]` — obrigatória antes de qualquer hospedagem. Até lá, rota nova não precisa passar tenant:
+  um campo que chega e ninguém lê é código morto, sem teste que o defenda.
 
 ## Rotas
 Todas devolvem a **vista** do ator (ADM ou pessoa), salvo onde indicado. Erros: `ApiError(status, msg)`
@@ -151,8 +158,9 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `POST crono` | `{dias: 1\|7\|30}` | ADM → objeto de cronoanálise (abaixo) |
 | `POST cronograma` | `{de, ate, por: "setor"\|"pessoa"}` | ADM → objeto de cronograma (abaixo); janela de até 31 dias |
 
-Pessoa usa `tk` em todas as rotas de ação; ADM não manda `tk`. As regras de negócio são as de
-`DEMANDA/src/models/requests.js` e `factory.js` (ver plano), com autorização acrescentada.
+Pessoa usa `tk` em todas as rotas de ação; ADM não manda `tk`. As regras de negócio foram portadas de um
+projeto anterior e hoje vivem aqui: este arquivo é a descrição delas, e `api.py` com `demandas_calc.py` são
+a implementação. Não há nada a consultar fora deste projeto.
 
 Avisos gerados (tabela 6.1 do estudo 02). "Ponta" = a pessoa dela (`pid`) ou, sem pessoa, o setor; a origem
 sem pessoa (pedido do Escritório) = "adm":
