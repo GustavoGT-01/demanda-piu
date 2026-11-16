@@ -27,6 +27,7 @@ const D = {
   booted: false, srv: null, euPronto: false, pub: null, v: null, at: 0, tk: null, eu: null, role: null, imp: null,
   tab: 'painel', opTab: 'recv', opF: 'mine', view: 'board', mapSort: 'crit', q: '', fSt: '', fSec: '', fPrio: '', fType: '',
   hq: '', hSt: '', hFrom: '', hTo: '', hArq: '', arq: null, period: 7, crono: null, cronoP: 0,
+  cr: {modo: '13h', por: 'setor', desl: 0, dados: null, chave: ''},   // cronograma multidia
   admSub: 'sectors', uq: '', uSec: '', uSt: '', open: null, notif: false, mod: null, form: null, sform: null, uform: null,
   lg: {k: 'op', sec: '', user: '', code: '', show: false, err: ''}, seen: null, feedSeen: null, lastKey: '', noIntro: false,
   dirty: false, ticks: 0, pubErr: '',
@@ -592,22 +593,117 @@ async function loadCrono(quiet){
   if(r && r.kpis && p === D.period){D.crono = r; D.cronoP = p}
   if(isAdm() && D.tab === 'crono' && !busyUI()) renderView();
 }
-function gantt(g){
-  if(!g || !Array.isArray(g.linhas)) return '<div class="dm-empty">Sem solicitações no intervalo.</div>';
-  const GS = num(g.ini), GE = num(g.fim), span = Math.max(1, GE - GS), L = t => Math.max(0, Math.min(100, (num(t) - GS) / span * 100)), NOWg = GE - 3 * HOUR;
-  let axis = '';
-  for(let t = Math.ceil(GS / HOUR) * HOUR; t <= GE; t += HOUR){const h = new Date(t).getHours(); if(h % 2 === 0) axis += `<span style="left:${L(t).toFixed(2)}%">${p2(h)}h</span>`}
-  const body = g.linhas.map(r => {
-    const segs = (r.segs || []).map(s => {
-      const l = L(s.a), w = L(s.b) - l;
-      if(w <= 0) return '';
-      const k = {wait: 'dm-wait', exec: 'dm-exec', pause: 'dm-pause'}[s.k] || 'dm-wait', live = r.viva && s.k !== 'wait' && num(s.b) >= NOWg - MIN;
-      return `<i class="dm-gs ${k}${live ? ' dm-live' : ''}" style="left:${l.toFixed(2)}%;width:${Math.max(0.4, w).toFixed(2)}%"></i>`;
-    }).join('');
-    const dl = num(r.prazo), dm = dl >= GS && dl <= GE ? `<i class="dm-gd${r.atrasada ? ' dm-late' : ''}" style="left:${L(dl).toFixed(2)}%" title="Prazo ${fT(dl)}"></i>` : '';
-    return `<div class="dm-grow" role="button" tabindex="0" data-act="open" data-id="${esc(r.id)}"><div class="dm-glab"><b>${esc(r.id)}</b>${chip(r.de)}→${chip(r.para)}<span class="dm-gt" title="${esc(r.titulo)}">${esc(r.titulo)}</span></div><div class="dm-gtrack">${segs}${dm}<i class="dm-gnow" style="left:${L(NOWg).toFixed(2)}%"></i></div></div>`;
+/* Janela do cronograma por modo. Anda de dia em dia com setDate, nunca somando 86400000: com horário de
+   verão um dia tem 23 h ou 25 h, e a soma crua erraria a coluna. */
+function crJanela(modo, desl){
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if(modo === 'dia'){
+    d.setDate(d.getDate() + desl);
+    const b = new Date(d); b.setDate(b.getDate() + 1);
+    return [d.getTime(), b.getTime()];
+  }
+  if(modo === 'semana'){
+    d.setDate(d.getDate() - d.getDay() + 7 * desl);
+    const b = new Date(d); b.setDate(b.getDate() + 7);
+    return [d.getTime(), b.getTime()];
+  }
+  d.setDate(1);
+  d.setMonth(d.getMonth() + desl);
+  const b = new Date(d); b.setMonth(b.getMonth() + 1);
+  return [d.getTime(), b.getTime()];
+}
+/* Os dias que a janela cobre, com as bordas cortadas nela. */
+function crDias(GS, GE){
+  const out = [], d = new Date(GS);
+  d.setHours(0, 0, 0, 0);
+  while(d.getTime() < GE){
+    const a = d.getTime(), nx = new Date(d);
+    nx.setDate(nx.getDate() + 1);
+    out.push({a: Math.max(a, GS), b: Math.min(nx.getTime(), GE), dia: a, dow: new Date(a).getDay()});
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+function crEixo(GS, GE, modo, L, ds){
+  if(modo === '13h' || modo === 'dia'){
+    let ax = '';
+    for(let t = Math.ceil(GS / HOUR) * HOUR; t <= GE; t += HOUR){const h = new Date(t).getHours(); if(h % 2 === 0) ax += `<span style="left:${L(t).toFixed(2)}%">${p2(h)}h</span>`}
+    return `<div class="dm-gaxis">${ax}</div>`;
+  }
+  const hoje = crJanela('dia', 0)[0];
+  const faixa = ds.map(x => `<span class="cr-d${x.dia === hoje ? ' cr-today' : ''}" style="left:${L(x.a).toFixed(3)}%;width:${(L(x.b) - L(x.a)).toFixed(3)}%"><b>${DOW[x.dow]}</b> ${fD(x.dia)}</span>`).join('');
+  let ticks = '';
+  ds.forEach(x => [6, 12, 18].forEach(h => {
+    const dt = new Date(x.dia); dt.setHours(h, 0, 0, 0);
+    const t = dt.getTime();
+    if(t > GS && t < GE) ticks += `<span style="left:${L(t).toFixed(3)}%">${p2(h)}h</span>`;
+  }));
+  return `<div class="dm-gaxis cr-axis">${faixa}</div><div class="dm-gaxis cr-ticks">${ticks}</div>`;
+}
+function crLinha(r, L, NOWg, GS, GE, cols, we){
+  const segs = (r.segs || []).map(s => {
+    const l = L(s.a), w = L(s.b) - l;
+    if(w <= 0) return '';
+    const k = {wait: 'dm-wait', exec: 'dm-exec', pause: 'dm-pause'}[s.k] || 'dm-wait', live = r.viva && s.k !== 'wait' && num(s.b) >= NOWg - MIN;
+    return `<i class="dm-gs ${k}${live ? ' dm-live' : ''}" style="left:${l.toFixed(2)}%;width:${Math.max(0.4, w).toFixed(2)}%"></i>`;
   }).join('');
-  return `<div class="dm-gaxis">${axis}</div>${body || '<div class="dm-empty">Sem solicitações no intervalo.</div>'}<div class="dm-legend"><span><i style="background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--dm-s-new) 45%,transparent) 0 3px,transparent 3px 6px);border:1px solid var(--dm-s-new)"></i>Espera</span><span><i style="background:var(--dm-s-prog)"></i>Execução</span><span><i style="background:var(--dm-s-pause)"></i>Pausa</span><span><i style="background:var(--dm-s-late)"></i>Prazo</span><span><i style="background:var(--dm-brand)"></i>Agora</span></div>`;
+  const dl = num(r.prazo), dm = dl >= GS && dl <= GE ? `<i class="dm-gd${r.atrasada ? ' dm-late' : ''}" style="left:${L(dl).toFixed(2)}%" title="Prazo ${fT(dl)}"></i>` : '';
+  const pl = r.plano ? `<i class="cr-plan" style="left:${L(r.plano.a).toFixed(2)}%;width:${Math.max(0.3, L(r.plano.b) - L(r.plano.a)).toFixed(2)}%"></i>` : '';
+  const st = cols ? ` style="--dm-gcols:${cols}"` : '';
+  return `<div class="dm-grow" role="button" tabindex="0" data-act="open" data-id="${esc(r.id)}"><div class="dm-glab"><b>${esc(r.id)}</b>${chip(r.de)}→${chip(r.para)}${r.p ? av(r.p) : ''}<span class="dm-gt" title="${esc(r.titulo)}">${esc(r.titulo)}</span></div><div class="dm-gtrack"${st}>${we}${pl}${segs}${dm}<i class="dm-gnow" style="left:${L(NOWg).toFixed(2)}%"></i></div></div>`;
+}
+function gantt(g, o){
+  const modo = (o && o.modo) || '13h';
+  if(!g || (!Array.isArray(g.linhas) && !Array.isArray(g.grupos))) return '<div class="dm-empty">Sem solicitações no intervalo.</div>';
+  const GS = num(g.ini), GE = num(g.fim), span = Math.max(1, GE - GS), L = t => Math.max(0, Math.min(100, (num(t) - GS) / span * 100));
+  const NOWg = g.agora != null ? num(g.agora) : GE - 3 * HOUR;   // na janela de hoje o fim menos 3 h dá o mesmo instante
+  const multi = modo !== '13h', ds = multi ? crDias(GS, GE) : [];
+  const cols = !multi ? 0 : modo === 'dia' ? 24 : ds.length;
+  const we = multi ? ds.filter(x => x.dow === 0 || x.dow === 6).map(x => `<i class="cr-we" style="left:${L(x.a).toFixed(3)}%;width:${(L(x.b) - L(x.a)).toFixed(3)}%"></i>`).join('') : '';
+  const linha = r => crLinha(r, L, NOWg, GS, GE, cols, we);
+  const body = Array.isArray(g.grupos)
+    ? g.grupos.map(gr => {
+      const nome = g.por === 'pessoa'
+        ? (gr.chave ? av(gr.chave) + '<b>' + esc(pname(gr.chave)) + '</b>' : '<b>Fila do setor</b>')
+        : chip(gr.chave) + '<b>' + esc(sec(gr.chave).nome) + '</b>';
+      return `<div class="cr-grp"><div class="dm-glab">${nome}<span class="dm-gt">${gr.n} ${gr.n === 1 ? 'solicitação' : 'solicitações'} · ${gr.ativas} ativa${gr.ativas === 1 ? '' : 's'}</span></div></div>` + gr.linhas.map(linha).join('');
+    }).join('')
+    : g.linhas.map(linha).join('');
+  const dentro = crEixo(GS, GE, modo, L, ds) + (body || '<div class="dm-empty">Sem solicitações no intervalo.</div>');
+  const leg = `<div class="dm-legend"><span><i style="background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--dm-s-new) 45%,transparent) 0 3px,transparent 3px 6px);border:1px solid var(--dm-s-new)"></i>Espera</span><span><i style="background:var(--dm-s-prog)"></i>Execução</span><span><i style="background:var(--dm-s-pause)"></i>Pausa</span>${multi ? '<span><i style="background:color-mix(in srgb,var(--dm-ink) 14%,transparent)"></i>Plano (criado → prazo)</span>' : ''}<span><i style="background:var(--dm-s-late)"></i>Prazo</span><span><i style="background:var(--dm-brand)"></i>Agora</span></div>`;
+  return (multi ? `<div class="cr-scroll"><div class="cr-in">${dentro}</div></div>` : dentro) + leg;
+}
+const CR_MODOS = [['13h', '13 h'], ['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']];
+function crTitulo(){
+  const c = D.cr;
+  if(c.modo === '13h') return 'Linha do tempo (últimas 10h + próximas 3h)';
+  const [de, ate] = crJanela(c.modo, c.desl);
+  return c.modo === 'dia' ? 'Cronograma · ' + fD(de) : 'Cronograma · ' + fD(de) + ' a ' + fD(ate - 1);
+}
+function crTools(){
+  const c = D.cr;
+  const janela = `<div class="dm-seg" role="group" aria-label="Linha do tempo">${CR_MODOS.map(([v, l]) => `<button type="button" data-act="crwin" data-v="${v}" aria-pressed="${c.modo === v}">${l}</button>`).join('')}</div>`;
+  if(c.modo === '13h') return `<div class="cr-tools">${janela}</div>`;
+  const por = `<div class="dm-seg" role="group" aria-label="Agrupar">${[['setor', 'Por setor'], ['pessoa', 'Por pessoa']].map(([v, l]) => `<button type="button" data-act="crby" data-v="${v}" aria-pressed="${c.por === v}">${l}</button>`).join('')}</div>`;
+  const nav = `<div class="cal-nav"><button type="button" class="dm-btn dm-sm" data-act="crnav" data-v="-1" aria-label="Anterior">‹</button><button type="button" class="dm-btn dm-sm" data-act="crnav" data-v="0">${c.modo === 'dia' ? 'Hoje' : c.modo === 'semana' ? 'Esta semana' : 'Este mês'}</button><button type="button" class="dm-btn dm-sm" data-act="crnav" data-v="1" aria-label="Seguinte">›</button></div>`;
+  return `<div class="cr-tools">${janela}${por}${nav}</div>`;
+}
+function crCorpo(c){
+  const cr = D.cr;
+  if(cr.modo === '13h') return gantt(c.gantt, {modo: '13h'});
+  if(!cr.dados || cr.chave !== cr.modo + '|' + cr.por + '|' + cr.desl) return '<div class="dm-loading">Carregando o cronograma…</div>';
+  const aviso = cr.dados.cortado ? `<div class="dm-note">Muitas solicitações nesta janela: mostrando as ${CR_TETO_TXT} mais urgentes. Escolha uma janela menor para ver o resto.</div>` : '';
+  return gantt(cr.dados, {modo: cr.modo}) + aviso;
+}
+const CR_TETO_TXT = '120';
+async function loadCronograma(quiet){
+  const c = D.cr, chave = c.modo + '|' + c.por + '|' + c.desl;
+  if(c.modo === '13h') return;
+  const [de, ate] = crJanela(c.modo, c.desl);
+  const r = await call('cronograma', {de, ate, por: c.por}, {quiet, notake: true});
+  if(r && Array.isArray(r.grupos) && chave === c.modo + '|' + c.por + '|' + c.desl){c.dados = r; c.chave = chave}
+  if(isAdm() && D.tab === 'crono' && !busyUI()) renderView();
 }
 function vCrono(){
   const seg = `<div class="dm-filters"><h3 class="dm-h3">Cronoanálise das solicitações</h3><span class="dm-spacer"></span><div class="dm-seg" role="group" aria-label="Período">${[[1, 'Hoje'], [7, '7 dias'], [30, '30 dias']].map(([v, l]) => `<button type="button" data-act="period" data-v="${v}" aria-pressed="${D.period === v}">${l}</button>`).join('')}</div></div>`;
@@ -636,7 +732,7 @@ function vCrono(){
     ${rows.map(x => `<div class="dm-crow"><div class="dm-sn">${chip(x.s)}<span>${esc(sec(x.s).nome)}</span></div><div>${x.n}</div><div>${dur(x.w)}</div><div>${dur(x.e)}</div><div>${dur(x.es)}</div><div class="${slaC(x.sla)}">${x.sla == null ? '—' : x.sla + '%'}</div>
       <div class="dm-cbar"><div class="dm-stack"><i class="dm-w" style="width:${(x.w / scale * 100).toFixed(2)}%"></i><i class="dm-e" style="width:${(x.e / scale * 100).toFixed(2)}%"></i><i class="dm-p" style="width:${(x.p / scale * 100).toFixed(2)}%"></i><span class="dm-est" style="left:${(x.es / scale * 100).toFixed(2)}%"></span></div></div></div>`).join('') || '<div class="dm-empty">Sem solicitações concluídas neste período.</div>'}
     <div class="dm-legend"><span><i style="background:var(--dm-s-new)"></i>Espera até iniciar</span><span><i style="background:var(--dm-s-prog)"></i>Execução</span><span><i style="background:var(--dm-s-pause)"></i>Pausas</span><span><i style="background:var(--dm-ink)"></i>Tempo estimado</span></div></div>
-   <div class="dm-panel"><div class="dm-ph"><h3>Linha do tempo (últimas 10h + próximas 3h)</h3><span class="dm-s">Clique em uma linha para abrir a solicitação</span></div>${gantt(c.gantt)}</div>
+   <div class="dm-panel"><div class="dm-ph"><h3>${crTitulo()}</h3><span class="dm-s">Clique em uma linha para abrir a solicitação</span></div>${crTools()}${crCorpo(c)}</div>
    <div class="dm-grid2" style="grid-template-columns:1fr 1fr">
     <div class="dm-panel"><div class="dm-ph"><h3>Motivos mais frequentes</h3></div>${rl.map(([m, n]) => {cum += n; return `<div class="dm-par"><span class="dm-pl" title="${esc(m)}">${esc(m)}</span><div class="dm-pbar"><span style="width:${(n / rmax * 100).toFixed(1)}%"></span></div><b>${n}</b><small>${Math.round(cum / rtot * 100)}%</small></div>`}).join('') || '<div class="dm-empty">Sem dados.</div>'}<div class="dm-note">A coluna da direita mostra o percentual acumulado (Pareto).</div></div>
     <div class="dm-panel"><div class="dm-ph"><h3>Ranking de responsáveis</h3></div>${rk.map((x, i) => `<div class="dm-rk"><b>${i + 1}º</b>${av(x.p)}<div class="dm-rn"><span>${esc(pname(x.p))}</span>${per(x.p) ? chip(per(x.p).setor) : ''}</div><div class="dm-barc"><div class="dm-pbar dm-pg"><span style="width:${(x.n / rkMax * 100).toFixed(1)}%"></span></div></div><b class="${slaC(x.sla)}">${x.sla == null ? '—' : x.sla + '%'}</b></div>`).join('') || '<div class="dm-empty">Sem dados.</div>'}<div class="dm-note">Concluídas no período e % entregue dentro do prazo.</div></div>
@@ -1672,6 +1768,9 @@ function act(a, d, el, ev){
     case 'view': D.view = d.v; renderView(); break;
     case 'opf': D.opF = d.v; renderView(); break;
     case 'period': D.period = num(d.v, 7); renderView(); loadCrono(); break;
+    case 'crwin': D.cr.modo = d.v; D.cr.desl = 0; renderView(); loadCronograma(); break;
+    case 'crby': D.cr.por = d.v; renderView(); loadCronograma(); break;
+    case 'crnav': D.cr.desl = num(d.v) === 0 ? 0 : D.cr.desl + num(d.v); renderView(); loadCronograma(); break;
     case 'hclear': D.hq = D.hSt = D.hFrom = D.hTo = ''; renderView(); break;
     case 'hrel': D.hFrom = d.from; D.hTo = d.to; renderView(); break;
     case 'admsub': D.admSub = d.v; renderView(); break;
@@ -1885,7 +1984,7 @@ async function refresh(){
   if(!D.role) return;
   const r = D.role === 'adm' ? await call('', undefined, {quiet: true}) : await call('vista', {}, {quiet: true});
   if(!r || !root) return;
-  if(isAdm() && D.tab === 'crono' && visible()) loadCrono(true);
+  if(isAdm() && D.tab === 'crono' && visible()){loadCrono(true); if(D.cr.modo !== '13h') loadCronograma(true)}
   soft();
 }
 function tick(){

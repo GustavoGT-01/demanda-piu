@@ -385,7 +385,9 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-glab{display:flex;gap:6px;align-items:center;min-width:0;font-size:12.5px}
 #dmboard .dm-glab b{font-variant-numeric:tabular-nums;font-size:12px}
 #dmboard .dm-glab .dm-gt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dm-muted);flex:1;min-width:0}
-#dmboard .dm-gtrack{position:relative;height:24px;background-image:linear-gradient(90deg,var(--dm-line) 1px,transparent 1px);background-size:calc(100% / 13) 100%}
+/* --dm-gcols: quantas colunas a grade do fundo tem. A tela só emite a variável nos modos multidia; a
+   janela de 13 h não emite nada e cai no 13 do fallback, que é o desenho de sempre. */
+#dmboard .dm-gtrack{position:relative;height:24px;background-image:linear-gradient(90deg,var(--dm-line) 1px,transparent 1px);background-size:calc(100% / var(--dm-gcols, 13)) 100%}
 #dmboard .dm-gs{position:absolute;top:5px;height:14px;border-radius:4px}
 #dmboard .dm-gs.dm-wait{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--dm-s-new) 45%,transparent) 0 4px,transparent 4px 8px);border:1px solid var(--dm-s-new)}
 #dmboard .dm-gs.dm-exec{background:var(--dm-s-prog)}#dmboard .dm-gs.dm-pause{background:var(--dm-s-pause)}
@@ -393,6 +395,21 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .dm-gd{position:absolute;top:1px;bottom:1px;width:2px;background:var(--dm-s-canc)}
 #dmboard .dm-gd.dm-late{background:var(--dm-s-late)}
 #dmboard .dm-gnow{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--dm-brand);z-index:2}
+/* cronograma multidia (modos Dia, Semana e Mês da Cronoanálise) */
+#dmboard .cr-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+#dmboard .cal-nav{display:flex;gap:4px;align-items:center}
+#dmboard .cr-scroll{overflow-x:auto;overflow-y:hidden}
+#dmboard .cr-in{min-width:760px}
+#dmboard .cr-axis{height:20px}
+#dmboard .cr-axis .cr-d{position:absolute;transform:none;text-align:center;overflow:hidden;white-space:nowrap;border-left:1px solid var(--dm-line)}
+#dmboard .cr-axis .cr-d b{color:var(--dm-ink);font-size:11px;font-weight:700}
+#dmboard .cr-axis .cr-today{background:color-mix(in srgb,var(--dm-brand) 12%,transparent)}
+#dmboard .cr-ticks{height:14px;font-size:10px}
+#dmboard .cr-grp{padding:8px 0 2px;border-bottom:1px solid var(--dm-line)}
+#dmboard .cr-grp .dm-glab b{font-size:12.5px}
+#dmboard .cr-we{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--dm-muted) 12%,transparent)}
+#dmboard .cr-plan{position:absolute;top:2px;height:20px;border-radius:5px;background:color-mix(in srgb,var(--dm-ink) 14%,transparent)}
+@media (max-width:760px){#dmboard .cr-in{min-width:620px}}
 #dmboard .dm-par{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) 30px 42px;gap:10px;align-items:center;padding:5px 0;font-size:13px}
 #dmboard .dm-par .dm-pl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #dmboard .dm-par small{color:var(--dm-muted)}

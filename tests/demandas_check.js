@@ -291,6 +291,67 @@ async function sistemaDaTela(w,until,click){
   w.localStorage.removeItem('dm-avisos-aparelho');
 }
 // ⚙ Configurações · Avisos (PC principal) e o "Meus avisos" do Escritório, separado dos padrões.
+// Cronoanálise: a janela de 13 h continua como era, e os modos novos (Dia, Semana, Mês) pedem a rota
+// cronograma. É aqui que a fronteira de dia, semana e mês é conferida, porque ela é calculada no
+// navegador, com o fuso do aparelho.
+async function cronogramaDaTela(){
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  await until(()=>$('.dm-tab[data-v=painel]'));
+  $('.dm-tab[data-v=crono]').click();
+  ok(await until(()=>$('.dm-gtrack')||$('.dm-empty')),'Cronoanálise abre');
+  // 13 h: sem --dm-gcols no estilo, então o fundo cai no 13 do fallback do CSS — o desenho de sempre
+  ok($$('[data-act=crwin]').length===4&&$('[data-act=crwin][data-v="13h"]').getAttribute('aria-pressed')==='true','abre em 13 h, com quatro janelas');
+  ok(!$('[data-act=crby]')&&!$('.cr-scroll'),'em 13 h não há agrupamento nem rolagem horizontal');
+  const t13=$('.dm-gtrack');
+  ok(t13&&!t13.getAttribute('style'),'13 h não emite --dm-gcols: o fundo usa o 13 do fallback');
+  // o título do painel do cronograma, não o do primeiro painel da tela
+  const ph=()=>{const p=$$('.dm-panel').find(x=>x.querySelector('.cr-tools'));return p?p.querySelector('.dm-ph h3').textContent:''};
+  ok(/últimas 10h \+ próximas 3h/.test(ph()),'título da janela de hoje: '+ph());
+  // Semana: 7 colunas, eixo com os sete dias e um "hoje", faixa de fim de semana e o plano
+  $('[data-act=crwin][data-v=semana]').click();
+  ok(await until(()=>$('.cr-scroll')&&$('.cr-axis')),'Semana monta o cronograma multidia');
+  ok($$('.cr-axis .cr-d').length===7,'eixo da semana tem sete dias, tem '+$$('.cr-axis .cr-d').length);
+  ok($$('.cr-axis .cr-today').length===1,'exatamente um dia marcado como hoje');
+  ok($$('.cr-ticks span').length>0,'faixa de horas 06/12/18 presente');
+  const tS=$('.dm-gtrack');
+  ok(tS&&tS.style.getPropertyValue('--dm-gcols')==='7','na semana a trilha emite --dm-gcols:7, veio "'+(tS&&tS.style.getPropertyValue('--dm-gcols'))+'"');
+  ok($$('.cr-we').length>0,'fim de semana hachurado');
+  ok($$('.cr-plan').length>0,'barra do plano (criado → prazo) aparece');
+  const plano=$('.cr-plan'),espera=$('.dm-gs.dm-wait');
+  ok(plano&&espera&&plano.style.left===espera.style.left,'o plano começa no mesmo ponto da espera ('+(plano&&plano.style.left)+' vs '+(espera&&espera.style.left)+')');
+  ok($$('.cr-grp').length>0,'linhas agrupadas por setor');
+  ok($('[data-act=crby][data-v=setor]').getAttribute('aria-pressed')==='true','agrupamento começa por setor');
+  // Mês: tantas colunas quantos dias tem o mês corrente
+  $('[data-act=crwin][data-v=mes]').click();
+  const dias=new Date(new Date().getFullYear(),new Date().getMonth()+1,0).getDate();
+  ok(await until(()=>$('.dm-gtrack')&&$('.dm-gtrack').style.getPropertyValue('--dm-gcols')===String(dias)),'no mês a trilha emite --dm-gcols:'+dias);
+  ok($$('.cr-axis .cr-d').length===dias,'eixo do mês tem '+dias+' dias, tem '+$$('.cr-axis .cr-d').length);
+  // Dia: 24 colunas
+  $('[data-act=crwin][data-v=dia]').click();
+  ok(await until(()=>$('.dm-gtrack')&&$('.dm-gtrack').style.getPropertyValue('--dm-gcols')==='24'),'no dia a trilha emite --dm-gcols:24');
+  // Por pessoa: muda os grupos
+  const porSetor=$$('.cr-grp').length;
+  $('[data-act=crby][data-v=pessoa]').click();
+  ok(await until(()=>$('[data-act=crby][data-v=pessoa]').getAttribute('aria-pressed')==='true'&&$$('.cr-grp').length>0),'Por pessoa reagrupa ('+porSetor+' grupos por setor)');
+  // ‹ e › deslocam a janela, e o botão do meio volta para hoje
+  $('[data-act=crwin][data-v=semana]').click();
+  ok(await until(()=>$('.cr-axis')),'volta para Semana');
+  const t0=ph();
+  ok(/^Cronograma · /.test(t0),'título do cronograma diz a janela: '+t0);
+  $('[data-act=crnav][data-v="-1"]').click();
+  ok(await until(()=>ph()!==t0&&/^Cronograma · /.test(ph())),'‹ muda a janela: '+ph());
+  ok($$('.cr-axis .cr-today').length===0,'na semana passada nenhum dia é hoje');
+  $('[data-act=crnav][data-v="0"]').click();
+  ok(await until(()=>ph()===t0),'o botão do meio volta para esta semana');
+  // voltar para 13 h restaura o painel antigo
+  $('[data-act=crwin][data-v="13h"]').click();
+  ok(await until(()=>!$('.cr-scroll')&&$('.dm-gtrack')&&!$('.dm-gtrack').getAttribute('style')),'voltar para 13 h restaura o painel de sempre');
+  ok(/últimas 10h \+ próximas 3h/.test(ph()),'e o título volta a ser o de hoje');
+  w.close();
+}
+
 async function avisosDaCentral(){
   const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
   const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
@@ -592,6 +653,7 @@ async function restaurarPelaTela(){
     w.close();
     await aparelhoOperador();
     await linkDoEmail();
+    await cronogramaDaTela();
     await avisosDaCentral();
     await restaurarPelaTela();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso
