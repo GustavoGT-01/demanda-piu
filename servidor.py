@@ -44,6 +44,7 @@ LOG_MAX = 500                         # linhas guardadas em data/servidor.log
 SAIDA_MAX = 1024 * 1024               # data/servidor-saida.log passa disto: vira .1 ao religar
 MAX_BODY = 16 * 1024 * 1024   # anexo de 5 MB em base64 cabe com folga
 MAX_BODY_ANON = 64 * 1024     # da rede sem sessão (só o PIN entra)
+DRENO_S = 0.5                 # espera para drenar o corpo de um pedido recusado por tamanho
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
@@ -389,6 +390,33 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True  # o corpo do pedido pode ter ficado sem ler
         self._send(status, message.encode("utf-8"), "text/plain; charset=utf-8")
 
+    def _recusa_grande(self, message: str, length: int) -> None:
+        """Recusa 413 drenando o corpo antes de fechar.
+
+        Fechar a conexão com dados por ler vira RST no Windows, e aí o cliente toma conexão abortada em
+        vez de ler a mensagem. As outras recusas não têm esse problema porque o corpo já foi lido; estas
+        duas recusam justamente para não ler um corpo grande, então drenam e descartam, com memória
+        limitada. A espera é curta de propósito: o pedido pode anunciar um corpo que não manda, e aí não
+        há o que drenar — esperar o anúncio inteiro seria travar a conexão à toa.
+        """
+        sobra = min(length, MAX_BODY_ANON)
+        antes = self.connection.gettimeout()
+        try:
+            self.connection.settimeout(DRENO_S)
+            while sobra > 0:
+                pedaco = self.rfile.read(min(sobra, 65536))
+                if not pedaco:
+                    break
+                sobra -= len(pedaco)
+        except OSError:
+            pass
+        finally:
+            try:
+                self.connection.settimeout(antes)
+            except OSError:
+                pass
+        self._fail(413, message)
+
     def _file(self, path: Path) -> None:
         try:
             raw = path.read_bytes()
@@ -565,9 +593,9 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0:
             return self._fail(400, "Content-Length ausente ou inválido.")
         if length > MAX_BODY:
-            return self._fail(413, "Arquivo grande demais.")
+            return self._recusa_grande("Arquivo grande demais.", length)
         if length > MAX_BODY_ANON and self._remote() and not (NET_ON and session_ok(self.headers.get("Cookie"))):
-            return self._fail(413, "Entre com o PIN antes de enviar arquivos.")
+            return self._recusa_grande("Entre com o PIN antes de enviar arquivos.", length)
         # o corpo é lido antes de qualquer recusa: fechar a conexão com dados por ler vira RST no Windows
         data = self.rfile.read(length) if length else b""
         if not self._host_ok():

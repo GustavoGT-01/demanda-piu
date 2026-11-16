@@ -1275,5 +1275,92 @@ class Fundo(unittest.TestCase):
         self.assertTrue(callable(bk.tarefa))
 
 
+class RecusaGrande(unittest.TestCase):
+    """A recusa 413 drena o corpo antes de fechar.
+
+    É a única recusa que decide antes de o corpo ser lido, justamente porque o corpo é grande. Fechar a
+    conexão com dados por ler vira RST no Windows, e aí o cliente toma conexão abortada em vez de ler a
+    mensagem — era uma falha intermitente de verdade no `qa.py all`. Aqui o handler é montado à mão, sem
+    socket, para medir exatamente quanto foi drenado.
+    """
+
+    class Conexao:
+        """Só o que o _recusa_grande usa do socket, guardando os timeouts que recebeu."""
+
+        def __init__(self, t):
+            self.t = t
+            self.postos = []
+
+        def gettimeout(self):
+            return self.t
+
+        def settimeout(self, v):
+            self.t = v
+            self.postos.append(v)
+
+    def handler(self, corpo: bytes, timeout=7.5):
+        h = servidor.Handler.__new__(servidor.Handler)
+        h.rfile = io.BytesIO(corpo)
+        h.connection = self.Conexao(timeout)
+        h.close_connection = False
+        h.enviados = []
+        h._send = lambda st, raw, mime: h.enviados.append((st, raw.decode("utf-8"), mime))
+        return h
+
+    def test_drena_o_corpo_inteiro_e_responde(self):
+        h = self.handler(b"12345")
+        h._recusa_grande("Arquivo grande demais.", 5)
+        self.assertEqual(h.rfile.tell(), 5)   # nada ficou por ler: é isso que evita o RST
+        self.assertEqual(h.rfile.read(), b"")
+        self.assertEqual(h.enviados, [(413, "Arquivo grande demais.", "text/plain; charset=utf-8")])
+        self.assertIs(h.close_connection, True)
+
+    def test_drena_um_byte(self):
+        h = self.handler(b"x")
+        h._recusa_grande("m", 1)
+        self.assertEqual(h.rfile.tell(), 1)
+
+    def test_drena_no_maximo_o_teto(self):
+        with mock.patch.object(servidor, "MAX_BODY_ANON", 10):
+            h = self.handler(b"x" * 50)
+            h._recusa_grande("m", 50)
+        self.assertEqual(h.rfile.tell(), 10)   # o teto é do MAX_BODY_ANON, não do anunciado
+        self.assertEqual(h.enviados[0][0], 413)
+
+    def test_drena_em_pedacos_ate_o_fim(self):
+        """Corpo maior que um pedaço: o laço continua em vez de parar no primeiro."""
+        with mock.patch.object(servidor, "MAX_BODY_ANON", 200000):
+            h = self.handler(b"x" * 150000)
+            h._recusa_grande("m", 150000)
+        self.assertEqual(h.rfile.tell(), 150000)
+
+    def test_corpo_menor_que_o_anunciado_nao_trava(self):
+        h = self.handler(b"abc")
+        h._recusa_grande("m", 10)   # anunciou 10, mandou 3: para no fim do que veio
+        self.assertEqual(h.rfile.tell(), 3)
+        self.assertEqual(h.enviados[0][0], 413)
+
+    def test_devolve_o_timeout_que_estava(self):
+        h = self.handler(b"12345", timeout=7.5)
+        h._recusa_grande("m", 5)
+        self.assertEqual(h.connection.postos, [servidor.DRENO_S, 7.5])
+        self.assertEqual(h.connection.t, 7.5)
+
+    def test_timeout_na_drenagem_nao_sobe(self):
+        h = self.handler(b"")
+        h.rfile = io.BytesIO(b"")
+        h.rfile.read = lambda n: (_ for _ in ()).throw(TimeoutError("drenagem"))
+        h._recusa_grande("m", 10)   # TimeoutError é OSError: engolido, a resposta sai
+        self.assertEqual(h.enviados[0][0], 413)
+        self.assertEqual(h.connection.postos, [servidor.DRENO_S, 7.5])
+
+    def test_fail_fecha_so_a_partir_de_400(self):
+        for st, fecha in ((200, False), (303, False), (400, True), (401, True), (413, True), (500, True)):
+            h = self.handler(b"")
+            h._fail(st, "x")
+            self.assertIs(h.close_connection, fecha, st)
+            self.assertEqual(h.enviados[0][:2], (st, "x"))
+
+
 if __name__ == "__main__":
     unittest.main()

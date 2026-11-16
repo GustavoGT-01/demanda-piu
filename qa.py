@@ -44,6 +44,7 @@ CRITICO = {
     "servidor.py": (["tests/test_servidor.py"],
                     ["_pin_ok", "_pin_novo", "net_config", "net_save", "sessions_load", "check_pin", "session_ok", "ip_host",
                      "rev", "static_files", "_host_ok", "_remote", "_auth_ok", "_operador_ok", "end_headers", "_static", "_api",
+                     "_fail", "_recusa_grande",
                      "do_GET", "do_POST", "backup_mod", "fundo", "iniciar_fundo", "pode", "_backup", "registra", "_roda_filho",
                      "sempre", "ligado", "tarefa_instalada", "_tamanho", "saude", "email_mod", "_email", "avisos_mod", "_avisos",
                      "dados_reais", "erro_modo"]),
