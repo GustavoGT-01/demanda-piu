@@ -1,5 +1,6 @@
 @echo off
-rem Liga a Central de demandas e abre no navegador. Feche esta janela para desligar.
+rem Liga a Central de demandas e abre no navegador. Feche esta janela para desligar; com a tarefa agendada
+rem "Central de demandas" instalada, quem desliga e o parar.bat.
 cd /d "%~dp0"
 title Central de demandas - servidor (nao feche)
 
@@ -23,7 +24,8 @@ if not defined PORTA set "PORTA=8090"
 rem Ja ligada (pela tarefa "iniciar com o Windows" ou outra janela): so abre o navegador.
 "%PY%" %PYARG% servidor.py --ligado
 if not errorlevel 1 (
-  echo A Central ja esta ligada. Abrindo no navegador...
+  echo A Central ja esta ligada, pela tarefa agendada ou por outra janela. Abrindo no navegador...
+  echo Para desligar, use o parar.bat: esta janela nao e a dona do servidor.
   start "" http://127.0.0.1:%PORTA%
   timeout /t 3 >nul
   exit /b 0
