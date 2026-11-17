@@ -15,12 +15,14 @@ import threading
 import unicodedata
 from pathlib import Path
 
+import demandas_agenda as ag
 import store
 
-V = 1
+V = 2
 LOCK = threading.Lock()
 MAX = {"setores": 60, "pessoas": 500, "demandas": 5000, "arquivo": 50000,
-       "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 1000, "cids": 500}
+       "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 1000, "cids": 500,
+       "feriados": ag.LIM["feriados"], "versoes": ag.LIM["versoes"]}
 ANEXO_MAX = 5 * 1024 * 1024
 ANEXOS_POR_DEMANDA = 5
 COTA = 300 * 1024 * 1024
@@ -30,6 +32,7 @@ NOME_MAX = 120
 STATUS = ("new", "prog", "pause", "done", "canc")
 FIM = ("done", "canc")
 SUB = ("pausas", "eventos", "comentarios", "anexos")
+UTIL = ("espera", "execucao", "pausado", "total")
 SETOR_RE = re.compile(r"^[A-Z0-9]{2,4}$")
 PESSOA_RE = re.compile(r"^p[0-9]{1,9}$")
 DEMANDA_RE = re.compile(r"^SOL-([0-9]{1,9})$")
@@ -55,7 +58,8 @@ def anexos_dir() -> Path:
 
 def empty() -> dict:
     return {"v": V, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
-            "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": []}
+            "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": [],
+            "agenda": ag.padrao(), "agendas": {}}
 
 
 # ---------- normalização ----------
@@ -102,6 +106,16 @@ def _demanda(d: dict) -> dict | None:
     for k in ("iniciado", "fim"):
         d[k] = _int(d.get(k), None)
     d["atraso_avisado"] = _bool(d.get("atraso_avisado"), False)
+    for k in ("agenda_v", "prazo_em"):   # só as demandas criadas com o horário de serviço ligado têm
+        if _int(d.get(k), None) is None:
+            d.pop(k, None)
+    u = d.get("util")   # durações úteis gravadas ao fechar (ms); "atraso" é opcional
+    if isinstance(u, dict) and all(_int(u.get(k), None) is not None for k in UTIL):
+        d["util"] = {k: u[k] for k in UTIL}
+        if _int(u.get("atraso"), None) is not None:
+            d["util"]["atraso"] = u["atraso"]
+    else:
+        d.pop("util", None)
     d["_rv"] = _int(d.get("_rv"), 0)
     for k in SUB:
         rows = d.get(k)
@@ -112,6 +126,25 @@ def _demanda(d: dict) -> dict | None:
 
 def _demandas(rows) -> list:
     return [d for d in (_demanda(r) for r in _unicos(rows, _re_ok(DEMANDA_RE))) if d is not None]
+
+
+def _agendas(raw: dict) -> tuple:
+    """O horário de serviço vigente e as versões que as demandas em andamento ainda usam. Gravação ilegível não
+    derruba a tela: a agenda volta desligada (as demandas com `agenda_v` sem versão medem em tempo corrido)."""
+    try:
+        atual = ag.normaliza(raw.get("agenda"))
+    except ValueError:
+        atual = ag.padrao()
+    brutas = raw.get("agendas") if isinstance(raw.get("agendas"), dict) else {}
+    versoes = {}
+    for v, a in brutas.items():
+        try:
+            if isinstance(v, str) and v.isdigit():
+                versoes[v] = ag.normaliza(a)
+        except ValueError:
+            continue
+    mais_novas = sorted(versoes, key=int)[-MAX["versoes"]:]
+    return atual, {v: versoes[v] for v in mais_novas}
 
 
 def _normaliza(raw: dict) -> dict:
@@ -135,6 +168,7 @@ def _normaliza(raw: dict) -> dict:
         if "pid" in n and not isinstance(n["pid"], str):   # sem "pid" = nota de antes dos avisos por pessoa
             n["pid"] = None
         doc["notas"].append(n)
+    doc["agenda"], doc["agendas"] = _agendas(raw)
     # [chave do pedido, o que ele gravou]: pedido repetido pela tela (resposta perdida) não grava duas vezes
     cids = raw.get("cids") if isinstance(raw.get("cids"), list) else []
     doc["cids"] = [c for c in cids if isinstance(c, list) and len(c) == 2 and all(isinstance(x, str) for x in c)
@@ -168,7 +202,7 @@ def _migra(raw: dict, de: int) -> None:
     copia = path().with_name("%s.v%d.bak" % (path().name, de))
     if not copia.exists() and path().exists():   # sem o principal, o .bak lido já é a cópia
         shutil.copy2(path(), copia)
-    raw["v"] = V   # v0 -> v1: só ganha o número (versão 0 = arquivo sem "v")
+    raw["v"] = V   # v0 -> v1 e v1 -> v2 (horário de serviço, desligado por padrão): só ganham o número
     store.atomic_write(path(), json.dumps(raw, ensure_ascii=False))
 
 

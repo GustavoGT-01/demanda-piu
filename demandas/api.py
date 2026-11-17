@@ -19,6 +19,7 @@ import threading
 import time
 from collections import OrderedDict
 
+import demandas_agenda as ag
 import demandas_avisos as av
 import demandas_backup as bk
 import demandas_calc as calc
@@ -449,6 +450,12 @@ def _criar(doc: dict, ator, body: dict, t: int):
     d = {"id": "SOL-%d" % n, "titulo": titulo, "tipo": tipo, "motivo": motivo, "prio": prio, "est": est,
          "de": de, "para": {"s": s, "p": p}, "desc": desc, "status": "new", "criado": t, "iniciado": None,
          "fim": None, "atraso_avisado": False, "pausas": [], "eventos": [], "comentarios": [], "anexos": []}
+    if doc["agenda"]["ativa"]:   # horário de serviço ligado: o prazo conta só dentro dos turnos e fica gravado
+        try:
+            d["prazo_em"] = ag.soma_util(ag.grade(doc["agenda"], s), t, est)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
+        d["agenda_v"] = doc["agenda"]["v"]
     _evento(d, "created", quem, "", t)
     if p is not None:
         _evento(d, "assigned", quem, "Responsável: " + _nome_pessoa(doc, p), t)
@@ -515,6 +522,7 @@ def _concluir(doc: dict, ator, body: dict, t: int):
     if d["iniciado"] is None:
         d["iniciado"] = t
     d["status"], d["fim"] = "done", t
+    calc.congela(d, t, doc["agendas"])
     _evento(d, "done", ator["nome"], nota, t)
     _avisa(doc, d["de"], "done", d, "", ator["nome"], t)
     _stamp(d)
@@ -528,6 +536,7 @@ def _cancelar(doc: dict, ator, body: dict, t: int):
     motivo = _texto(_opcional(body.get("motivo")), "Motivo", 0, 500)
     _fecha_pausa(d, t)
     d["status"], d["fim"] = "canc", t
+    calc.congela(d, t, doc["agendas"])
     _evento(d, "canc", _quem(ator), motivo, t)
     _avisa(doc, d["para"], "canc", d, motivo, _quem(ator), t)
     _stamp(d)
@@ -587,6 +596,11 @@ def _estender(doc: dict, ator, body: dict, t: int):
     if d["est"] + minutos > EST_MAX:
         raise ApiError(400, "O tempo estipulado passaria de 30 dias.")
     d["est"] += minutos
+    if d.get("agenda_v") is not None:   # "+1 h" é uma hora de trabalho, a partir do prazo que já valia
+        try:
+            d["prazo_em"] = ag.soma_util(calc.grade_de(d, doc["agendas"]), calc.prazo(d), minutos)
+        except ValueError as exc:
+            raise ApiError(400, str(exc)) from None
     if calc.prazo(d) > t:
         d["atraso_avisado"] = False
     _evento(d, "deadline", ADM, "+" + calc.dur(minutos), t)
@@ -878,6 +892,31 @@ def _pessoa_apagar(doc: dict, ator, body: dict, t: int):
     _tk_revoga(p["id"])
 
 
+# ---------- horário de serviço ----------
+
+def _agenda_salvar(doc: dict, ator, body: dict, t: int):
+    """O ADM grava o horário de serviço inteiro (padrão, exceções por setor, feriados). Só vale para demandas criadas
+    daqui para frente: cada demanda guarda a versão que usou (`agenda_v`) e a tela de cada uma segue nela."""
+    _so_adm(ator)
+    atual = doc["agenda"]
+    try:
+        novo = ag.normaliza(body.get("agenda"), {s["id"] for s in doc["setores"]})
+    except ValueError as exc:
+        raise ApiError(400, str(exc)) from None
+    if novo["v"] != atual["v"]:
+        raise ApiError(409, "Outro aparelho alterou o horário de serviço. Recarregue e confira antes de salvar.")
+    if ag.sem_versao(novo) == ag.sem_versao(atual):
+        return False   # nada mudou: não gasta uma versão
+    novo["v"] = atual["v"] + 1
+    doc["agenda"] = novo
+    em_uso = {str(d["agenda_v"]) for d in doc["demandas"] if calc.ativa(d) and d.get("agenda_v") is not None}
+    em_uso.add(str(novo["v"]))
+    doc["agendas"][str(novo["v"])] = json.loads(json.dumps(novo))
+    doc["agendas"] = {v: a for v, a in doc["agendas"].items() if v in em_uso}
+    for v in sorted(doc["agendas"], key=int)[:-ds.MAX["versoes"]]:
+        del doc["agendas"][v]
+
+
 # ---------- leituras de ADM ----------
 
 def _historico(doc: dict, ator, body: dict, t: int) -> dict:
@@ -885,7 +924,7 @@ def _historico(doc: dict, ator, body: dict, t: int) -> dict:
     de = _int(body.get("de"), "Início", 0, 10 ** 15)
     ate = _int(body.get("ate"), "Fim", de, 10 ** 15)
     rows = sorted((d for d in _todas(doc) if de <= d["criado"] <= ate), key=lambda d: -d["criado"])[:HIST_MAX]
-    return {"demandas": [calc.publica(d, t) for d in rows]}
+    return {"demandas": [calc.publica(d, t, doc["agendas"]) for d in rows]}
 
 
 def _crono(doc: dict, ator, body: dict, t: int) -> dict:
@@ -893,7 +932,7 @@ def _crono(doc: dict, ator, body: dict, t: int) -> dict:
     dias = body.get("dias")
     if isinstance(dias, bool) or dias not in (1, 7, 30):
         raise ApiError(400, "Período inválido.")
-    return calc.crono(_todas(doc), t, dias)
+    return calc.crono(_todas(doc), t, dias, doc["agendas"], doc["agenda"])
 
 
 def _cronograma(doc: dict, ator, body: dict, t: int) -> dict:
@@ -905,7 +944,7 @@ def _cronograma(doc: dict, ator, body: dict, t: int) -> dict:
     if ate - de > CRONO_MAX:
         raise ApiError(400, "Período de até 31 dias.")
     por = _de(body.get("por"), CRONO_POR, "Agrupamento")
-    return calc.gantt(_todas(doc), t, de, ate, por)
+    return calc.gantt(_todas(doc), t, de, ate, por, agendas=doc["agendas"], agenda=doc["agenda"])
 
 
 def _vista_de(doc: dict, ator, t: int) -> dict:
@@ -928,6 +967,7 @@ ESCRITAS = {
     "demanda/comentar": _comentar, "anexo/apagar": _anexo_apagar, "nota/lida": _nota_lida, "nota/todas": _notas_todas,
     "setor/salvar": _setor_salvar, "setor/ativar": _setor_ativar, "setor/apagar": _setor_apagar,
     "pessoa/salvar": _pessoa_salvar, "pessoa/ativar": _pessoa_ativar, "pessoa/apagar": _pessoa_apagar,
+    "agenda/salvar": _agenda_salvar,
 }
 LEITURAS = {"vista": _vista, "historico": _historico, "crono": _crono, "cronograma": _cronograma}
 

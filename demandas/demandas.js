@@ -83,6 +83,70 @@ function fix(r){
   return r;
 }
 
+/* ---------- horário de serviço (porta do demandas_agenda.py) ----------
+   O servidor grava o prazo e as durações das demandas novas em tempo útil; aqui a tela só acompanha o relógio entre
+   duas vistas, então precisa da mesma conta. tests/vetores_agenda.json roda no Python e no jsdom: os dois concordam. */
+const HS_MEDE_DIAS = 3700;
+const hsMin = s => +s.slice(0, 2) * 60 + +s.slice(3);
+const hsFaixas = ts => ts.map(([a, b]) => {const x = hsMin(a), y = hsMin(b); return [x, y > x ? y : y + 1440]}).sort((p, q) => p[0] - q[0]);
+const hsIso = d => d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+/* A grade do setor (null = tempo corrido: horário desligado ou demanda de antes dele). */
+function hsGrade(ag, setor){
+  if(!ag || !ag.ativa) return null;
+  const base = (ag.setores && setor && ag.setores[setor]) || ag.padrao;
+  const fer = new Set((ag.feriados || []).filter(f => !(f.setores && f.setores.length) || f.setores.includes(setor)).map(f => f.data));
+  return {dias: new Set(base.dias), faixas: hsFaixas(base.turnos), fer};
+}
+/* Os turnos [ini, fim] em ms que podem tocar [a, b], em ordem. Começa um dia antes: o turno da véspera atravessa a meia-noite. */
+function hsBlocos(g, a, b, dias){
+  const out = [], da = new Date(a), db = new Date(b);
+  const ultimo = new Date(db.getFullYear(), db.getMonth(), db.getDate()).getTime();
+  for(let i = -1; i <= dias; i++){
+    const d = new Date(da.getFullYear(), da.getMonth(), da.getDate() + i);
+    if(d.getTime() > ultimo) break;
+    if(!g.dias.has(d.getDay() || 7) || g.fer.has(hsIso(d))) continue;
+    for(const [x, y] of g.faixas){
+      const f = m => new Date(d.getFullYear(), d.getMonth(), d.getDate() + Math.floor(m / 1440), Math.floor(m % 1440 / 60), m % 60).getTime();
+      out.push([f(x), f(y)]);
+    }
+  }
+  return out;
+}
+/* Milissegundos de trabalho entre a e b (0 se b <= a). Sem grade, o tempo corrido. */
+function hsUtil(g, a, b){
+  if(b <= a) return 0;
+  if(!g) return b - a;
+  b = Math.min(b, a + HS_MEDE_DIAS * DAY);
+  let t = 0;
+  for(const [s, e] of hsBlocos(g, a, b, HS_MEDE_DIAS)){const x = Math.max(s, a), y = Math.min(e, b); if(y > x) t += y - x}
+  return t;
+}
+/* Os intervalos de trabalho dentro de [a, b], recortados e sem emendas. */
+function hsExpediente(g, a, b){
+  if(!g) return b > a ? [[a, b]] : [];
+  const out = [];
+  for(const [s, e] of hsBlocos(g, a, b, Math.min(HS_MEDE_DIAS, Math.max(0, Math.floor((b - a) / DAY)) + 2))){
+    const x = Math.max(s, a), y = Math.min(e, b);
+    if(y <= x) continue;
+    if(out.length && out[out.length - 1][1] >= x) out[out.length - 1][1] = Math.max(out[out.length - 1][1], y);
+    else out.push([x, y]);
+  }
+  return out;
+}
+/* O contrário: os intervalos de [a, b] fora do horário de serviço (o que a tela sombreia). */
+function hsFora(g, a, b){
+  const out = []; let c = a;
+  for(const [s, e] of hsExpediente(g, a, b)){if(s > c) out.push([c, s]); c = e}
+  if(c < b) out.push([c, b]);
+  return out;
+}
+const hsAberto = (g, t) => !g || hsBlocos(g, t, t + 1, 1).some(([s, e]) => s <= t && t < e);
+/* A grade que vale para esta solicitação: a versão gravada nela, no setor destino (null = tempo corrido). */
+const hsDe = r => r.agenda_v == null || !D.v || !D.v.agendas ? null : hsGrade(D.v.agendas[String(r.agenda_v)], r.para && r.para.s);
+/* Tempo entre a e b contado como a solicitação conta: útil se ela é de horário de serviço, corrido se não. */
+const hsEl = (r, a, b) => {const g = hsDe(r); return g ? hsUtil(g, a, b) : Math.max(0, b - a)};
+const hsDif = (r, a, b) => b >= a ? hsEl(r, a, b) : -hsEl(r, b, a);
+
 /* ---------- regras de tempo (derivados do servidor + o tempo que passou desde a vista) ---------- */
 const isAct = r => r.status === 'new' || r.status === 'prog' || r.status === 'pause';
 const lateNow = r => isAct(r) && (!!r.atrasada || now() > num(r.prazo));
@@ -90,7 +154,7 @@ const lateDone = r => r.status === 'done' && num(r.fim) > num(r.prazo);
 const dispSt = r => lateNow(r) ? 'late' : r.status;
 const openPause = r => {const p = (r.pausas || [])[r.pausas.length - 1]; return p && !p.fim ? p : null};
 function mets(r){
-  const dt = isAct(r) && D.v ? Math.max(0, (now() - num(D.v.agora, now())) / MIN) : 0;
+  const dt = isAct(r) && D.v ? hsEl(r, num(D.v.agora, now()), now()) / MIN : 0;
   let w = num(r.espera), e = num(r.execucao), p = num(r.pausado), t = num(r.total);
   if(dt){t += dt; if(r.status === 'new') w += dt; else if(r.status === 'prog') e += dt; else p += dt}
   return {w, e, p, t, sla: r.est ? t / r.est * 100 : 0};
@@ -102,9 +166,9 @@ function slaCls(r){
   return p < 70 ? 'dm-ok' : p < 100 ? 'dm-warn' : 'dm-bad';
 }
 function remText(r){
-  if(r.status === 'done'){const d = (num(r.fim) - num(r.prazo)) / MIN; return d <= 0 ? 'Concluída ' + fT(r.fim) + ' · no prazo' : 'Concluída com atraso de ' + dur(d)}
+  if(r.status === 'done'){const d = r.atraso != null ? num(r.atraso) : (num(r.fim) - num(r.prazo)) / MIN; return d <= 0 ? 'Concluída ' + fT(r.fim) + ' · no prazo' : 'Concluída com atraso de ' + dur(d)}
   if(r.status === 'canc') return 'Cancelada ' + (r.fim ? fT(r.fim) : '');
-  const rem = (num(r.prazo) - now()) / MIN;
+  const rem = hsDif(r, now(), num(r.prazo)) / MIN;
   return rem >= 0 ? 'Faltam ' + dur(rem) : 'Atrasada há ' + dur(-rem);
 }
 const sortAtt = (a, b) => (lateNow(b) - lateNow(a)) || ((PRIO[b.prio] || PRIO.norm)[1] - (PRIO[a.prio] || PRIO.norm)[1]) || (num(a.prazo) - num(b.prazo));
@@ -473,11 +537,12 @@ function attention(){
   for(const r of reqs()){
     if(!isAct(r)) continue;
     const tags = []; let score = 0;
-    if(lateNow(r)){tags.push({k: 'late', t: 'Atrasada há ' + dur((N - num(r.prazo)) / MIN)}); score += 100}
+    if(lateNow(r)){tags.push({k: 'late', t: 'Atrasada há ' + dur(hsEl(r, num(r.prazo), N) / MIN)}); score += 100}
     if(r.prio === 'urg'){tags.push({k: 'urg', t: 'Urgente'}); score += 60}
     const op = openPause(r);
-    if(op && (N - num(op.ini)) / MIN >= 20){tags.push({k: 'pause', t: 'Pausada há ' + dur((N - num(op.ini)) / MIN)}); score += 40}
-    if(r.status === 'new' && (N - num(r.criado)) / MIN >= 25){tags.push({k: 'wait', t: 'Sem aceite há ' + dur((N - num(r.criado)) / MIN)}); score += 30}
+    const pausa = op ? hsEl(r, num(op.ini), N) / MIN : 0, espera = hsEl(r, num(r.criado), N) / MIN;
+    if(op && pausa >= 20){tags.push({k: 'pause', t: 'Pausada há ' + dur(pausa)}); score += 40}
+    if(r.status === 'new' && espera >= 25){tags.push({k: 'wait', t: 'Sem aceite há ' + dur(espera)}); score += 30}
     if(tags.length) out.push({r, tags, score});
   }
   return out.sort((a, b) => b.score - a.score);
@@ -591,7 +656,7 @@ async function loadArq(){
    Tudo derivado da vista que a API já devolve, mais o arquivo morto pelo histórico: nenhuma rota nova.
    As fronteiras de mês, semana e dia são calculadas aqui porque dependem do fuso do aparelho. */
 const CAL_H0 = 6, CAL_H1 = 22, CAL_PX = 38;   // faixa de horas das visões semana e dia, e altura da hora
-const CAL_EXP = [7, 17];                      // expediente só como referência visual: turno é fase 3
+const CAL_EXP = [7, 17];                      // referência visual quando o horário de serviço está desligado
 const CAL_CHIPS = 3;                          // chips por dia na visão mês, antes do "+ n"
 const MES_NOME = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro',
   'outubro', 'novembro', 'dezembro'];
@@ -668,7 +733,17 @@ function calMes(){
   }
   return `<div class="cal-wrap"><div><div class="cal-dow">${DOW.map(x => `<span>${x}</span>`).join('')}</div><div class="cal-grid">${cel}</div></div>${calSide()}</div>`;
 }
+/* As faixas fora do horário de serviço de um dia (do setor filtrado, ou o padrão). Com o horário desligado, só a
+   referência fixa das 7h às 17h. */
+function calFora(k, g){
+  const H = CAL_H1 - CAL_H0;
+  if(!g) return `<i class="cal-off" style="top:0;height:${Math.max(0, (CAL_EXP[0] - CAL_H0) * CAL_PX)}px"></i><i class="cal-off" style="top:${(CAL_EXP[1] - CAL_H0) * CAL_PX}px;bottom:0"></i>`;
+  const d = new Date(k), a = new Date(d.getFullYear(), d.getMonth(), d.getDate(), CAL_H0).getTime(), b = new Date(d.getFullYear(), d.getMonth(), d.getDate(), CAL_H1).getTime();
+  const px = t => ((t - a) / HOUR * CAL_PX).toFixed(1);
+  return hsFora(g, a, b).map(([x, y]) => `<i class="cal-off" style="top:${px(x)}px;height:${Math.min(H * CAL_PX, (y - x) / HOUR * CAL_PX).toFixed(1)}px"></i>`).join('');
+}
 function calGrade(dias){
+  const grade = hsGrade(D.v.agenda, D.cal.sec || null);
   const porDia = calPorDia(dias[0], dias[dias.length - 1] + DAY);
   const hoje = crJanela('dia', 0)[0], H = CAL_H1 - CAL_H0;
   const horas = [];
@@ -684,10 +759,10 @@ function calGrade(dias){
     }).join('');
     const agora = now(), nd = new Date(agora); nd.setHours(0, 0, 0, 0);
     const linhaAgora = nd.getTime() === k ? `<i class="cal-now" style="top:${Math.max(0, Math.min(H * CAL_PX, topo(agora))).toFixed(1)}px"></i>` : '';
-    return `<div class="cal-col${k === hoje ? ' cal-today' : ''}${d.getDay() === 0 || d.getDay() === 6 ? ' cal-we' : ''}"><i class="cal-off" style="top:0;height:${Math.max(0, (CAL_EXP[0] - CAL_H0) * CAL_PX)}px"></i><i class="cal-off" style="top:${(CAL_EXP[1] - CAL_H0) * CAL_PX}px;bottom:0"></i>${blocos}${linhaAgora}</div>`;
+    return `<div class="cal-col${k === hoje ? ' cal-today' : ''}${d.getDay() === 0 || d.getDay() === 6 ? ' cal-we' : ''}">${calFora(k, grade)}${blocos}${linhaAgora}</div>`;
   }).join('');
   const cab = dias.map(k => {const d = new Date(k); return `<span class="${k === hoje ? 'cal-today' : ''}"><b>${DOW[d.getDay()]}</b> ${fD(k)}</span>`}).join('');
-  return `<div class="cal-week"><div class="cal-wh" style="--dm-cols:${dias.length}"><span class="cal-tcol"></span>${cab}</div><div class="cal-wb" style="--dm-cols:${dias.length};height:${H * CAL_PX}px"><div class="cal-hours2">${horas.join('')}</div>${cols}</div><div class="dm-note">A faixa clara é só referência de expediente (${p2(CAL_EXP[0])}h às ${p2(CAL_EXP[1])}h). O programa ainda não tem turnos nem feriados.</div></div>`;
+  return `<div class="cal-week"><div class="cal-wh" style="--dm-cols:${dias.length}"><span class="cal-tcol"></span>${cab}</div><div class="cal-wb" style="--dm-cols:${dias.length};height:${H * CAL_PX}px"><div class="cal-hours2">${horas.join('')}</div>${cols}</div><div class="dm-note">${grade ? 'A faixa sombreada é fora do horário de serviço (turnos, dias de folga e feriados).' : `O horário de serviço está desligado: a faixa sombreada é só uma referência (${p2(CAL_EXP[0])}h às ${p2(CAL_EXP[1])}h). Para configurar, vá em Administração, Expediente.`}</div></div>`;
 }
 function calSemana(){
   const [GS] = calJanela(), dias = [];
@@ -793,7 +868,20 @@ function gantt(g, o){
   const multi = modo !== '13h', ds = multi ? crDias(GS, GE) : [];
   const cols = !multi ? 0 : modo === 'dia' ? 24 : ds.length;
   const we = multi ? ds.filter(x => x.dow === 0 || x.dow === 6).map(x => `<i class="cr-we" style="left:${L(x.a).toFixed(3)}%;width:${(L(x.b) - L(x.a)).toFixed(3)}%"></i>`).join('') : '';
-  const linha = r => crLinha(r, L, NOWg, GS, GE, cols, we);
+  const ex = g.expediente, foraDe = {};
+  /* O sombreado de fora do expediente: o do setor da linha (se tem horário ou feriado próprio) ou o geral. */
+  const fora = r => {
+    if(!ex) return '';
+    const s = r.para, ivs = ex.setores && ex.setores[s] ? ex.setores[s] : ex.geral;
+    if(!foraDe[s]){
+      const vis = []; let c = GS;
+      for(const [a, b] of ivs){if(a > c) vis.push([c, a]); c = b}
+      if(c < GE) vis.push([c, GE]);
+      foraDe[s] = vis.map(([a, b]) => `<i class="cr-off" style="left:${L(a).toFixed(3)}%;width:${(L(b) - L(a)).toFixed(3)}%"></i>`).join('');
+    }
+    return foraDe[s];
+  };
+  const linha = r => crLinha(r, L, NOWg, GS, GE, cols, we + fora(r));
   const body = Array.isArray(g.grupos)
     ? g.grupos.map(gr => {
       const nome = g.por === 'pessoa'
@@ -803,7 +891,7 @@ function gantt(g, o){
     }).join('')
     : g.linhas.map(linha).join('');
   const dentro = crEixo(GS, GE, modo, L, ds) + (body || '<div class="dm-empty">Sem solicitações no intervalo.</div>');
-  const leg = `<div class="dm-legend"><span><i style="background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--dm-s-new) 45%,transparent) 0 3px,transparent 3px 6px);border:1px solid var(--dm-s-new)"></i>Espera</span><span><i style="background:var(--dm-s-prog)"></i>Execução</span><span><i style="background:var(--dm-s-pause)"></i>Pausa</span>${multi ? '<span><i style="background:color-mix(in srgb,var(--dm-ink) 14%,transparent)"></i>Plano (criado → prazo)</span>' : ''}<span><i style="background:var(--dm-s-late)"></i>Prazo</span><span><i style="background:var(--dm-brand)"></i>Agora</span></div>`;
+  const leg = `<div class="dm-legend"><span><i style="background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--dm-s-new) 45%,transparent) 0 3px,transparent 3px 6px);border:1px solid var(--dm-s-new)"></i>Espera</span><span><i style="background:var(--dm-s-prog)"></i>Execução</span><span><i style="background:var(--dm-s-pause)"></i>Pausa</span>${multi ? '<span><i style="background:color-mix(in srgb,var(--dm-ink) 14%,transparent)"></i>Plano (criado → prazo)</span>' : ''}<span><i style="background:var(--dm-s-late)"></i>Prazo</span><span><i style="background:var(--dm-brand)"></i>Agora</span>${ex ? '<span><i style="background:color-mix(in srgb,var(--dm-muted) 22%,transparent)"></i>Fora do horário de serviço</span>' : ''}</div>`;
   return (multi ? `<div class="cr-scroll"><div class="cr-in">${dentro}</div></div>` : dentro) + leg;
 }
 const CR_MODOS = [['13h', '13 h'], ['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês']];
@@ -841,6 +929,7 @@ function vCrono(){
   const seg = `<div class="dm-filters"><h3 class="dm-h3">Cronoanálise das solicitações</h3><span class="dm-spacer"></span><div class="dm-seg" role="group" aria-label="Período">${[[1, 'Hoje'], [7, '7 dias'], [30, '30 dias']].map(([v, l]) => `<button type="button" data-act="period" data-v="${v}" aria-pressed="${D.period === v}">${l}</button>`).join('')}</div></div>`;
   const c = D.crono;
   if(!c || D.cronoP !== D.period) return seg + '<div class="dm-loading">Carregando a cronoanálise…</div>';
+  const foraAviso = hsAvisoFora();
   const k = c.kpis || {}, ab = num(k.abertas), cc = num(k.concluidas);
   const ck = [['📨', 'Solicitações', ab, 'abertas no período'], ['✅', 'Concluídas', cc, 'de ' + ab + ' abertas'], ['🎯', 'Cumprimento do prazo', k.pct_prazo == null ? '—' : num(k.pct_prazo) + '%', num(k.no_prazo) + ' de ' + cc + ' no prazo'],
     ['⏳', 'Espera média', dur(k.espera), 'até alguém iniciar'], ['⚙️', 'Execução média', dur(k.execucao), 'estimado ' + dur(k.estimado)], ['⏸', 'Tempo em pausa', dur(k.pausado), 'média por solicitação']];
@@ -857,7 +946,7 @@ function vCrono(){
   if(rl.length) ins.push(['📌 Motivo mais comum', esc(rl[0][0]) + ': ' + rl[0][1] + ' solicitações (' + Math.round(rl[0][1] / rtot * 100) + '%).']);
   const rk = (c.ranking || []).map(x => ({p: x.p, n: num(x.n), sla: x.sla == null ? null : Math.round(num(x.sla))})), rkMax = rk.length ? Math.max(1, ...rk.map(x => x.n)) : 1;
   let cum = 0;
-  return seg + `<div class="dm-ckpis">${ck.map(([i, l, v, s]) => `<div class="dm-ck"><span>${i} ${l}</span><b>${esc(v)}</b><small>${esc(s)}</small></div>`).join('')}</div>
+  return seg + foraAviso + `<div class="dm-ckpis">${ck.map(([i, l, v, s]) => `<div class="dm-ck"><span>${i} ${l}</span><b>${esc(v)}</b><small>${esc(s)}</small></div>`).join('')}</div>
    ${ins.length ? `<div class="dm-insights">${ins.map(([t, d]) => `<div class="dm-ins"><b>${t}</b>${d}</div>`).join('')}</div>` : ''}
    <div class="dm-panel"><div class="dm-ph"><h3>Tempo por setor responsável</h3><span class="dm-s">Espera + execução + pausas × tempo estimado (traço preto)</span></div>
     <div class="dm-chead"><span>Setor</span><span>Concl.</span><span>Espera</span><span>Execução</span><span>Estimado</span><span>No prazo</span><span>Distribuição do tempo</span></div>
@@ -871,6 +960,93 @@ function vCrono(){
    </div>`;
 }
 
+/* ---------- ADM: expediente (horário de serviço) ----------
+   O formulário edita uma cópia (D.hs.cfg) da agenda da vista; Salvar manda a cópia inteira. O servidor confere
+   tudo de novo e só uma versão igual à vigente é aceita (outro aparelho pode ter salvo no meio). */
+const HS_DIAS = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb'], [7, 'Dom']];
+const hsClone = o => JSON.parse(JSON.stringify(o));
+const hsSemV = c => {const o = hsClone(c); delete o.v; return JSON.stringify(o)};
+const hsSujo = () => !!D.hs && hsSemV(D.hs.cfg) !== hsSemV(D.v.agenda);
+function hsIni(){
+  const a = D.v && D.v.agenda ? D.v.agenda : null;
+  if(!a) return false;
+  if(!D.hs || (!hsSujo() && D.hs.cfg.v !== a.v)) D.hs = {cfg: hsClone(a), escopo: (D.hs && D.hs.escopo) || ''};
+  return true;
+}
+/* A grade em edição: a do setor escolhido (se tem a própria) ou a padrão. */
+const hsAlvo = () => {const h = D.hs; return h.escopo && h.cfg.setores[h.escopo] ? h.cfg.setores[h.escopo] : h.cfg.padrao};
+function vHours(){
+  if(!hsIni()) return '<div class="dm-loading">Carregando…</div>';
+  const h = D.hs, c = h.cfg, esc_ = h.escopo, propria = !!(esc_ && c.setores[esc_]), alvo = hsAlvo(), usaPadrao = esc_ && !propria;
+  const escopos = [['', 'Horário padrão da fábrica']].concat(setores().filter(s => s.ativo).map(s => [s.id, 'Setor ' + s.id + ' · ' + s.nome]));
+  const turnos = alvo.turnos.map((t, i) => `<div class="hs-turno"><label>Das <input type="time" id="hs-ta-${i}" value="${esc(t[0])}" aria-label="Início do turno ${i + 1}"></label><label>às <input type="time" id="hs-tb-${i}" value="${esc(t[1])}" aria-label="Fim do turno ${i + 1}"></label><button type="button" class="dm-btn dm-sm" data-act="hs-del" data-v="${i}" aria-label="Remover turno ${i + 1}">✕</button></div>`).join('');
+  const grade = usaPadrao ? '<p class="dm-note">Este setor usa o horário padrão da fábrica. Marque a opção acima para dar um horário só dele.</p>'
+    : `<div class="hs-dias" role="group" aria-label="Dias da semana">${HS_DIAS.map(([n, l]) => `<button type="button" class="dm-opt" data-act="hs-dia" data-v="${n}" aria-pressed="${alvo.dias.includes(n)}">${l}</button>`).join('')}</div>
+     <div class="hs-turnos">${turnos || '<p class="dm-note">Nenhum turno: não há trabalho nestes dias.</p>'}</div>
+     <button type="button" class="dm-btn dm-sm" data-act="hs-add">＋ Turno</button>
+     <p class="dm-note">Um turno que termina antes de começar (ex.: 22:00 às 06:00) atravessa a meia-noite e pertence ao dia em que começa.</p>`;
+  const fer = c.feriados.map((f, i) => `<div class="hs-fer"><input type="date" id="hs-fd-${i}" value="${esc(f.data)}" aria-label="Data do feriado ${i + 1}"><input type="text" id="hs-fn-${i}" value="${esc(f.nome)}" maxlength="60" placeholder="Nome (ex.: Natal)" aria-label="Nome do feriado ${i + 1}"><select id="hs-fs-${i}" aria-label="Setor do feriado ${i + 1}">${opt('', 'Todos os setores', f.setores[0] || '')}${secOpts(f.setores[0] || '', true)}</select><button type="button" class="dm-btn dm-sm" data-act="hs-fdel" data-v="${i}" aria-label="Remover feriado ${i + 1}">✕</button></div>`).join('');
+  const sujo = hsSujo();
+  return `<div class="dm-panel hs-box"><div class="dm-ph"><h3>Horário de serviço</h3><span class="dm-s">Versão ${num(c.v)}${sujo ? ' · alterações não salvas' : ''}</span></div>
+   <label class="hs-on"><input type="checkbox" id="hs-ativa"${c.ativa ? ' checked' : ''}> <b>Contar o tempo só em horário de serviço</b></label>
+   <p class="dm-note">Ligado, o prazo, a espera, a execução, as pausas e os avisos das solicitações <b>criadas daqui para frente</b> só contam dentro dos turnos, e não contam em dias de folga nem em feriados. As solicitações já abertas e as antigas seguem como estavam. Desligado, tudo conta em tempo corrido.</p>
+   <div class="dm-fld"><span class="dm-lbl">Horário de</span><select id="hs-escopo" aria-label="Horário de">${escopos.map(([v, l]) => opt(v, l, esc_)).join('')}</select></div>
+   ${esc_ ? `<label class="hs-on"><input type="checkbox" id="hs-propria"${propria ? ' checked' : ''}> Este setor tem horário próprio (dias e turnos diferentes do padrão)</label>` : ''}
+   ${grade}</div>
+   <div class="dm-panel hs-box"><div class="dm-ph"><h3>Feriados e dias de parada</h3><span class="dm-s">Não há trabalho nesses dias, para todos os setores ou só para um</span></div>
+   <div class="hs-fers">${fer || '<p class="dm-note">Nenhum feriado cadastrado.</p>'}</div>
+   <button type="button" class="dm-btn dm-sm" data-act="hs-fadd">＋ Feriado</button></div>
+   <div class="hs-bar"><button type="button" class="dm-btn dm-primary" data-act="hs-save"${sujo ? '' : ' disabled'}>Salvar horário</button><button type="button" class="dm-btn" data-act="hs-undo"${sujo ? '' : ' disabled'}>Descartar alterações</button></div>`;
+}
+/* Digitar em hora, data e nome só grava no formulário: redesenhar a cada tecla tiraria o foco. */
+function hsInput(id, v){
+  const h = D.hs; if(!h) return;
+  let m;
+  if((m = /^hs-t([ab])-(\d+)$/.exec(id))){const t = hsAlvo().turnos[+m[2]]; if(t) t[m[1] === 'a' ? 0 : 1] = v}
+  else if((m = /^hs-f([dns])-(\d+)$/.exec(id))){
+    const f = h.cfg.feriados[+m[2]]; if(!f) return;
+    if(m[1] === 'd') f.data = v; else if(m[1] === 'n') f.nome = v; else f.setores = v ? [v] : [];
+  }
+  else return;
+  const salvar = document.querySelector('[data-act=hs-save]'), desfazer = document.querySelector('[data-act=hs-undo]');
+  if(salvar) salvar.disabled = !hsSujo();
+  if(desfazer) desfazer.disabled = !hsSujo();
+}
+function hsMuda(a, d){
+  const h = D.hs; if(!h) return;
+  const alvo = hsAlvo();
+  if(a === 'hs-dia'){const n = num(d.v), i = alvo.dias.indexOf(n); if(i < 0) alvo.dias.push(n); else alvo.dias.splice(i, 1); alvo.dias.sort((x, y) => x - y)}
+  else if(a === 'hs-add') alvo.turnos.push(alvo.turnos.length ? [alvo.turnos[alvo.turnos.length - 1][1], alvo.turnos[alvo.turnos.length - 1][1]] : ['07:00', '17:00']);
+  else if(a === 'hs-del') alvo.turnos.splice(num(d.v), 1);
+  else if(a === 'hs-fadd') h.cfg.feriados.push({data: '', nome: '', setores: []});
+  else if(a === 'hs-fdel') h.cfg.feriados.splice(num(d.v), 1);
+  else if(a === 'hs-undo') D.hs = null;
+  renderView();
+}
+function hsChange(id, el){
+  const h = D.hs; if(!h) return;
+  if(/^hs-(t[ab]|f[dns])-\d+$/.test(id)){hsInput(id, el.value); return}   // o seletor de setor do feriado e a hora, quando o aparelho só avisa no fim
+  if(id === 'hs-ativa') h.cfg.ativa = el.checked;
+  else if(id === 'hs-escopo') h.escopo = el.value;
+  else if(id === 'hs-propria'){if(el.checked) h.cfg.setores[h.escopo] = hsClone(h.cfg.padrao); else delete h.cfg.setores[h.escopo]}
+  else return;
+  renderView();
+}
+async function hsSalva(el){
+  const h = D.hs; if(!h) return;
+  const cfg = hsClone(h.cfg);
+  cfg.feriados = cfg.feriados.filter(f => f.data || f.nome.trim());   // linha em branco que sobrou não é feriado
+  const r = await run(el, 'agenda/salvar', {agenda: cfg}, 'Horário de serviço salvo.');
+  if(r) D.hs = null;
+  renderView();
+}
+/* No Cronoanálise: avisa quando as contagens estão paradas por causa do horário. */
+function hsAvisoFora(){
+  const a = D.v && D.v.agenda;
+  if(!a || !a.ativa || hsAberto(hsGrade(a, null), now())) return '';
+  return '<div class="dm-note hs-fora">⏸ Fora do horário de serviço: os prazos e as contagens estão parados até a próxima abertura.</div>';
+}
+
 /* ---------- ADM: administração ---------- */
 function sectorStats(sid){
   const all = reqs(), act = all.filter(r => r.para.s === sid && isAct(r)), N = now(), d7 = all.filter(r => r.para.s === sid && r.status === 'done' && num(r.fim) >= N - 7 * DAY);
@@ -882,11 +1058,12 @@ function userStats(pid){
 }
 const ativoPill = on => on ? '<span class="dm-pill" data-st="prog">Ativo</span>' : '<span class="dm-pill" data-st="canc">Inativo</span>';
 function vAdmin(){
-  const sub = D.admSub, users = sub === 'users', u = D.v.anexos_uso;
-  const head = `<div class="dm-filters"><div class="dm-seg" role="group" aria-label="Administração"><button type="button" data-act="admsub" data-v="sectors" aria-pressed="${!users}">Setores</button><button type="button" data-act="admsub" data-v="users" aria-pressed="${users}">Usuários</button></div>
+  const sub = D.admSub, users = sub === 'users', hours = sub === 'hours', u = D.v.anexos_uso;
+  const head = `<div class="dm-filters"><div class="dm-seg" role="group" aria-label="Administração"><button type="button" data-act="admsub" data-v="sectors" aria-pressed="${!users && !hours}">Setores</button><button type="button" data-act="admsub" data-v="users" aria-pressed="${users}">Usuários</button><button type="button" data-act="admsub" data-v="hours" aria-pressed="${hours}">Expediente</button></div>
    ${users ? `<input type="search" id="dm-uq" placeholder="Buscar usuário ou matrícula" aria-label="Buscar usuário" value="${esc(D.uq)}"><select id="dm-uSec" aria-label="Setor">${opt('', 'Todos os setores', D.uSec)}${secOpts(D.uSec, true)}</select><select id="dm-uSt" aria-label="Status">${[['', 'Todos os status'], ['on', 'Ativos'], ['off', 'Inativos']].map(([v, t]) => opt(v, t, D.uSt)).join('')}</select>` : ''}
-   <span class="dm-spacer"></span><span class="dm-count">${users ? '' : setores().length + ' setores · ' + pessoas().filter(p => p.ativo).length + ' usuários ativos'}${u ? ' · anexos ' + fBytes(u.bytes) + ' de ' + fBytes(u.cota) : ''}</span>
-   <button type="button" class="dm-btn" data-act="newuser">＋ Novo usuário</button>${users ? '' : '<button type="button" class="dm-btn dm-primary" data-act="newsector">＋ Novo setor</button>'}</div>`;
+   <span class="dm-spacer"></span><span class="dm-count">${users || hours ? '' : setores().length + ' setores · ' + pessoas().filter(p => p.ativo).length + ' usuários ativos'}${u ? ' · anexos ' + fBytes(u.bytes) + ' de ' + fBytes(u.cota) : ''}</span>
+   ${hours ? '' : '<button type="button" class="dm-btn" data-act="newuser">＋ Novo usuário</button>'}${users || hours ? '' : '<button type="button" class="dm-btn dm-primary" data-act="newsector">＋ Novo setor</button>'}</div>`;
+  if(hours) return head + vHours();
   if(!users) return head + `<div class="dm-sgrid">${setores().map(s => {
     const st = sectorStats(s.id), us = usersOf(s.id).filter(p => p.ativo);
     return `<div class="dm-scard${s.ativo ? '' : ' dm-off'}" style="--dm-sc:${col(s.cor)}">
@@ -1845,7 +2022,7 @@ function bkAlert(){
 // o rascunho fica no aparelho até a conexão voltar.
 const ESCRITA = new Set(['accept', 'resume', 'pause', 'finish', 'reassign', 'cancel', 'nudge', 'extend', 'comment', 'aadd', 'adel',
   'noteall', 'm-submit', 'm-pause-ok', 'm-finish-ok', 'm-ra-ok', 'm-cn-ok', 'cf-ok', 'sf-save', 'sf-toggle', 'sf-del', 'uf-save',
-  'uf-toggle', 'uf-del', 'bk-agora', 'bk-salvar', 'bk-rest', 'bk-rest-ok', 'cfg-pin', 'pf-salvar', 'pf-padrao']);
+  'uf-toggle', 'uf-del', 'hs-save', 'bk-agora', 'bk-salvar', 'bk-rest', 'bk-rest-ok', 'cfg-pin', 'pf-salvar', 'pf-padrao']);
 function conexao(st){
   const caiu = !!st, voltou = !caiu && !!D.off;
   D.off = caiu ? {ultima: num(st.ultima, Date.now()), proxima: num(st.proxima, Date.now())} : null;
@@ -1910,6 +2087,8 @@ function act(a, d, el, ev){
     case 'hclear': D.hq = D.hSt = D.hFrom = D.hTo = ''; renderView(); break;
     case 'hrel': D.hFrom = d.from; D.hTo = d.to; renderView(); break;
     case 'admsub': D.admSub = d.v; renderView(); break;
+    case 'hs-dia': case 'hs-add': case 'hs-del': case 'hs-fadd': case 'hs-fdel': case 'hs-undo': hsMuda(a, d); break;
+    case 'hs-save': hsSalva(el); break;
     case 'open': openDrawer(d.id); break;
     case 'close': closePanels(); break;
     case 'bell': openNotif(); break;
@@ -2056,7 +2235,8 @@ function onClick(e){
 }
 function onInput(e){
   const id = e.target.id, v = e.target.value;
-  if(id === 'dm-q'){D.q = v; renderView()}
+  if(id.startsWith('hs-')) hsInput(id, v);
+  else if(id === 'dm-q'){D.q = v; renderView()}
   else if(id === 'dm-hq'){D.hq = v; renderView()}
   else if(id === 'dm-uq'){D.uq = v; renderView()}
   else if(id === 'dm-lg-code'){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.lg.code = c; if(D.lg.err){D.lg.err = ''; const f = $('dm-lg-fld'); if(f) f.classList.remove('dm-err')}}
@@ -2076,7 +2256,8 @@ function onInput(e){
 }
 function onChange(e){
   const id = e.target.id, v = e.target.value;
-  if(id === 'dm-fSt'){D.fSt = v; renderView()}
+  if(id.startsWith('hs-')) hsChange(id, e.target);
+  else if(id === 'dm-fSt'){D.fSt = v; renderView()}
   else if(id === 'dm-fSec'){D.fSec = v; renderView()}
   else if(id === 'dm-calSec'){D.cal.sec = v; renderView()}
   else if(id === 'dm-fPrio'){D.fPrio = v; renderView()}
@@ -2138,6 +2319,7 @@ const LIVE = {
   refresh: () => refresh(),
   config: sec => openCfg(sec),   // botão ⚙ Configurações da casca (app.js)
   conexao: st => conexao(st),    // a casca (app.js) avisa: {ultima, proxima} = sem conexão; null = voltou
+  hs: {grade: hsGrade, util: hsUtil, expediente: hsExpediente, aberto: hsAberto},   // contas puras do horário de serviço (os testes conferem a paridade com o Python)
 };
 
 const SVGNS = 'http://www.w3.org/2000/svg';

@@ -435,6 +435,153 @@ async function cronogramaDaTela(){
   w.close();
 }
 
+// Horário de serviço: a aba Administração > Expediente, a paridade das contas com o Python (vetores compartilhados),
+// o cronômetro em tempo útil e o sombreado do calendário e da Cronoanálise. Roda depois do cronograma, com os
+// setores do fluxo principal (ALM, CNC, PCP) já gravados.
+async function horarioDaTela(){
+  const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
+  const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
+  const click=s=>{const e=typeof s==='string'?$(s):s;e.click()};
+  const type=(s,v,ev='input')=>{const e=$(s);e.value=v;e.dispatchEvent(new w.Event(ev,{bubbles:true}))};
+  const disco=()=>JSON.parse(fs.readFileSync(path.join(data,'demandas.json'),'utf8'));
+  const toast=()=>($('#dm-toast')||{}).textContent||'';
+  await until(()=>$('[data-act=lgk][data-v=adm]'));$('[data-act=lgk][data-v=adm]').click();$('.dm-lgbtn').click();
+  await until(()=>$('.dm-tab[data-v=painel]'));
+
+  // 1. paridade: os mesmos vetores que o Python confere (tests/test_demandas_agenda.py, Vetores)
+  const V=JSON.parse(fs.readFileSync(path.join(__dirname,'vetores_agenda.json'),'utf8')),hs=w.NestLocal.views.demandas.hs;
+  const ms=a=>new Date(a[0],a[1]-1,a[2],a[3]||0,a[4]||0).getTime();
+  let certos=0,uteis=0;
+  for(const c of V.casos){
+    if(c.op!=='util')continue;uteis++;
+    const g=hs.grade(V.agendas[c.agenda],c.setor),r=Math.round(hs.util(g,ms(c.de),ms(c.ate))/60000);
+    if(r===c.min)certos++;else ok(false,'vetor "'+c.nome+'": JS deu '+r+' min, o Python espera '+c.min);
+    const soma=hs.expediente(g,ms(c.de),ms(c.ate)).reduce((t,[a,b])=>t+b-a,0);
+    if(Math.round(soma/60000)!==c.min)ok(false,'vetor "'+c.nome+'": a soma do expediente ('+Math.round(soma/60000)+') difere da medida');
+  }
+  ok(certos===uteis&&uteis>=8,'paridade JS×Python: '+certos+' de '+uteis+' vetores de tempo útil batem');
+  const comercial=hs.grade(V.agendas.comercial,'CNC');
+  ok(hs.aberto(comercial,ms([2026,11,9,7,0]))&&!hs.aberto(comercial,ms([2026,11,9,12,0]))&&!hs.aberto(comercial,ms([2026,11,14,10,0]))&&hs.aberto(null,0),'aberto: abertura conta, fecho não, sábado fechado, sem grade sempre aberto');
+  ok(hs.grade(null,'CNC')===null&&hs.grade({ativa:false},'CNC')===null,'sem agenda ou desligada: sem grade (tempo corrido)');
+
+  // 2. a sub-aba Expediente, desligada de fábrica
+  $('.dm-tab[data-v=admin]').click();await until(()=>$('[data-act=admsub][data-v=hours]'));
+  click('[data-act=admsub][data-v=hours]');
+  ok(await until(()=>$('#hs-ativa')),'Administração tem a sub-aba Expediente');
+  ok(!$('#hs-ativa').checked&&$('[data-act=hs-save]').disabled,'de fábrica: desligado, e Salvar desabilitado sem alteração');
+  ok($$('[data-act=hs-dia][aria-pressed=true]').map(b=>b.dataset.v).join()==='1,2,3,4,5'&&$$('.hs-turno').length===2,'padrão de fábrica: segunda a sexta, dois turnos');
+  ok(!$('[data-act=newsector]')&&!$('[data-act=newuser]'),'os botões de setor e usuário não aparecem nesta sub-aba');
+
+  // 3. ligar e salvar
+  click('#hs-ativa');
+  ok(await until(()=>$('#hs-ativa').checked&&!$('[data-act=hs-save]').disabled)&&/alterações não salvas/.test($('.hs-box .dm-s').textContent),'ligar marca a alteração como não salva');
+  click('[data-act=hs-save]');
+  ok(await until(()=>disco().agenda.ativa===true&&disco().agenda.v===1),'salvar grava a agenda ligada, versão 1');
+  ok(await until(()=>$('[data-act=hs-save]')&&$('[data-act=hs-save]').disabled&&/Versão 1/.test($('.hs-box .dm-s').textContent)),'depois de salvar: sem alterações, "Versão 1"');
+
+  // 4. turno novo, dia novo, digitando sem perder o foco
+  click('[data-act=hs-dia][data-v="6"]');await until(()=>$('[data-act=hs-dia][data-v="6"]').getAttribute('aria-pressed')==='true');
+  click('[data-act=hs-add]');await until(()=>$$('.hs-turno').length===3);
+  ok($('#hs-ta-2').value==='17:00'&&$('#hs-tb-2').value==='17:00','turno novo começa onde o último terminou');
+  type('#hs-tb-2','18:00');
+  ok(d.getElementById('hs-tb-2')===$('#hs-tb-2')&&$('#hs-tb-2').value==='18:00'&&!$('[data-act=hs-save]').disabled,'digitar a hora não redesenha o formulário');
+  click('[data-act=hs-save]');
+  ok(await until(()=>disco().agenda.v===2&&disco().agenda.padrao.turnos.length===3&&disco().agenda.padrao.dias.includes(6)),'turno e sábado gravados na versão 2: '+JSON.stringify(disco().agenda.padrao));
+  // sábado agora é dia de trabalho, mas o turno 17-18 é de verdade: confere o calendário abaixo
+
+  // 5. feriado
+  click('[data-act=hs-fadd]');await until(()=>$('#hs-fd-0'));
+  type('#hs-fd-0','2026-12-25');type('#hs-fn-0','Natal');type('#hs-fs-0','CNC','change');
+  click('[data-act=hs-save]');
+  ok(await until(()=>disco().agenda.feriados.length===1),'feriado gravado');
+  const f=disco().agenda.feriados[0];
+  ok(f.data==='2026-12-25'&&f.nome==='Natal'&&f.setores.join()==='CNC','feriado só do CNC: '+JSON.stringify(f));
+  click('[data-act=hs-fadd]');await until(()=>$('#hs-fd-1'));
+  click('[data-act=hs-save]');   // a linha em branco não é feriado: some antes de enviar
+  ok(await until(()=>!$('#hs-fd-1')),'a linha de feriado em branco não é enviada');
+  ok(disco().agenda.feriados.length===1&&disco().agenda.v===3,'só uma versão nova pelo feriado, a linha vazia não vira feriado');
+  click('[data-act=hs-fdel][data-v="0"]');await until(()=>!$('#hs-fd-0'));
+  click('[data-act=hs-undo]');
+  ok(await until(()=>$('#hs-fd-0')),'Descartar alterações traz o feriado de volta');
+
+  // 6. horário próprio de um setor
+  type('#hs-escopo','CNC','change');
+  ok(await until(()=>$('#hs-propria')&&!$('#hs-propria').checked&&/usa o horário padrão/.test($('.hs-box').textContent)),'setor sem horário próprio mostra "usa o padrão"');
+  click('#hs-propria');
+  ok(await until(()=>$('#hs-propria').checked&&$$('.hs-turno').length===3),'marcar "horário próprio" copia o padrão para editar');
+  click('[data-act=hs-dia][data-v="7"]');await until(()=>$('[data-act=hs-dia][data-v="7"]').getAttribute('aria-pressed')==='true');
+  click('[data-act=hs-save]');
+  ok(await until(()=>disco().agenda.setores.CNC&&disco().agenda.setores.CNC.dias.includes(7)),'horário do CNC gravado com o domingo');
+  ok(!disco().agenda.padrao.dias.includes(7),'o padrão não ganhou o domingo');
+
+  // 7. o servidor recusa o inválido e a tela mostra a frase dele, sem gastar versão
+  type('#hs-escopo','','change');await until(()=>$('#hs-escopo').value==='');
+  const v0=disco().agenda.v;
+  for(let i=0;i<7&&$('[data-act=hs-dia][aria-pressed=true]');i++){click('[data-act=hs-dia][aria-pressed=true]');await sleep(30)}   // cada clique redesenha: pega o próximo ligado
+  ok(!$('[data-act=hs-dia][aria-pressed=true]'),'todos os dias desligados no formulário');
+  click('[data-act=hs-save]');
+  ok(await until(()=>/15 minutos de trabalho por semana/.test(toast())),'sem nenhum dia: o servidor recusa e a tela avisa: '+toast());
+  ok(disco().agenda.v===v0,'a recusa não gasta versão');
+  click('[data-act=hs-undo]');await until(()=>$$('[data-act=hs-dia][aria-pressed=true]').length>0);
+
+  // 8. calendário: com o horário ligado, o sombreado é o real (e traz a nota certa)
+  $('.dm-tab[data-v=cal]').click();await until(()=>$('.cal-grid'));
+  click('[data-act=calmode][data-v=semana]');
+  ok(await until(()=>$('.cal-week')),'calendário abre na semana');
+  ok(/sombreada é fora do horário de serviço/.test($('.cal-week .dm-note').textContent),'nota do calendário fala do horário de serviço: '+$('.cal-week .dm-note').textContent);
+  const colunaUtil=$$('.cal-col').find(c=>!c.classList.contains('cal-we'));
+  ok(colunaUtil&&colunaUtil.querySelectorAll('.cal-off').length>=3,'dia útil: sombra antes, no almoço e depois ('+(colunaUtil&&colunaUtil.querySelectorAll('.cal-off').length)+' faixas)');
+  const domingo=$$('.cal-col')[0];
+  ok(domingo&&domingo.querySelectorAll('.cal-off').length===1&&parseFloat(domingo.querySelector('.cal-off').style.height)>=16*38-1,'domingo (folga): uma faixa só, do dia inteiro');
+  type('#dm-calSec','CNC','change');
+  ok(await until(()=>$$('.cal-col')[0]&&$$('.cal-col')[0].querySelectorAll('.cal-off').length>=2),'filtrando o CNC, o domingo dele (horário próprio) tem trabalho');
+
+  // 9. cronoanálise: sombreado fora do horário e a legenda
+  $('.dm-tab[data-v=crono]').click();await until(()=>$('.dm-gtrack')||$('.dm-empty'));
+  click('[data-act=crwin][data-v=semana]');
+  ok(await until(()=>$('.cr-scroll')&&$('.cr-axis')),'Cronoanálise na semana');
+  ok(await until(()=>$$('.cr-off').length>0),'a linha do tempo sombreia o que está fora do horário de serviço ('+$$('.cr-off').length+' faixas)');
+  ok($$('.dm-legend').some(l=>/Fora do horário de serviço/.test(l.textContent)),'a legenda explica o sombreado');
+  click('[data-act=crwin][data-v="13h"]');
+  ok(await until(()=>!$('.cr-scroll')&&$('.dm-gtrack')),'volta para 13 h');
+  ok(await until(()=>$$('.cr-off').length>0),'a janela de 13 h também sombreia');
+
+  // 10. o cronômetro: uma demanda criada com o horário ligado não "envelhece" à noite nem no fim de semana
+  await direto('demanda/criar',{titulo:'Peça criada com horário de serviço',tipo:'mat',motivo:'Outro',prio:'norm',est:60,para:{s:'ALM',p:null},desc:'',de_s:'PCP'});
+  const nova=disco().demandas.find(x=>x.titulo==='Peça criada com horário de serviço');
+  ok(nova&&nova.agenda_v===disco().agenda.v&&typeof nova.prazo_em==='number'&&nova.prazo_em>=nova.criado,'a demanda nova guarda agenda_v e prazo_em: '+(nova&&nova.agenda_v)+' / '+(nova&&nova.prazo_em));
+  await w.NestLocal.views.demandas.refresh();
+  $('.dm-tab[data-v=sol]').click();
+  ok(await until(()=>$$('.dm-card').some(c=>/Peça criada com horário/.test(c.textContent))),'a demanda nova aparece em Solicitações');
+  const real=w.Date.now.bind(w.Date);
+  w.Date.now=()=>real()+72*3600000;   // três dias depois: em tempo corrido seriam 72 h de espera
+  $$('.dm-card').find(c=>/Peça criada com horário/.test(c.textContent)).click();
+  ok(await until(()=>$('#dm-drawer').classList.contains('dm-on')&&$('#dm-drawer [data-met=total]')),'gaveta da demanda nova abre');
+  const horas=t=>{const m=/(?:(\d+)d )?(?:(\d+)h)?/.exec(t)||[];return (+m[1]||0)*24+(+m[2]||0)};
+  const total=$('#dm-drawer [data-met=total]').textContent;
+  ok(horas(total)<45,'três dias depois, o "Decorrido" conta só tempo útil (< 45 h, não 72 h): '+total);
+  w.Date.now=real;
+  $('#dm-drawer [data-act=close]').click();
+
+  // 11. avisos: fora do expediente a tela diz que as contagens estão paradas
+  const fixa=w.Date.now.bind(w.Date);
+  const hoje=new Date(fixa());const sab=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate()+((6-hoje.getDay()+7)%7||7),23,30);   // um sábado à noite
+  w.Date.now=()=>sab.getTime();
+  $('.dm-tab[data-v=crono]').click();
+  ok(await until(()=>$('.hs-fora')),'fora do horário (sábado à noite), a Cronoanálise avisa que as contagens estão paradas');
+  w.Date.now=()=>new Date(sab.getFullYear(),sab.getMonth(),sab.getDate()+2,10,0).getTime();   // segunda 10h
+  $('.dm-tab[data-v=hist]').click();$('.dm-tab[data-v=crono]').click();
+  ok(await until(()=>$('.dm-ckpis')&&!$('.hs-fora')),'dentro do horário (segunda às 10h), o aviso some');
+  w.Date.now=fixa;
+
+  // 12. desligar de novo: tudo volta ao corrido nas leituras
+  $('.dm-tab[data-v=admin]').click();await until(()=>$('[data-act=admsub][data-v=hours]'));click('[data-act=admsub][data-v=hours]');
+  await until(()=>$('#hs-ativa'));click('#hs-ativa');await until(()=>!$('#hs-ativa').checked);click('[data-act=hs-save]');
+  ok(await until(()=>disco().agenda.ativa===false),'desligar grava a agenda desligada');
+  $('.dm-tab[data-v=cal]').click();await until(()=>$('.cal-grid'));click('[data-act=calmode][data-v=semana]');
+  ok(await until(()=>$('.cal-week')&&/desligado/.test($('.cal-week .dm-note').textContent)),'calendário volta à referência fixa e diz que o horário está desligado');
+  w.close();
+}
 async function avisosDaCentral(){
   const until=async(f,ms=8000)=>{for(const t0=Date.now();Date.now()-t0<ms;await sleep(50))try{if(f())return true}catch(e){}return false};
   const w=await boot(),d=w.document,$=s=>d.querySelector(s),$$=s=>[...d.querySelectorAll(s)];
@@ -738,6 +885,7 @@ async function restaurarPelaTela(){
     await linkDoEmail();
     await calendarioDaTela();
     await cronogramaDaTela();
+    await horarioDaTela();
     await avisosDaCentral();
     await restaurarPelaTela();
   }finally{killTree(srv);   // no Windows o servidor recém-morto ainda pode segurar arquivos: tenta de novo e não reprova por isso

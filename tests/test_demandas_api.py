@@ -2013,5 +2013,225 @@ class Detalhes(Base):
         self.assertEqual(api.HIST_MAX, 5000)
 
 
+# ---------- horário de serviço ----------
+
+import datetime
+
+import demandas_agenda as ag
+
+
+def loc(a, m, d, h=0, mi=0):
+    return int(datetime.datetime(a, m, d, h, mi).timestamp() * 1000)
+
+
+HORA = 60 * MIN
+SEXTA_1630 = loc(2026, 11, 13, 16, 30)
+SEG_0730 = loc(2026, 11, 16, 7, 30)
+
+
+class Horario(Base):
+    def setUp(self):
+        super().setUp()
+        self.t = SEXTA_1630
+
+    def corpo(self, **kw):
+        return {"agenda": {**ag.padrao(), "ativa": True, **kw}}
+
+    def liga(self, **kw):
+        v = self.disco()["agenda"]["v"]
+        return self.adm("agenda/salvar", {"agenda": {**ag.padrao(), "ativa": True, "v": v, **kw}})
+
+    # --- salvar ---
+    def test_so_o_adm_salva(self):
+        self.assertEqual(self.erro(self.pes, self.tk_c, "agenda/salvar", self.corpo()), 403)
+        self.assertFalse(self.disco()["agenda"]["ativa"])
+
+    def test_salvar_sobe_a_versao_e_guarda_a_copia(self):
+        v = self.adm("agenda/salvar", self.corpo())
+        self.assertEqual((v["agenda"]["ativa"], v["agenda"]["v"]), (True, 1))
+        doc = self.disco()
+        self.assertEqual(doc["agenda"]["v"], 1)
+        self.assertEqual(list(doc["agendas"]), ["1"])
+        self.assertEqual(doc["agendas"]["1"], doc["agenda"])
+        self.assertEqual(doc["agenda"]["padrao"]["turnos"], [["07:00", "12:00"], ["13:00", "17:00"]])
+
+    def test_salvar_igual_nao_gasta_versao_nem_grava(self):
+        self.liga()
+        r = self.rev()
+        self.liga()
+        self.assertEqual((self.rev(), self.disco()["agenda"]["v"]), (r, 1))
+        self.liga(feriados=[{"data": "2026-12-25", "nome": "Natal", "setores": []}])
+        self.assertEqual((self.rev(), self.disco()["agenda"]["v"]), (r + 1, 2))
+        self.assertEqual(sorted(self.disco()["agendas"]), ["2"])   # a 1 ninguém usa: sai
+
+    def test_versao_velha_da_tela_e_recusada(self):
+        self.liga()
+        self.assertEqual(self.erro(self.adm, "agenda/salvar", self.corpo(v=0)), 409)
+        self.assertEqual(self.disco()["agenda"]["v"], 1)
+
+    def test_invalida_nao_grava(self):
+        casos = [({"ativa": "sim"}, "Informe se o horário"), ({"padrao": {"dias": [], "turnos": []}}, "15 minutos"),
+                 ({"setores": {"ZZ": {"dias": [1], "turnos": [["07:00", "08:00"]]}}}, "Setor inválido"),
+                 ({"feriados": [{"data": "2026-99-99"}]}, "Data de feriado inválida")]
+        for extra, trecho in casos:
+            body = self.corpo(**extra)
+            m = self.msg(self.adm, "agenda/salvar", body)
+            self.assertIn(trecho, m, extra)
+            self.assertEqual(self.erro(self.adm, "agenda/salvar", body), 400)
+        self.assertEqual(self.erro(self.adm, "agenda/salvar", {"agenda": "x"}), 400)
+        self.assertEqual(self.erro(self.adm, "agenda/salvar", {}), 400)
+        self.assertEqual(self.disco()["agenda"], ag.padrao())
+
+    def test_excecao_por_setor_e_feriado_de_setor(self):
+        v = self.liga(setores={"CNC": {"dias": [1, 2, 3, 4, 5, 6], "turnos": [["06:00", "14:00"]]}},
+                      feriados=[{"data": "2026-11-20", "nome": "X", "setores": ["ESP"]}])
+        self.assertEqual(sorted(v["agenda"]["setores"]), ["CNC"])
+        self.assertEqual(v["agenda"]["feriados"][0]["setores"], ["ESP"])
+
+    def test_desligar_volta_ao_corrido_nas_novas(self):
+        self.liga()
+        self.liga(ativa=False)
+        d = self.nova()
+        self.assertNotIn("prazo_em", self.dem(d["id"]))
+        self.assertNotIn("agenda_v", self.dem(d["id"]))
+
+    # --- criar, estender, fechar ---
+    def test_criar_grava_o_prazo_em_horario_de_servico(self):
+        self.liga()
+        d = self.nova(est=60)
+        r = self.dem(d["id"])
+        self.assertEqual((r["agenda_v"], r["prazo_em"]), (1, SEG_0730))   # sexta 16:30 + 60 min úteis
+        self.assertEqual(d["prazo"], SEG_0730)
+        self.assertEqual(r["criado"], SEXTA_1630)
+
+    def test_criar_sem_horario_e_como_sempre(self):
+        d = self.nova(est=60)
+        self.assertEqual(d["prazo"], SEXTA_1630 + 60 * MIN)
+        self.assertNotIn("agenda_v", self.dem(d["id"]))
+
+    def test_criar_usa_o_horario_do_setor_destino(self):
+        self.liga(setores={"CNC": {"dias": [6], "turnos": [["06:00", "10:00"]]}})
+        d = self.nova(est=60, para={"s": "CNC", "p": None})
+        self.assertEqual(self.dem(d["id"])["prazo_em"], loc(2026, 11, 14, 7, 0))   # sábado 06-07
+        e = self.nova(est=60, para={"s": "ESP", "p": None})
+        self.assertEqual(self.dem(e["id"])["prazo_em"], SEG_0730)
+
+    def test_criar_que_nao_cabe_no_horario_e_recusado(self):
+        self.liga(padrao={"dias": [1], "turnos": [["07:00", "07:15"]]})
+        self.assertEqual(self.erro(self.nova, est=43200), 400)
+        self.assertIn("não tem trabalho suficiente", self.msg(self.nova, est=43200))
+        self.assertEqual(self.disco()["demandas"], [])
+
+    def test_estender_soma_hora_de_trabalho(self):
+        self.liga()
+        d = self.nova(est=60)
+        self.adm("demanda/estender", {"id": d["id"], "minutos": 60})
+        r = self.dem(d["id"])
+        self.assertEqual((r["est"], r["prazo_em"]), (120, loc(2026, 11, 16, 8, 30)))
+        self.assertEqual(r["eventos"][-1]["ev"], "deadline")
+
+    def test_estender_sem_horario_segue_o_est(self):
+        d = self.nova(est=60)
+        self.adm("demanda/estender", {"id": d["id"], "minutos": 30})
+        r = self.dem(d["id"])
+        self.assertEqual(r["est"], 90)
+        self.assertNotIn("prazo_em", r)
+
+    def test_estender_zera_o_aviso_de_atraso_se_o_prazo_volta_ao_futuro(self):
+        self.liga()
+        d = self.nova(est=60)
+        self.t = SEG_0730 + 1
+        self.adm("nota/todas")
+        self.assertTrue(self.dem(d["id"])["atraso_avisado"])
+        self.adm("demanda/estender", {"id": d["id"], "minutos": 120})
+        self.assertFalse(self.dem(d["id"])["atraso_avisado"])
+
+    def test_concluir_e_cancelar_gravam_as_duracoes_uteis(self):
+        self.liga()
+        a, b = self.nova(est=60)["id"], None
+        b = self.nova(est=60, titulo="Outra demanda")["id"]
+        self.t = loc(2026, 11, 16, 9, 0)
+        self.pes(self.tk_c, "demanda/aceitar", {"id": a})
+        self.t = loc(2026, 11, 16, 11, 0)
+        self.pes(self.tk_c, "demanda/concluir", {"id": a})
+        self.assertEqual(self.dem(a)["util"], {"espera": 150 * MIN, "execucao": 2 * HORA, "pausado": 0, "total": 270 * MIN,
+                                          "atraso": 210 * MIN})   # prazo segunda 07:30, concluída 11:00
+        self.adm("demanda/cancelar", {"id": b})
+        self.assertEqual(self.dem(b)["util"], {"espera": 270 * MIN, "execucao": 0, "pausado": 0, "total": 270 * MIN,
+                                          "atraso": 210 * MIN})
+        v = self.adm("vista")
+        feita = next(x for x in v["demandas"] if x["id"] == a)
+        self.assertEqual((feita["espera"], feita["execucao"], feita["total"], feita["atraso"]), (150.0, 120.0, 270.0, 210.0))
+
+    def test_demanda_sem_horario_nao_ganha_util(self):
+        d = self.nova(est=60)
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d["id"]})
+        self.pes(self.tk_c, "demanda/concluir", {"id": d["id"]})
+        self.assertNotIn("util", self.dem(d["id"]))
+
+    # --- atraso ---
+    def test_atraso_so_dispara_no_prazo_em_horario_de_servico(self):
+        self.liga()
+        d = self.nova(est=60)["id"]
+        for quando in (loc(2026, 11, 13, 23, 0), loc(2026, 11, 14, 10, 0), loc(2026, 11, 15, 10, 0), SEG_0730):
+            self.t = quando
+            self.assertFalse(api.tick(self.t), quando)
+            self.assertFalse(self.dem(d)["atraso_avisado"])
+        self.assertTrue(api.tick(SEG_0730 + 1))
+        self.assertTrue(self.dem(d)["atraso_avisado"])
+        self.assertEqual(self.dem(d)["eventos"][-1], {"t": SEG_0730 + 1, "ev": "late", "quem": "Sistema", "nota": ""})
+
+    # --- vistas e leituras ---
+    def test_vista_leva_a_agenda_e_as_versoes_das_ativas(self):
+        self.liga()
+        d = self.nova(est=60)["id"]
+        self.liga(feriados=[{"data": "2026-12-25", "nome": "Natal", "setores": []}])
+        v = self.pes(self.tk_c, "vista")
+        self.assertEqual(v["agenda"]["v"], 2)
+        self.assertEqual(sorted(v["agendas"]), ["1"])           # a demanda ainda está na versão 1
+        self.assertEqual(sorted(self.disco()["agendas"]), ["1", "2"])
+        self.assertEqual(self.dem(d)["agenda_v"], 1)
+
+    def test_versao_so_sai_quando_nenhuma_ativa_a_usa(self):
+        self.liga()
+        d = self.nova(est=60)["id"]
+        self.liga(feriados=[{"data": "2026-12-25", "nome": "Natal", "setores": []}])
+        self.pes(self.tk_c, "demanda/aceitar", {"id": d})
+        self.pes(self.tk_c, "demanda/concluir", {"id": d})
+        self.liga(feriados=[{"data": "2026-12-26", "nome": "Outro", "setores": []}])
+        self.assertEqual(sorted(self.disco()["agendas"]), ["3"])
+
+    def test_leituras_do_adm_usam_o_horario(self):
+        self.liga()
+        d = self.nova(est=60)["id"]
+        self.t = loc(2026, 11, 14, 12, 0)   # sábado
+        c = self.adm("crono", {"dias": 7})
+        self.assertIn("expediente", c["gantt"])
+        h = self.adm("historico", {"de": 0, "ate": 10 ** 15})["demandas"][0]
+        self.assertEqual((h["id"], h["total"]), (d, 30.0))       # só 16:30-17:00 de sexta conta
+        g = self.adm("cronograma", {"de": loc(2026, 11, 13), "ate": loc(2026, 11, 17), "por": "setor"})
+        self.assertEqual(len(g["expediente"]["geral"]), 4)       # sexta (2 turnos) e segunda (2 turnos)
+        self.assertEqual(g["expediente"]["setores"], {})
+
+    def test_leituras_sem_horario_nao_trazem_expediente(self):
+        self.nova()
+        self.assertNotIn("expediente", self.adm("crono", {"dias": 1})["gantt"])
+        g = self.adm("cronograma", {"de": loc(2026, 11, 13), "ate": loc(2026, 11, 17), "por": "setor"})
+        self.assertNotIn("expediente", g)
+
+    def test_migracao_de_arquivo_v1_deixa_o_corrido(self):
+        self.nova(est=60)
+        doc = self.disco()
+        for k in ("agenda", "agendas"):
+            doc.pop(k)
+        doc["v"] = 1
+        (self.dir / "demandas.json").write_text(json.dumps(doc), encoding="utf-8")
+        ds._CACHE.update(key=None, texto=None)
+        v = self.adm("vista")
+        self.assertFalse(v["agenda"]["ativa"])
+        self.assertEqual(v["demandas"][0]["prazo"], SEXTA_1630 + 60 * MIN)
+        self.assertTrue((self.dir / "demandas.json.v1.bak").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

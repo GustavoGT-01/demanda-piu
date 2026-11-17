@@ -143,6 +143,12 @@ prazo(d) = d.get("prazo_em") or d["criado"] + d["est"]·60000
 
 ### Fase 3: expediente, turnos e feriados
 
+> **Feita em 17/11/2026**, com estas decisões do dono: horário padrão da fábrica com exceção por setor; feriados
+> por data (para todos ou para um setor); vale só para demandas novas (`agenda_v` na demanda, antigas em tempo
+> corrido); tempo útil em prazo, durações, avisos e linha do tempo. Diferenças em relação ao desenho abaixo: não
+> esperou a fase 2 (`prazo_em` nasce junto, sem `inicio_plan`); a configuração fica em `doc["agenda"]` com versões em
+> `doc["agendas"]`, e a demanda fechada grava `util` para não depender de versão antiga. Contrato em `CONTRATO.md`.
+
 **Configuração** em `doc["agenda"]`, editada só pelo ADM (aba Administração, sub-aba "Expediente"):
 ```json
 {"agenda": {"padrao": {"turnos": [["07:00","12:00"],["13:00","17:00"]], "dias": [1,2,3,4,5]},

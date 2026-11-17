@@ -1,0 +1,37 @@
+{
+  "agendas": {
+    "comercial": {"ativa": true, "v": 1,
+                  "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["07:00", "12:00"], ["13:00", "17:00"]]},
+                  "setores": {}, "feriados": []},
+    "noite": {"ativa": true, "v": 1,
+              "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["22:00", "06:00"]]}, "setores": {}, "feriados": []},
+    "feriado": {"ativa": true, "v": 1,
+                "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["07:00", "12:00"], ["13:00", "17:00"]]},
+                "setores": {}, "feriados": [{"data": "2026-11-16", "nome": "Feriado", "setores": []}]},
+    "setor": {"ativa": true, "v": 1,
+              "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["07:00", "12:00"], ["13:00", "17:00"]]},
+              "setores": {"SLD": {"dias": [6], "turnos": [["06:00", "10:00"]]}},
+              "feriados": [{"data": "2026-11-17", "nome": "So CNC", "setores": ["CNC"]}]}
+  },
+  "casos": [
+    {"nome": "util dentro do dia, pelo almoco", "agenda": "comercial", "setor": "CNC", "op": "util", "de": [2026, 11, 9, 11, 0], "ate": [2026, 11, 9, 14, 0], "min": 120},
+    {"nome": "util da sexta para a segunda", "agenda": "comercial", "setor": "CNC", "op": "util", "de": [2026, 11, 13, 16, 0], "ate": [2026, 11, 16, 8, 0], "min": 120},
+    {"nome": "util de uma semana inteira", "agenda": "comercial", "setor": "CNC", "op": "util", "de": [2026, 11, 9, 0, 0], "ate": [2026, 11, 16, 0, 0], "min": 2700},
+    {"nome": "util so no fim de semana", "agenda": "comercial", "setor": "CNC", "op": "util", "de": [2026, 11, 14, 0, 0], "ate": [2026, 11, 16, 0, 0], "min": 0},
+    {"nome": "soma de sexta 16:30 mais 60 cai na segunda 07:30", "agenda": "comercial", "setor": "CNC", "op": "soma", "de": [2026, 11, 13, 16, 30], "min": 60, "resp": [2026, 11, 16, 7, 30]},
+    {"nome": "soma de sabado cai na segunda", "agenda": "comercial", "setor": "CNC", "op": "soma", "de": [2026, 11, 14, 10, 0], "min": 1, "resp": [2026, 11, 16, 7, 1]},
+    {"nome": "soma pelo almoco", "agenda": "comercial", "setor": "CNC", "op": "soma", "de": [2026, 11, 9, 11, 0], "min": 120, "resp": [2026, 11, 9, 14, 0]},
+    {"nome": "soma que termina exatamente no fecho", "agenda": "comercial", "setor": "CNC", "op": "soma", "de": [2026, 11, 9, 16, 30], "min": 30, "resp": [2026, 11, 9, 17, 0]},
+    {"nome": "soma de varios dias", "agenda": "comercial", "setor": "CNC", "op": "soma", "de": [2026, 11, 9, 7, 0], "min": 600, "resp": [2026, 11, 10, 8, 0]},
+    {"nome": "turno da noite vem da vespera", "agenda": "noite", "setor": "CNC", "op": "util", "de": [2026, 11, 10, 0, 0], "ate": [2026, 11, 10, 12, 0], "min": 360},
+    {"nome": "domingo a noite nao trabalha", "agenda": "noite", "setor": "CNC", "op": "util", "de": [2026, 11, 9, 0, 0], "ate": [2026, 11, 9, 12, 0], "min": 0},
+    {"nome": "soma que atravessa a meia-noite", "agenda": "noite", "setor": "CNC", "op": "soma", "de": [2026, 11, 9, 20, 0], "min": 240, "resp": [2026, 11, 10, 2, 0]},
+    {"nome": "feriado na segunda", "agenda": "feriado", "setor": "CNC", "op": "util", "de": [2026, 11, 16, 0, 0], "ate": [2026, 11, 17, 0, 0], "min": 0},
+    {"nome": "soma pulando o feriado", "agenda": "feriado", "setor": "CNC", "op": "soma", "de": [2026, 11, 13, 16, 30], "min": 60, "resp": [2026, 11, 17, 7, 30]},
+    {"nome": "setor com horario proprio no sabado", "agenda": "setor", "setor": "SLD", "op": "util", "de": [2026, 11, 14, 0, 0], "ate": [2026, 11, 15, 0, 0], "min": 240},
+    {"nome": "setor sem excecao no sabado", "agenda": "setor", "setor": "CNC", "op": "util", "de": [2026, 11, 14, 0, 0], "ate": [2026, 11, 15, 0, 0], "min": 0},
+    {"nome": "soma no setor com horario proprio vira a semana", "agenda": "setor", "setor": "SLD", "op": "soma", "de": [2026, 11, 14, 9, 0], "min": 120, "resp": [2026, 11, 21, 7, 0]},
+    {"nome": "feriado so de um setor", "agenda": "setor", "setor": "CNC", "op": "util", "de": [2026, 11, 17, 0, 0], "ate": [2026, 11, 18, 0, 0], "min": 0},
+    {"nome": "mesmo dia em outro setor trabalha", "agenda": "setor", "setor": "ESP", "op": "util", "de": [2026, 11, 17, 0, 0], "ate": [2026, 11, 18, 0, 0], "min": 540}
+  ]
+}

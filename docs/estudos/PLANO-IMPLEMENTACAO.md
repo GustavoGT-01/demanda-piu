@@ -30,6 +30,12 @@ Estado em 16/11/2026:
   ganha "Minha agenda de hoje". Commits: cronograma no backend, com `calc.gantt` generalizado e a leitura
   `cronograma {de, ate, por}` (`64a5cbc`); cronograma na tela, com `--dm-gcols` e os modos Dia, Semana e Mês
   (`81e6ac3`); aba Calendário com as visões mês, semana e dia (`a3258cb`).
+- Etapa 5 fase 3 (expediente e feriados) feita a pedido do dono em 17/11/2026, sem esperar `inicio_plan`: horário
+  de serviço configurável em Administração → Expediente, padrão da fábrica mais exceção por setor, feriados por data,
+  desligado de fábrica e só para demandas novas. O que ela mudou: `demandas.json` v2 (`agenda`, `agendas`, e nas demandas
+  `agenda_v`, `prazo_em`, `util`), `demandas_agenda.py` com as contas de tempo útil, rota `agenda/salvar`, `prazo`,
+  durações, atenção e `expediente` do gantt em tempo útil, e o sombreado no calendário e na Cronoanálise. Ficam fora a
+  fase 2 (`inicio_plan`, agendar início), o `.ics` e o horário de silêncio dos avisos, que continua por pessoa.
 - Junto, fora das etapas: o modo demonstração entrou no Git (`308905f`); a régua de qualidade foi acertada —
   meta de 90% por arquivo nos cálculos de tempo, `qa.py js` deixando de passar verde sem jsdom, e os três
   testes da faixa de autorização de rede que eram pulados em máquina sem placa (`d1c800d`); a recusa 413 passou

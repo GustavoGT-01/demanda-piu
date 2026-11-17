@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import datetime
 
+import demandas_agenda as ag
+
 MIN = 60000
 HORA = 3600000
 DIA = 86400000
@@ -39,7 +41,20 @@ def ativa(d: dict) -> bool:
 
 
 def prazo(d: dict) -> int:
+    """O prazo gravado na criação (prazo_em, em horário de serviço) ou, nas demandas de antes, criado + est corrido."""
+    gravado = d.get("prazo_em")
+    if isinstance(gravado, int) and not isinstance(gravado, bool):
+        return gravado
     return d["criado"] + d["est"] * MIN
+
+
+def grade_de(d: dict, agendas):
+    """A grade de horário que vale para esta demanda: a versão gravada nela (`agenda_v`) no setor destino.
+    None = tempo corrido (demanda de antes do horário de serviço, ou versão que já não existe)."""
+    v = d.get("agenda_v")
+    if v is None or not agendas:
+        return None
+    return ag.grade(agendas.get(str(v)), d["para"]["s"])
 
 
 def _ou(*vals):
@@ -61,26 +76,60 @@ def _pausas(d: dict, agora: int) -> list:
     return out
 
 
-def pausado_ms(d: dict, agora: int) -> int:
-    return sum(max(0, b - a) for a, b in _pausas(d, agora))
+def _congelado(d: dict, chave: str):
+    """A duração gravada ao fechar a demanda (só as de horário de serviço têm `util`), ou None."""
+    u = d.get("util")
+    if d.get("status") in ("done", "canc") and isinstance(u, dict) and isinstance(u.get(chave), int):
+        return u[chave]
+    return None
 
 
-def espera_ms(d: dict, agora: int) -> int:
-    return max(0, _ou(d.get("iniciado"), d.get("fim"), agora) - d["criado"])
+def pausado_ms(d: dict, agora: int, agendas=None) -> int:
+    c = _congelado(d, "pausado")
+    if c is not None:
+        return c
+    g = grade_de(d, agendas)
+    return sum(ag.util_entre(g, a, b) for a, b in _pausas(d, agora))
 
 
-def execucao_ms(d: dict, agora: int) -> int:
-    """Do início ao fim, menos as pausas dentro desse trecho (uma pausa de antes de uma reatribuição não conta)."""
+def espera_ms(d: dict, agora: int, agendas=None) -> int:
+    c = _congelado(d, "espera")
+    if c is not None:
+        return c
+    return ag.util_entre(grade_de(d, agendas), d["criado"], _ou(d.get("iniciado"), d.get("fim"), agora))
+
+
+def execucao_ms(d: dict, agora: int, agendas=None) -> int:
+    """Do início ao fim, menos as pausas dentro desse trecho (uma pausa de antes de uma reatribuição não conta).
+    Em horário de serviço, só o que cai dentro dos turnos."""
+    c = _congelado(d, "execucao")
+    if c is not None:
+        return c
     ini = d.get("iniciado")
     if ini is None:
         return 0
     fim = _fim(d, agora)
-    parado = sum(max(0, min(b, fim) - max(a, ini)) for a, b in _pausas(d, agora))
-    return max(0, fim - ini - parado)
+    g = grade_de(d, agendas)
+    parado = sum(ag.util_entre(g, max(a, ini), min(b, fim)) for a, b in _pausas(d, agora))
+    return max(0, ag.util_entre(g, ini, fim) - parado)
 
 
-def total_ms(d: dict, agora: int) -> int:
-    return max(0, _fim(d, agora) - d["criado"])
+def total_ms(d: dict, agora: int, agendas=None) -> int:
+    c = _congelado(d, "total")
+    if c is not None:
+        return c
+    return ag.util_entre(grade_de(d, agendas), d["criado"], _fim(d, agora))
+
+
+def congela(d: dict, agora: int, agendas) -> None:
+    """Ao fechar uma demanda de horário de serviço: grava as durações úteis, que passam a valer sem a agenda."""
+    if d.get("agenda_v") is None:
+        return
+    d.pop("util", None)   # medir de novo, não repetir um valor antigo
+    g = grade_de(d, agendas)
+    d["util"] = {"espera": espera_ms(d, agora, agendas), "execucao": execucao_ms(d, agora, agendas),
+                 "pausado": pausado_ms(d, agora, agendas), "total": total_ms(d, agora, agendas),
+                 "atraso": ag.util_entre(g, prazo(d), _fim(d, agora))}   # quanto passou do prazo, em tempo útil
 
 
 def atrasada(d: dict, agora: int) -> bool:
@@ -95,11 +144,18 @@ def _min(ms) -> float:
     return round(ms / MIN, 1)
 
 
-def metricas(d: dict, agora: int) -> dict:
-    total = total_ms(d, agora)
-    return {"prazo": prazo(d), "atrasada": atrasada(d, agora), "espera": _min(espera_ms(d, agora)),
-            "execucao": _min(execucao_ms(d, agora)), "pausado": _min(pausado_ms(d, agora)), "total": _min(total),
+def metricas(d: dict, agora: int, agendas=None) -> dict:
+    total = total_ms(d, agora, agendas)
+    out = {"prazo": prazo(d), "atrasada": atrasada(d, agora), "espera": _min(espera_ms(d, agora, agendas)),
+            "execucao": _min(execucao_ms(d, agora, agendas)), "pausado": _min(pausado_ms(d, agora, agendas)),
+            "total": _min(total),
             "sla": round(total / MIN / d["est"] * 100, 1) if d["est"] > 0 else None}
+    if d.get("status") == "done" and d.get("agenda_v") is not None:   # a tela não tem a agenda de demanda já fechada
+        u = d.get("util")
+        atraso = u.get("atraso") if isinstance(u, dict) else None
+        out["atraso"] = _min(atraso if atraso is not None else ag.util_entre(
+            grade_de(d, agendas), prazo(d), _fim(d, agora)))
+    return out
 
 
 # ---------- vista ----------
@@ -108,11 +164,11 @@ def _sem_interno(row: dict) -> dict:
     return {k: v for k, v in row.items() if not k.startswith("_") or k == "_rv"}
 
 
-def publica(d: dict, agora: int) -> dict:
+def publica(d: dict, agora: int, agendas=None) -> dict:
     """Demanda como sai da API: sem campos internos (_p dos anexos), com os derivados de tempo."""
     out = _sem_interno(d)
     out["anexos"] = [{k: v for k, v in a.items() if not k.startswith("_")} for a in d.get("anexos") or []]
-    out.update(metricas(d, agora))
+    out.update(metricas(d, agora, agendas))
     return out
 
 
@@ -178,12 +234,16 @@ def vista(doc: dict, agora: int, pessoa: dict | None = None, anexos_uso: dict | 
     """pessoa=None: ADM (tudo do principal, notas "adm", uso dos anexos). Pessoa: só o que ela vê."""
     dems = doc["demandas"] if pessoa is None else [d for d in doc["demandas"] if ve(d, pessoa)]
     notas = notas_de(doc, pessoa)
+    agendas = doc.get("agendas") or {}
+    usadas = {str(d["agenda_v"]) for d in dems if d.get("agenda_v") is not None and ativa(d)}
     out = {"rev": doc["rev"], "agora": agora, "papel": "adm" if pessoa is None else "pessoa",
            "eu": None if pessoa is None else {k: pessoa.get(k) for k in ("id", "nome", "setor", "mat")},
            "setores": [setor_publico(s, pessoa is None) for s in doc["setores"]],
            "pessoas": [pessoa_publica(p, pessoa is None) for p in doc["pessoas"]],
-           "demandas": [publica(d, agora) for d in dems],
-           "notas": notas, "feed": feed(dems)}
+           "demandas": [publica(d, agora, agendas) for d in dems],
+           "notas": notas, "feed": feed(dems),
+           "agenda": doc.get("agenda") or ag.padrao(),
+           "agendas": {v: a for v, a in agendas.items() if v in usadas}}
     if pessoa is None:
         out["anexos_uso"] = anexos_uso
     return out
@@ -201,9 +261,10 @@ def pausa_aberta(d: dict):
     return ps[-1] if ps and ps[-1].get("fim") is None else None
 
 
-def atencao(demandas: list, agora: int) -> list:
+def atencao(demandas: list, agora: int, agendas=None) -> list:
     """Ativas que pedem atenção, com as marcas e a pontuação do DEMANDA (atraso 100, urgente 60,
-    pausada há 20 min 40, sem aceite há 25 min 30), da maior pontuação para a menor."""
+    pausada há 20 min 40, sem aceite há 25 min 30), da maior pontuação para a menor. As esperas contam em
+    horário de serviço nas demandas que têm `agenda_v`."""
     out = []
     for d in demandas:
         if not ativa(d):
@@ -215,12 +276,15 @@ def atencao(demandas: list, agora: int) -> list:
         if d.get("prio") == "urg":
             tags.append({"k": "urg", "min": None})
             score += 60
+        g = grade_de(d, agendas)
         op = pausa_aberta(d)
-        if op is not None and isinstance(op.get("ini"), int) and agora - op["ini"] >= 20 * MIN:
-            tags.append({"k": "pause", "min": _min(agora - op["ini"])})
+        parada = ag.util_entre(g, op["ini"], agora) if op is not None and isinstance(op.get("ini"), int) else 0
+        if parada >= 20 * MIN:
+            tags.append({"k": "pause", "min": _min(parada)})
             score += 40
-        if d.get("status") == "new" and agora - d["criado"] >= 25 * MIN:
-            tags.append({"k": "wait", "min": _min(agora - d["criado"])})
+        espera = ag.util_entre(g, d["criado"], agora)
+        if d.get("status") == "new" and espera >= 25 * MIN:
+            tags.append({"k": "wait", "min": _min(espera)})
             score += 30
         if tags:
             out.append({"id": d["id"], "tags": tags, "score": score})
@@ -265,16 +329,16 @@ def _pct(n: int, de: int):
     return round(n / de * 100) if de else None
 
 
-def crono(demandas: list, agora: int, dias: int) -> dict:
+def crono(demandas: list, agora: int, dias: int, agendas=None, agenda=None) -> dict:
     desde = inicio_do_dia(agora) if dias == 1 else agora - dias * DIA
     criadas = [d for d in demandas if d["criado"] >= desde]
     feitas = [d for d in demandas if d.get("status") == "done" and d.get("fim") is not None and d["fim"] >= desde]
     no_prazo = sum(1 for d in feitas if not atrasou_concluida(d))
 
     def resumo(lista):
-        return {"espera": _media([espera_ms(d, agora) for d in lista]),
-                "execucao": _media([execucao_ms(d, agora) for d in lista]),
-                "pausado": _media([pausado_ms(d, agora) for d in lista]),
+        return {"espera": _media([espera_ms(d, agora, agendas) for d in lista]),
+                "execucao": _media([execucao_ms(d, agora, agendas) for d in lista]),
+                "pausado": _media([pausado_ms(d, agora, agendas) for d in lista]),
                 "estimado": _media([d["est"] * MIN for d in lista])}
 
     kpis = {"abertas": len(criadas), "concluidas": len(feitas), "no_prazo": no_prazo,
@@ -301,7 +365,7 @@ def crono(demandas: list, agora: int, dias: int) -> dict:
     ranking.sort(key=lambda x: (-x["n"], -x["sla"], x["p"]))
 
     return {"dias": dias, "desde": desde, "kpis": kpis, "setores": setores, "motivos": motivos,
-            "ranking": ranking[:6], "gantt": gantt(demandas, agora)}
+            "ranking": ranking[:6], "gantt": gantt(demandas, agora, agendas=agendas, agenda=agenda)}
 
 
 def _janela(agora: int, ini=None, fim=None) -> tuple:
@@ -318,6 +382,18 @@ def _na_janela(d: dict, ini: int, fim: int, agora: int) -> bool:
     return any(s["a"] < fim and s["b"] > ini for s in segs(d, agora))
 
 
+def _expediente(agenda, ini: int, fim: int):
+    """Os intervalos de trabalho da janela: {"geral": [...], "setores": {SID: [...]}} (só os setores com horário ou
+    feriado próprio), ou None com o horário de serviço desligado: a tela não sombreia nada."""
+    if not isinstance(agenda, dict) or not agenda.get("ativa"):
+        return None
+    proprios = set(agenda.get("setores") or {})
+    for f in agenda.get("feriados") or []:
+        proprios.update(f.get("setores") or [])
+    return {"geral": ag.expediente(ag.grade(agenda, None), ini, fim),
+            "setores": {s: ag.expediente(ag.grade(agenda, s), ini, fim) for s in sorted(proprios)}}
+
+
 def _linha(d: dict, agora: int, plano: bool = False) -> dict:
     """Uma linha da linha do tempo. `plano` acrescenta a pessoa e a barra criado->prazo, que só o
     cronograma multidia desenha: a linha da janela de hoje mantém exatamente as chaves de sempre."""
@@ -330,13 +406,17 @@ def _linha(d: dict, agora: int, plano: bool = False) -> dict:
     return ln
 
 
-def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None) -> dict:
+def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None, agendas=None, agenda=None) -> dict:
     """A linha do tempo. Sem `por`: a janela de hoje (agora-10h a agora+3h), com as 14 ativas mais
     urgentes e as 4 concluídas mais recentes nela, pela criação — a saída de sempre, inalterada.
 
     Com `por` ("setor" ou "pessoa"): o cronograma multidia da janela pedida, agrupado, com no máximo
     `limite` linhas (padrão GANTT_MULTI) e `cortado` dizendo se sobrou gente de fora. Só este modo
     acrescenta `por`, `agora`, `grupos`, `cortado` e, em cada linha, `p` e `plano`.
+
+    `agendas` (versões de horário gravadas nas demandas) e `agenda` (a vigente) só entram com o horário de serviço
+    ligado: então a resposta ganha `expediente` (ver _expediente) e as barras seguem o tempo útil. Desligado, a
+    saída é exatamente a de sempre.
     """
     ini, fim = _janela(agora, ini, fim)
     if por is None:
@@ -344,7 +424,11 @@ def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None)
         feitas = sorted((d for d in demandas if d.get("status") == "done" and d.get("fim") is not None and d["fim"] >= ini),
                         key=lambda d: -d["fim"])[:GANTT_FEITAS]
         linhas = [_linha(d, agora) for d in sorted(vivas + feitas, key=lambda d: d["criado"])]
-        return {"ini": ini, "fim": fim, "linhas": linhas}
+        out = {"ini": ini, "fim": fim, "linhas": linhas}
+        exp = _expediente(agenda, ini, fim)
+        if exp is not None:
+            out["expediente"] = exp
+        return out
     teto = GANTT_MULTI if limite is None else limite
     elegiveis = [d for d in demandas
                  if (ativa(d) or d.get("status") == "done") and _na_janela(d, ini, fim, agora)]
@@ -357,5 +441,9 @@ def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None)
                "linhas": [_linha(d, agora, plano=True) for d in sorted(l, key=lambda d: d["criado"])]}
               for k, l in por_chave.items()]
     grupos.sort(key=lambda g: (-g["ativas"], -g["n"], str(g["chave"])))
-    return {"ini": ini, "fim": fim, "por": por, "agora": agora,
-            "cortado": len(elegiveis) > len(escolhidas), "grupos": grupos}
+    out = {"ini": ini, "fim": fim, "por": por, "agora": agora,
+           "cortado": len(elegiveis) > len(escolhidas), "grupos": grupos}
+    exp = _expediente(agenda, ini, fim)
+    if exp is not None:
+        out["expediente"] = exp
+    return out

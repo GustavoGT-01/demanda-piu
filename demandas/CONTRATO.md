@@ -8,7 +8,7 @@ Pasta `demandas/` da Central de demandas, porte da central do projeto DEMANDA. R
 | Arquivo | Dono | Papel |
 |---|---|---|
 | `demandas_store.py` | banco | carga/gravação de `data/demandas.json`, arquivo morto, anexos em `data/demandas-anexos/` |
-| `api.py`, `demandas_calc.py` | backend | rotas, regras, autorização, vista, cálculos de tempo |
+| `api.py`, `demandas_calc.py`, `demandas_agenda.py` | backend | rotas, regras, autorização, vista, cálculos de tempo; o `demandas_agenda.py` é o horário de serviço (tempo útil e validação) |
 | `demandas.js`, `demandas.css` | frontend | tela |
 | `contrato.json` | coordenação | exemplos do que a API devolve (o front desenvolve contra eles) |
 
@@ -22,15 +22,16 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
 - Anexo: `id` = `"a" + 16 hex` (`secrets.token_hex(8)`), arquivo `<id>.<jpg|png|pdf>`.
 - Nota: `id` int sequencial.
 
-## Formato de `data/demandas.json` (versão `v = 1`)
+## Formato de `data/demandas.json` (versão `v = 2`)
 ```json
-{"v": 1, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
+{"v": 2, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
  "setores": [{"id": "CNC", "nome": "CNC", "icone": "⚙️", "cor": "#3B82F6", "ativo": true, "_rv": 0}],
  "pessoas": [{"id": "p0", "nome": "Carlos", "setor": "CNC", "mat": "M100", "ativo": true,
               "sal": "<32 hex>", "hash": "<pbkdf2 hex>", "_rv": 0}],
  "demandas": [{"id": "SOL-1001", "titulo": "...", "tipo": "dem", "motivo": "Outro", "prio": "norm",
                "est": 60, "de": {"s": "PCP", "p": "p1"}, "para": {"s": "CNC", "p": null},
                "desc": "...", "status": "new", "criado": 0, "iniciado": null, "fim": null, "atraso_avisado": false,
+               "agenda_v": 3, "prazo_em": 0, "util": {"espera": 0, "execucao": 0, "pausado": 0, "total": 0, "atraso": 0},
                "pausas": [{"ini": 0, "fim": null, "motivo": "...", "obs": "", "por": "Carlos"}],
                "eventos": [{"t": 0, "ev": "created", "quem": "Helena", "nota": ""}],
                "comentarios": [{"quem": "Helena", "t": 0, "texto": "..."}],
@@ -38,7 +39,12 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
                "_rv": 0}],
  "notas": [{"id": 1, "aud": "CNC", "pid": null, "tipo": "new", "dem": "SOL-1001", "texto": "", "quem": "Helena", "t": 0,
             "lida": false, "lidas": []}],
- "cids": [["3f2a…-uuid", "SOL-1001"]]}
+ "cids": [["3f2a…-uuid", "SOL-1001"]],
+ "agenda": {"ativa": false, "v": 0,
+            "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["07:00", "12:00"], ["13:00", "17:00"]]},
+            "setores": {"SLD": {"dias": [1, 2, 3, 4, 5, 6], "turnos": [["06:00", "14:00"], ["14:00", "22:00"]]}},
+            "feriados": [{"data": "2026-12-25", "nome": "Natal", "setores": []}]},
+ "agendas": {"3": {"...": "cópia da agenda na versão 3"}}}
 ```
 - `de.p = null` quando quem pediu foi o Escritório (ADM). `para.p = null` = fila do setor.
 - `email` (opcional) em pessoa e setor: quem recebe o aviso por e-mail. Só o ADM edita (`setor/salvar`,
@@ -50,7 +56,21 @@ O `servidor.py` põe esta pasta no `sys.path`; o `store.py` da raiz traz a grava
 - `cids` (opcional; arquivo antigo sem ele = vazio): as últimas 500 chaves de pedido de `demanda/criar` e
   `demanda/comentar` (`cid`, `^[A-Za-z0-9_-]{8,64}$`, gerado pela tela) com o que gravaram. Chave repetida = a
   resposta anterior se perdeu e a tela mandou de novo: devolve a vista sem gravar.
-- `data/demandas-arquivo.json`: `{"v": 1, "demandas": [...]}` com concluídas/canceladas antigas tiradas do
+- **Horário de serviço** (`agenda`, `demandas_agenda.py`): desligado de fábrica (`ativa: false`), e então tudo conta em
+  tempo corrido, como sempre. Ligado, o prazo, a espera, a execução, a pausa, o total, o SLA e os avisos de atraso, de
+  espera e de pausa só contam **dentro dos turnos**. Dias ISO (1 = segunda … 7 = domingo); turno `["22:00","06:00"]`
+  atravessa a meia-noite e pertence ao dia em que começa; `padrao` vale para todos os setores, `setores[SIGLA]`
+  troca o padrão daquele setor (turnos e dias); `feriados[]` (`data` ISO, `nome`, `setores` vazio = todos) tiram o
+  dia inteiro. Limites: 6 turnos por grade, 400 feriados, pelo menos 15 min de trabalho por semana em cada grade ligada,
+  turnos sem sobreposição (a semana é circular), `v` sobe 1 a cada `agenda/salvar` que muda algo.
+  - Só vale para demandas **criadas depois**: a demanda guarda `agenda_v` (a versão da agenda na criação) e `prazo_em`
+    (o prazo calculado na criação e na extensão, congelado). Sem `prazo_em`, `prazo = criado + est·60000`. Demanda sem
+    `agenda_v` mede sempre em tempo corrido, para sempre. O setor que vale é o **destino** (`para.s`).
+  - `agendas` guarda a cópia de cada versão que ainda tem demanda **ativa** usando-a (mais a atual); ao concluir ou
+    cancelar, a demanda grava as durações úteis em `util` (ms, e `atraso` = o que passou do prazo em tempo útil) e deixa
+    de depender da agenda. A vista só leva as versões em uso.
+  - `demanda/estender` soma o tempo em horas de trabalho a partir do prazo vigente (`est` soma como antes).
+- `data/demandas-arquivo.json`: `{"v": 2, "demandas": [...]}` com concluídas/canceladas antigas tiradas do
   principal quando ele passa do teto (mesmo formato de demanda). Nunca volta ao principal.
 - Ambos são `*.json` no topo de `data/`, então entram sozinhos no backup, que é um `.zip` com
   `manifesto.json` e SHA-256 por arquivo (`demandas_backup.py`).
@@ -155,6 +175,7 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `POST pessoa/salvar` | `{modo, id?, nome, setor, codigo?, rev}` | ADM; código obrigatório no novo |
 | `POST pessoa/ativar` | `{id, rev}` | ADM; desativar devolve as demandas dela à fila do setor |
 | `POST pessoa/apagar` | `{id, rev}` | ADM; recusa se há histórico |
+| `POST agenda/salvar` | `{agenda: {ativa, v, padrao, setores, feriados}}` | ADM; grava o horário de serviço inteiro. `v` precisa ser o vigente (409 se outro aparelho salvou antes); igual ao vigente = não grava; inválido = 400 com a frase para a tela |
 | `POST crono` | `{dias: 1\|7\|30}` | ADM → objeto de cronoanálise (abaixo) |
 | `POST cronograma` | `{de, ate, por: "setor"\|"pessoa"}` | ADM → objeto de cronograma (abaixo); janela de até 31 dias |
 
@@ -207,9 +228,13 @@ demandas [{...campos gravados sem _interno, + prazo, atrasada, espera, execucao,
 notas [{id, aud, pid, tipo, dem, texto, quem, t, lida}]  # só as que o ator vê; lida = a dele; sem "lidas"
 feed [{t, tipo: "warn"|"ok"|"", dem, msg}]          # 14 eventos mais recentes, sem "assigned"
 anexos_uso {bytes, cota}                            # só ADM
+agenda {ativa, v, padrao, setores, feriados}        # o horário de serviço vigente (todos veem: a tela precisa dele)
+agendas {"<v>": agenda}                             # só as versões que alguma demanda ativa da vista usa
 ```
-- Derivados por `demandas_calc.metricas(d, agora)`, em minutos com fração: `espera`, `execucao`,
-  `pausado`, `total`; `prazo` = criado + est·60000; `atrasada`; `sla` = total/est·100.
+- Derivados por `demandas_calc.metricas(d, agora, agendas)`, em minutos com fração: `espera`, `execucao`,
+  `pausado`, `total`; `prazo` = `prazo_em` gravado, ou criado + est·60000 nas demandas de antes do horário de
+  serviço; `atrasada`; `sla` = total/est·100. Demanda de horário de serviço mede em **tempo útil**; a concluída
+  de horário de serviço traz também `atraso` (minutos úteis além do prazo; 0 se no prazo).
 - ADM vê todas as demandas do principal. Pessoa vê as do setor dela (destino) e as que ela pediu.
 - O histórico (aba Histórico) da ADM inclui o arquivo morto: `GET ""` traz só o principal; o arquivo vem em
   `POST historico {de, ate}` → `{demandas: [...]}` (ADM).
@@ -223,6 +248,9 @@ anexos_uso {bytes, cota}                            # só ADM
  gantt: {ini, fim, linhas: [{id, de, para, titulo, segs: [{k: "wait"|"exec"|"pause", a, b}], prazo, atrasada, viva}]}}
 ```
 Médias `null` quando não há dado. Gantt: janela agora−10h a agora+3h, 14 ativas por atenção + 4 concluídas recentes.
+Com o horário de serviço ligado, as médias são em tempo útil (cada demanda na agenda da sua versão) e o gantt ganha
+`expediente: {geral: [[ini, fim], ...], setores: {SIGLA: [[ini, fim], ...]}}`: os intervalos de trabalho na janela
+(`setores` só traz os que têm horário ou feriado próprio). Desligado, a chave não existe.
 
 ## Cronograma multidia (`POST cronograma`)
 ```
@@ -237,11 +265,12 @@ concluídas que cruzam a janela ou cujo prazo cai nela — cancelada não entra.
 linhas, escolhidas pela atenção (atrasada e urgente primeiro), e `cortado` diz se sobrou alguma de fora.
 
 `p` (a pessoa) e `plano` (a barra `criado` → `prazo`) existem **só** aqui: a linha do `crono.gantt` continua
-exatamente com as oito chaves listadas acima, e `por`, `agora`, `grupos` e `cortado` não existem lá.
+exatamente com as oito chaves listadas acima, e `por`, `agora`, `grupos` e `cortado` não existem lá. O `expediente`
+(descrito na Cronoanálise) vale nos dois recortes, só com o horário de serviço ligado.
 
 ## Frontend
 - `STATIC` (CSS, JS e fontes) é tudo o que o servidor entrega desta pasta. `REV_FILE = "demandas.json"`.
 - `web/index.html` tem `<main data-view="demandas">`; o `demandas.js` monta `<section id="dmboard">` dentro dele e
-  registra `window.NestLocal.views.demandas = {open, rev, refresh}`. A casca `web/app.js` dá o `api()` (POST com
+  registra `window.NestLocal.views.demandas = {open, rev, refresh, config, conexao, hs}` (`hs` = as contas puras do horário de serviço, que os testes conferem contra o Python). A casca `web/app.js` dá o `api()` (POST com
   `X-Tab`, lança `Error` com `.status`) e o `toast()`, e chama `refresh()` quando o `/api/rev` muda.
 - Todo dado vindo da API entra escapado (`esc`) ou por `textContent`. Nada de `eval`/`new Function`.

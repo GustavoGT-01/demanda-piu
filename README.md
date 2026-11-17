@@ -21,14 +21,18 @@ Só Python 3.10+ (biblioteca padrão). Nada para instalar além dele.
 pelo próprio computador (`127.0.0.1`) entra como Escritório, sem PIN: com um túnel, qualquer visitante da internet
 viraria administrador. Para outros aparelhos, use só o acesso pela rede com PIN.
 
-Feche a janela preta do servidor para desligar.
+Para desligar: feche a janela preta do servidor. Se ela não existe — porque a Central subiu pela tarefa agendada
+abaixo, ou porque a janela foi fechada antes de o servidor morrer — dê dois cliques em `parar.bat`. Ele derruba o
+laço que religa em 5 s, encerra o servidor e confere. A Central volta a ligar no próximo reinício do Windows,
+a não ser que você rode `remover-inicio.bat` como administrador.
 
 ### Ligar sozinho com o Windows (recomendado no PC da central)
 1. Botão direito em `instalar-inicio.bat` → **Executar como administrador**. Ele pede a senha da sua conta uma vez
    e cria a tarefa agendada "Central de demandas": a Central liga quando o Windows liga, antes de alguém entrar, sem
    janela preta, e religa em 5 s se parar (10 quedas em 2 minutos: desiste e anota o motivo). Tudo fica anotado em
    `data/servidor.log`. Trocou a senha da conta? Rode o instalador de novo. Para desfazer: `remover-inicio.bat`.
-2. Com a tarefa instalada, o `iniciar.bat` só abre o navegador.
+2. Com a tarefa instalada, o `iniciar.bat` só abre o navegador — a janela dele fecha em 3 s e não desliga nada;
+   quem desliga é o `parar.bat`.
 3. No PC: **suspensão e hibernação desligadas** (Opções de energia), na BIOS **ligar ao voltar a energia**
    ("Restore on AC power loss = Power On"), **IP fixo** reservado no roteador e **no-break no PC e no roteador**.
    Um PC que "dorme", ou um roteador sem energia, deixa todos os aparelhos sem a Central.
@@ -81,6 +85,19 @@ trocar, o programa faz uma cópia "antes de restaurar" do estado atual (dá para
 se repetem e as pessoas nos aparelhos digitam o código de novo. Sem o programa: feche-o e descompacte o zip dentro de
 `data/`.
 
+## Horário de serviço (expediente)
+Em **Administração → Expediente** o Escritório diz quando a fábrica trabalha: dias da semana, turnos (um turno como
+22:00 às 06:00 atravessa a meia-noite), um horário diferente para cada setor que precisar e a lista de feriados e
+paradas. Ligado, o prazo, a espera, a execução, as pausas, o SLA e os avisos de atraso só contam dentro dos turnos: uma
+solicitação de 1 h criada na sexta às 16:30 vence na segunda às 07:30, não fica "atrasada" no sábado e o cronômetro da
+tela não corre à noite. O calendário e a Cronoanálise sombreiam o que está fora do horário.
+
+- Vem **desligado**: sem configurar, o programa conta em tempo corrido como sempre.
+- Vale só para solicitações criadas **depois** de ligar. As já abertas e as antigas seguem como estavam, e mudar o
+  horário depois não reescreve os atrasos do passado (cada solicitação guarda a versão do horário que usou).
+- A mudança de formato (`demandas.json` na versão 2) é feita sozinha na primeira abertura, e o arquivo antigo fica
+  guardado como `demandas.json.v1.bak`. Um programa antigo recusa abrir arquivo da versão 2 em vez de apagar o horário.
+
 ## Aviso por e-mail
 1. Em **Administração**, ponha o e-mail (opcional) das pessoas e dos setores que devem receber avisos. Só o
    escritório vê e edita esse campo.
@@ -113,7 +130,7 @@ Trazer dados de outra instalação: copie `demandas.json`, `demandas-arquivo.jso
 | `servidor.py` | servidor HTTP: página, arquivos do módulo, API, PIN, sessões e defesas (Host, Origin, CSP) |
 | `store.py` | gravação segura dos JSON |
 | `email_envio.py` | aviso por e-mail: configuração (senha protegida pelo Windows), fila, envio SMTP e registro |
-| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas_avisos.py` (preferências de aviso), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
+| `demandas/` | o módulo: `api.py` (rotas, regras e permissões), `demandas_calc.py` (tempos e cronoanálise), `demandas_agenda.py` (horário de serviço), `demandas_store.py` (dados e anexos), `demandas_backup.py` (backup automático), `demandas_avisos.py` (preferências de aviso), `demandas.js`/`.css` (tela), fontes, `CONTRATO.md` |
 | `web/` | a página (`index.html`) e a casca (`app.js`: `api()`, avisos, atualização e o botão ⚙ Configurações) |
 | `demo.py` | gerador dos dados fictícios do modo demonstração (`iniciar-demo.bat`) |
 | `tests/` | testes Python e o teste de tela em jsdom |

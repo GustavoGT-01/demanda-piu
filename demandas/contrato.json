@@ -299,7 +299,39 @@
   "anexos_uso": {
    "bytes": 348160,
    "cota": 314572800
-  }
+  },
+  "agenda": {
+   "ativa": true,
+   "v": 2,
+   "padrao": {
+    "dias": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "turnos": [
+     [
+      "07:00",
+      "12:00"
+     ],
+     [
+      "13:00",
+      "17:00"
+     ]
+    ]
+   },
+   "setores": {},
+   "feriados": [
+    {
+     "data": "2026-12-25",
+     "nome": "Natal",
+     "setores": []
+    }
+   ]
+  },
+  "agendas": {}
  },
  "crono_exemplo": {
   "dias": 7,

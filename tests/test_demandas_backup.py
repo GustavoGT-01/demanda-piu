@@ -453,7 +453,8 @@ class Instantaneo(Base):
         inst = bk.instantaneo()
         self.assertEqual(json.loads(inst["jsons"]["demandas.json"]), ds.empty())
         self.assertNotIn("demandas-arquivo.json", inst["jsons"])
-        self.assertEqual((inst["anexos"], inst["rev"], inst["v"]), ([], 0, 1))
+        self.assertEqual((inst["anexos"], inst["rev"], inst["v"]), ([], 0, ds.V))
+        self.assertEqual(ds.V, 2)
         self.assertEqual(inst["contagem"], {"demandas": 0, "arquivo": 0, "pessoas": 0, "setores": 0})
 
     def test_bytes_iguais_ao_disco_e_anexos_citados(self):
@@ -626,10 +627,12 @@ class Zip(Base):
                 with self.subTest(nome_json=nome_json, ruim=ruim):
                     zip_feito(self.zp, {**self.membros(), nome_json: ruim})
                     self.assertEqual(self.defeito(), "Cópia com defeito: %s ilegível." % nome_json)
-            zip_feito(self.zp, {**self.membros(), nome_json: b'{"v": 2}'})
+            zip_feito(self.zp, {**self.membros(), nome_json: b'{"v": 3}'})
             self.assertEqual(self.defeito(), "Cópia com defeito: dados de uma versão mais nova da Central de demandas.")
-        zip_feito(self.zp, {**self.membros(), "demandas.json": b'{"v": 1}'})
-        bk.verificar(self.zp)
+        # a cópia feita antes do horário de serviço (v1) e a de agora (v2) continuam valendo
+        for v in (b'{"v": 1}', b'{"v": 2}'):
+            zip_feito(self.zp, {**self.membros(), "demandas.json": v})
+            bk.verificar(self.zp)
 
     def test_nome_zip(self):
         self.assertEqual(bk.nome_zip(ms(2026, 10, 28, 3, 0), "auto"), "central-demandas_20261028-0300_auto.zip")
@@ -1010,7 +1013,7 @@ class Restaurar(Base):
         sem = bk.fazer("manual", self.T2 - 60000)["nome"]
         self.grava({"v": 1, "demandas": [dem(901)]}, "demandas-arquivo.json")
         bk.restaurar(sem, self.T2)
-        self.assertEqual(self.disco("demandas-arquivo.json"), {"v": 1, "demandas": []})
+        self.assertEqual(self.disco("demandas-arquivo.json"), {"v": ds.V, "demandas": []})
 
     def test_atual_ilegivel_tambem_restaura(self):
         self.grava("{quebrado")

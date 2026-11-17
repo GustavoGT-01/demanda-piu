@@ -17,6 +17,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
 import store
+import demandas_agenda as ag
 import demandas_store as ds
 
 JPG = b"\xff\xd8\xff\xe0" + b"j" * 20
@@ -63,8 +64,9 @@ class Carga(Base):
     def test_ausente_e_vazio_sem_gravar(self):
         doc = ds.load()
         self.assertEqual(doc, ds.empty())
-        self.assertEqual(doc, {"v": 1, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
-                               "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": []})
+        self.assertEqual(doc, {"v": 2, "rev": 0, "seq": {"pessoa": 0, "demanda": 1000, "nota": 0},
+                               "setores": [], "pessoas": [], "demandas": [], "notas": [], "cids": [],
+                               "agenda": ag.padrao(), "agendas": {}})
         self.assertFalse(ds.path().exists())
         self.assertEqual(ds.load(cache=False), ds.empty())
         self.assertIsNot(ds.empty()["seq"], ds.empty()["seq"])
@@ -167,7 +169,7 @@ class Carga(Base):
         self.assertEqual((self.dir / "demandas.json").read_text(encoding="utf-8"), "{quebrado")
 
     def test_versao_mais_nova_recusa_sem_gravar(self):
-        self.grava({"v": 2, "rev": 3, "demandas": []})
+        self.grava({"v": 3, "rev": 3, "demandas": []})
         antes = (self.dir / "demandas.json").read_bytes()
         with self.assertRaises(ds.StoreError) as cm:
             ds.load()
@@ -229,7 +231,7 @@ class Sobreviventes(Base):
             with self.assertRaises(ds.StoreError) as cm:
                 ds.salvar_anexo(JPG, "x")
         self.assertEqual(str(cm.exception), "Espaço dos anexos esgotado (300 MB). Apague anexos antigos.")
-        self.grava({"v": 2})
+        self.grava({"v": 3})
         with self.assertRaises(ds.StoreError) as cm:
             ds.load()
         self.assertEqual(str(cm.exception), "Demandas gravadas por uma versão mais nova da Central de demandas: atualize o programa.")
@@ -241,12 +243,12 @@ class Migracao(Base):
         self.grava(raw)
         antes = (self.dir / "demandas.json").read_bytes()
         doc = ds.load()
-        self.assertEqual(doc["v"], 1)
+        self.assertEqual(doc["v"], 2)
         self.assertEqual(doc["rev"], 2)
         self.assertEqual((self.dir / "demandas.json.v0.bak").read_bytes(), antes)
         self.assertEqual((self.dir / "demandas.json.bak").read_bytes(), antes)
         gravado = self.disco()
-        self.assertEqual(gravado["v"], 1)
+        self.assertEqual(gravado["v"], 2)
         self.assertEqual(gravado["extra"], "fica")   # migrar não joga fora campo desconhecido
         # a próxima carga não migra de novo nem pisa na cópia
         (self.dir / "demandas.json.v0.bak").write_bytes(b"guardada")
@@ -261,10 +263,24 @@ class Migracao(Base):
                 p.unlink()
             ds.load(cache=False)
             self.assertTrue((self.dir / "demandas.json.v0.bak").exists(), v)
-            self.assertEqual(self.disco()["v"], 1)
+            self.assertEqual(self.disco()["v"], 2)
 
-    def test_v1_nao_migra(self):
-        self.grava({"v": 1, "rev": 1})
+    def test_v1_migra_para_v2_sem_mexer_nas_demandas(self):
+        # o horário de serviço nasce desligado: demanda sem agenda_v segue em tempo corrido, sem backfill
+        self.grava({"v": 1, "rev": 5, "demandas": [dem(1001, est=30)]})
+        antes = (self.dir / "demandas.json").read_bytes()
+        doc = ds.load()
+        self.assertEqual((doc["v"], doc["rev"]), (2, 5))
+        self.assertEqual((self.dir / "demandas.json.v1.bak").read_bytes(), antes)
+        self.assertFalse(doc["agenda"]["ativa"])
+        self.assertEqual(doc["agendas"], {})
+        d = doc["demandas"][0]
+        self.assertNotIn("agenda_v", d)
+        self.assertNotIn("prazo_em", d)
+        self.assertEqual(self.disco()["v"], 2)
+
+    def test_v2_nao_migra(self):
+        self.grava({"v": 2, "rev": 1})
         mt = (self.dir / "demandas.json").stat().st_mtime_ns
         ds.load()
         self.assertFalse(list(self.dir.glob("*.bak")))
@@ -276,7 +292,7 @@ class Migracao(Base):
         doc = ds.load()
         self.assertEqual(doc["rev"], 4)
         self.assertFalse((self.dir / "demandas.json.v0.bak").exists())
-        self.assertEqual(self.disco()["v"], 1)
+        self.assertEqual(self.disco()["v"], 2)
 
 
 class Cache(Base):
@@ -328,7 +344,7 @@ class Commit(Base):
 
     def test_rev_ruim_e_v_corrigidos(self):
         out = ds.commit({"rev": "x", "v": 9, "demandas": []})
-        self.assertEqual((out["rev"], out["v"]), (1, 1))
+        self.assertEqual((out["rev"], out["v"]), (1, 2))
 
     def test_commit_atualiza_cache(self):
         doc = ds.load()
@@ -407,7 +423,7 @@ class Arquivo(Base):
             self.assertIn(aberta, ficou)
         self.assertEqual([d["id"] for d in ds.load_arquivo()], ["SOL-1012", "SOL-1011"])
         arq = self.disco("demandas-arquivo.json")
-        self.assertEqual(arq["v"], 1)
+        self.assertEqual(arq["v"], 2)
         self.assertEqual([d["id"] for d in arq["demandas"]], ["SOL-1012", "SOL-1011"])
         self.assertEqual(len(doc["demandas"]), 9)   # o doc devolvido já está enxuto
 
@@ -467,7 +483,8 @@ class Arquivo(Base):
         self.assertEqual(self._max["demandas"], 5000)
         self.assertEqual(self._max["arquivo"], 50000)
         self.assertEqual(self._max, {"setores": 60, "pessoas": 500, "demandas": 5000, "arquivo": 50000,
-                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 1000, "cids": 500})
+                                     "pausas": 200, "eventos": 500, "comentarios": 300, "notas": 1000, "cids": 500,
+                                     "feriados": 400, "versoes": 50})
 
     def test_num_sem_id_valido(self):
         self.assertEqual(ds._num({"id": "SOL-42"}), 42)
@@ -480,7 +497,7 @@ class Anexos(Base):
         self.assertEqual(ds.ANEXO_MAX, 5 * 1024 * 1024)
         self.assertEqual(ds.COTA, 300 * 1024 * 1024)
         self.assertEqual(ds.ANEXOS_POR_DEMANDA, 5)
-        self.assertEqual(ds.V, 1)
+        self.assertEqual(ds.V, 2)
 
     def test_cada_tipo_aceito(self):
         for dados, tipo in ((JPG, "jpg"), (PNG, "png"), (PDF, "pdf")):
@@ -656,6 +673,64 @@ class Anexos(Base):
         self.assertEqual(ds.uso_anexos()["bytes"], len(PNG))
         ds.apagar_anexo(a["id"])   # já apagado: não é erro
         ds.apagar_anexo("a0000000000000000")
+
+
+class Horario(Base):
+    """Horário de serviço no arquivo: a agenda vigente, as versões em uso e os campos novos da demanda."""
+
+    def agenda(self, **kw):
+        return {**ag.padrao(), "ativa": True, "v": 3, **kw}
+
+    def test_agenda_e_versoes_sobrevivem_ao_ciclo(self):
+        a = self.agenda(feriados=[{"data": "2026-12-25", "nome": "Natal", "setores": []}])
+        self.grava({"v": 2, "agenda": a, "agendas": {"3": a, "2": {**a, "v": 2}}})
+        doc = ds.load()
+        self.assertEqual(doc["agenda"], a)
+        self.assertEqual(sorted(doc["agendas"]), ["2", "3"])
+        ds.commit(doc)
+        self.assertEqual(self.disco()["agenda"], a)
+        self.assertEqual(ds.load(cache=False)["agendas"]["3"], a)
+
+    def test_agenda_ausente_ou_ilegivel_volta_desligada(self):
+        for ruim in (None, "x", [], {"ativa": "sim"}, {**ag.padrao(), "padrao": {"dias": [9], "turnos": []}}):
+            self.grava({"v": 2, "agenda": ruim})
+            doc = ds.load(cache=False)
+            self.assertEqual(doc["agenda"], ag.padrao(), ruim)
+            self.assertEqual(doc["agendas"], {})
+
+    def test_versoes_ilegiveis_ficam_de_fora(self):
+        a = self.agenda()
+        self.grava({"v": 2, "agenda": a, "agendas": {"1": a, "x": a, "2": {"ativa": 5}, "-3": a, " 5": a}})
+        self.assertEqual(list(ds.load()["agendas"]), ["1"])
+        self.grava({"v": 2, "agendas": ["x"]})
+        self.assertEqual(ds.load(cache=False)["agendas"], {})
+
+    def test_so_as_50_versoes_mais_novas(self):
+        a = self.agenda()
+        self.grava({"v": 2, "agenda": a, "agendas": {str(i): {**a, "v": i} for i in range(1, 61)}})
+        versoes = sorted(ds.load()["agendas"], key=int)
+        self.assertEqual((len(versoes), versoes[0], versoes[-1]), (50, "11", "60"))   # a 10 e as menores saem
+
+    def test_campos_da_demanda(self):
+        util = {"espera": 1, "execucao": 2, "pausado": 3, "total": 6}
+        bom = dem(1001, agenda_v=2, prazo_em=1234, util={**util, "atraso": 5})
+        ruins = [dem(1002, agenda_v="2", prazo_em=1.5, util={"espera": 1}), dem(1003, agenda_v=True, prazo_em=None, util="x"),
+                 dem(1004, util={**util, "total": "6"}), dem(1005, util={**util, "espera": True})]
+        self.grava({"v": 2, "demandas": [bom] + ruins})
+        d = {x["id"]: x for x in ds.load()["demandas"]}
+        self.assertEqual((d["SOL-1001"]["agenda_v"], d["SOL-1001"]["prazo_em"], d["SOL-1001"]["util"]),
+                         (2, 1234, {**util, "atraso": 5}))
+        for n in (1002, 1003, 1004, 1005):
+            for k in ("agenda_v", "prazo_em", "util"):
+                self.assertNotIn(k, d["SOL-%d" % n], (n, k))
+        extra = dem(1006, util={**util, "lixo": 9, "atraso": "x"})
+        self.grava({"v": 2, "demandas": [extra]})
+        self.assertEqual(ds.load(cache=False)["demandas"][0]["util"], util)   # só as chaves conhecidas, atraso válido ou fora
+
+    def test_empty_ja_traz_a_agenda_desligada(self):
+        e = ds.empty()
+        self.assertEqual((e["agenda"], e["agendas"]), (ag.padrao(), {}))
+        self.assertIsNot(ds.empty()["agenda"], ds.empty()["agenda"])
 
 
 if __name__ == "__main__":

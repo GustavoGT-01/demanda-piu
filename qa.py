@@ -31,7 +31,7 @@ OUT = ROOT / ".qa"
 PY = sys.executable
 META = 80.0   # % mínimo de cobertura de linhas e de mutação no escopo crítico (docs/QUALIDADE.md)
 # Metas mais altas por arquivo: docs/QUALIDADE.md pede 90% nos cálculos de tempo (seções 3, 6 e 7).
-META_ARQ = {"demandas/demandas_calc.py": 90.0}
+META_ARQ = {"demandas/demandas_calc.py": 90.0, "demandas/demandas_agenda.py": 90.0}
 
 
 def meta_de(f: str) -> float:
@@ -60,6 +60,7 @@ CRITICO = {
     "store.py": (["tests/test_store.py", "tests/test_demandas_store.py"], None),
     "demandas/demandas_store.py": (["tests/test_demandas_store.py"], None),
     "demandas/demandas_calc.py": (["tests/test_demandas_calc.py"], None),
+    "demandas/demandas_agenda.py": (["tests/test_demandas_agenda.py"], None),
     "demandas/api.py": (["tests/test_demandas_api.py", "tests/test_servidor.py"], None),
     "demandas/demandas_backup.py": (["tests/test_demandas_backup.py"], None),
     "email_envio.py": (["tests/test_email_envio.py"], None),

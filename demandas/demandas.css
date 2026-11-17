@@ -408,6 +408,7 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 #dmboard .cr-grp{padding:8px 0 2px;border-bottom:1px solid var(--dm-line)}
 #dmboard .cr-grp .dm-glab b{font-size:12.5px}
 #dmboard .cr-we{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--dm-muted) 12%,transparent)}
+#dmboard .cr-off{position:absolute;top:0;bottom:0;background:color-mix(in srgb,var(--dm-muted) 22%,transparent)}
 #dmboard .cr-plan{position:absolute;top:2px;height:20px;border-radius:5px;background:color-mix(in srgb,var(--dm-ink) 14%,transparent)}
 @media (max-width:760px){#dmboard .cr-in{min-width:620px}}
 /* aba Calendário */
@@ -702,3 +703,13 @@ main[data-view="demandas"] .viewbar,main[data-view="demandas"] .runbar,main[data
 @media (prefers-reduced-motion:reduce){
   #dmboard *,#dmboard *::before,#dmboard *::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;scroll-behavior:auto!important}
 }
+
+/* expediente (Administração) */
+#dmboard .hs-box{margin-bottom:12px;padding-bottom:12px}
+#dmboard .hs-on{display:flex;gap:8px;align-items:center;margin:6px 0}
+#dmboard .hs-dias{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+#dmboard .hs-turnos,#dmboard .hs-fers{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+#dmboard .hs-turno,#dmboard .hs-fer{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#dmboard .hs-turno label{display:flex;gap:6px;align-items:center}
+#dmboard .hs-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:64px}   /* folga para o botão ⚙ Configurações, fixo no canto, não cobrir o Salvar */
+#dmboard .hs-fora{border-left:3px solid var(--dm-s-pause);padding-left:10px}

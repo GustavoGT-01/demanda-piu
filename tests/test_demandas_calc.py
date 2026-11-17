@@ -679,5 +679,210 @@ class GanttJanela(unittest.TestCase):
         self.assertEqual(set(g), {"ini", "fim", "linhas"})
 
 
+# ---------- horário de serviço ----------
+
+import demandas_agenda as ag
+
+
+def loc(a, m, d, h=0, mi=0):
+    """Instante local em ms: o horário de serviço é da hora do relógio, não de um T0 qualquer."""
+    return int(datetime.datetime(a, m, d, h, mi).timestamp() * 1000)
+
+
+SEXTA, SEG2 = loc(2026, 11, 13), loc(2026, 11, 16)   # sexta e a segunda seguinte
+AGENDA = {"ativa": True, "v": 1, "padrao": {"dias": [1, 2, 3, 4, 5], "turnos": [["07:00", "12:00"], ["13:00", "17:00"]]},
+          "setores": {}, "feriados": []}
+AGENDAS = {"1": AGENDA}
+
+
+def hora(d):
+    """Demanda criada na sexta às 16:00, com estimativa de 60 min, no horário de serviço da versão 1 (prazo gravado
+    na segunda às 12:00, longe: os testes de atenção não querem 'atrasada' por acidente)."""
+    return dem(1, **{"criado": SEXTA + 16 * HORA, "est": 60, "agenda_v": 1, "prazo_em": SEG2 + 12 * HORA, **d})
+
+
+class Util(unittest.TestCase):
+    def test_prazo_gravado_vence_o_corrido(self):
+        self.assertEqual(calc.prazo(dem(est=90)), T0 + 90 * MIN)
+        self.assertEqual(calc.prazo(dem(est=90, prazo_em=T0 + 5)), T0 + 5)
+        self.assertEqual(calc.prazo(dem(est=90, prazo_em=0)), 0)                     # 0 é um valor
+        for ruim in (None, "9", 1.5, True):
+            self.assertEqual(calc.prazo(dem(est=90, prazo_em=ruim)), T0 + 90 * MIN, ruim)
+
+    def test_grade_de(self):
+        self.assertIsNone(calc.grade_de(dem(), AGENDAS))                              # sem agenda_v: corrido
+        self.assertIsNone(calc.grade_de(dem(agenda_v=1), None))
+        self.assertIsNone(calc.grade_de(dem(agenda_v=1), {}))
+        self.assertIsNone(calc.grade_de(dem(agenda_v=2), AGENDAS))                    # versão que já não existe
+        g = calc.grade_de(dem(agenda_v=1), AGENDAS)
+        self.assertEqual(g["dias"], frozenset({1, 2, 3, 4, 5}))
+        sld = {"1": {**AGENDA, "setores": {"CNC": {"dias": [6], "turnos": [["06:00", "10:00"]]}}}}
+        self.assertEqual(calc.grade_de(dem(agenda_v=1), sld)["dias"], frozenset({6}))   # o setor destino manda
+
+    def test_duracoes_so_no_expediente(self):
+        d = hora({"iniciado": SEG2 + 9 * HORA, "fim": SEG2 + 11 * HORA, "status": "done",
+                  "pausas": [pz(SEG2 + 9 * HORA + 30 * MIN, SEG2 + 10 * HORA)]})
+        agora = SEG2 + 12 * HORA
+        self.assertEqual(calc.espera_ms(d, agora, AGENDAS), 3 * HORA)       # sexta 16-17 e segunda 7-9
+        self.assertEqual(calc.pausado_ms(d, agora, AGENDAS), 30 * MIN)
+        self.assertEqual(calc.execucao_ms(d, agora, AGENDAS), 90 * MIN)
+        self.assertEqual(calc.total_ms(d, agora, AGENDAS), 5 * HORA)
+        # sem as agendas: tempo corrido como sempre
+        self.assertEqual(calc.total_ms(d, agora), SEG2 + 11 * HORA - (SEXTA + 16 * HORA))
+        self.assertEqual(calc.espera_ms(d, agora), SEG2 + 9 * HORA - (SEXTA + 16 * HORA))
+
+    def test_pausa_que_atravessa_o_fim_de_semana(self):
+        d = hora({"iniciado": SEXTA + 16 * HORA, "status": "pause",
+                  "pausas": [pz(SEXTA + 16 * HORA, SEG2 + 8 * HORA)]})
+        self.assertEqual(calc.pausado_ms(d, SEG2 + 9 * HORA, AGENDAS), 2 * HORA)   # 16-17 e 7-8
+        self.assertEqual(calc.execucao_ms(d, SEG2 + 9 * HORA, AGENDAS), HORA)      # 3 h úteis (16-17, 7-9) menos 2 h
+
+    def test_pausa_aberta_vai_ate_agora_util(self):
+        d = hora({"iniciado": SEXTA + 16 * HORA, "status": "pause", "pausas": [pz(SEXTA + 16 * HORA + 30 * MIN)]})
+        self.assertEqual(calc.pausado_ms(d, SEG2 + 7 * HORA + 30 * MIN, AGENDAS), 60 * MIN)   # 30 min de sexta + 30 de segunda
+
+    def test_ativa_mede_ate_agora(self):
+        d = hora({})
+        self.assertEqual(calc.espera_ms(d, SEXTA + 18 * HORA, AGENDAS), HORA)      # a noite não conta
+        self.assertEqual(calc.espera_ms(d, SEG2 + 7 * HORA + 15 * MIN, AGENDAS), HORA + 15 * MIN)
+        self.assertEqual(calc.execucao_ms(d, SEG2, AGENDAS), 0)                    # não iniciada
+
+    def test_fechada_usa_o_fim_e_nao_o_agora(self):
+        d = hora({"status": "canc", "fim": SEXTA + 16 * HORA + 30 * MIN})
+        self.assertEqual(calc.total_ms(d, SEG2 + 20 * HORA, AGENDAS), 30 * MIN)
+
+    def test_versao_ausente_cai_no_corrido(self):
+        d = hora({"fim": SEG2 + HORA, "status": "done"})
+        self.assertEqual(calc.total_ms(d, SEG2, {"9": AGENDA}), SEG2 + HORA - (SEXTA + 16 * HORA))
+
+    def test_congela_grava_e_vale_sem_agenda(self):
+        d = hora({"iniciado": SEG2 + 9 * HORA, "fim": SEG2 + 11 * HORA, "status": "done",
+                  "pausas": [pz(SEG2 + 9 * HORA + 30 * MIN, SEG2 + 10 * HORA)]})
+        calc.congela(d, SEG2 + 11 * HORA, AGENDAS)
+        self.assertEqual(d["util"], {"espera": 3 * HORA, "execucao": 90 * MIN, "pausado": 30 * MIN, "total": 5 * HORA,
+                                     "atraso": 0})
+        for nome, esperado in (("espera_ms", 3 * HORA), ("execucao_ms", 90 * MIN),
+                               ("pausado_ms", 30 * MIN), ("total_ms", 5 * HORA)):
+            self.assertEqual(getattr(calc, nome)(d, SEG2 + 99 * HORA), esperado, nome)   # sem agendas: o gravado
+        d["util"]["total"] = 7
+        calc.congela(d, SEG2 + 11 * HORA, AGENDAS)
+        self.assertEqual(d["util"]["total"], 5 * HORA, "mede de novo, não repete o valor antigo")
+
+    def test_atraso_util_gravado_e_publicado(self):
+        # prazo segunda 07:30; concluída terça 08:00: 8,5 h úteis de segunda + 1 h de terça = 9,5 h de atraso útil
+        base = {"prazo_em": SEG2 + 7 * HORA + 30 * MIN, "fim": SEG2 + 24 * HORA + 8 * HORA, "status": "done"}
+        d = hora(base)
+        self.assertEqual(calc.publica(d, SEG2 + 99 * HORA, AGENDAS)["atraso"], 570.0)   # 07:30-12:00 e 13:00-17:00 de segunda, mais 07:00-08:00 de terça
+        calc.congela(d, d["fim"], AGENDAS)
+        self.assertEqual(d["util"]["atraso"], 570 * MIN)
+        self.assertEqual(calc.publica(d, SEG2 + 99 * HORA)["atraso"], 570.0)    # sem agendas: lê o gravado
+        no_prazo = hora({"prazo_em": SEG2 + 12 * HORA, "fim": SEG2 + 10 * HORA, "status": "done"})
+        self.assertEqual(calc.publica(no_prazo, SEG2 + 99 * HORA, AGENDAS)["atraso"], 0.0)
+        for chave in (hora({"status": "canc", "fim": SEG2 + HORA}), dem(status="done", fim=T0 + 5 * MIN)):
+            self.assertNotIn("atraso", calc.publica(chave, SEG2 + 99 * HORA, AGENDAS))   # só concluída de horário de serviço
+        self.assertNotIn("atraso", calc.publica(hora({}), SEG2, AGENDAS))
+
+    def test_congela_so_de_demanda_com_horario(self):
+        d = dem(status="done", fim=T0 + MIN)
+        calc.congela(d, T0 + MIN, AGENDAS)
+        self.assertNotIn("util", d)
+
+    def test_util_gravado_so_vale_para_fechada(self):
+        viva = hora({"util": {"espera": 1, "execucao": 2, "pausado": 3, "total": 4}})
+        self.assertEqual(calc.total_ms(viva, SEXTA + 18 * HORA, AGENDAS), HORA)
+        feita = hora({"status": "done", "fim": SEG2, "util": {"espera": 1, "execucao": 2, "pausado": 3, "total": 4}})
+        self.assertEqual(calc.espera_ms(feita, SEG2 + HORA), 1)
+        for ruim in (None, "x", {"espera": "1"}, {}):
+            f = hora({"status": "done", "fim": SEXTA + 17 * HORA, "util": ruim})
+            self.assertEqual(calc.total_ms(f, SEG2, AGENDAS), HORA, ruim)
+
+    def test_metricas_e_sla_em_tempo_util(self):
+        d = hora({"status": "done", "fim": SEG2 + 7 * HORA + 30 * MIN})   # criada sexta 16:00, est 60 min
+        m = calc.metricas(d, SEG2 + 12 * HORA, AGENDAS)
+        self.assertEqual((m["total"], m["sla"]), (90.0, 150.0))
+        corrido = calc.metricas(d, SEG2 + 12 * HORA)["total"]
+        self.assertEqual(corrido, round((SEG2 + 7.5 * HORA - SEXTA - 16 * HORA) / MIN, 1))
+        self.assertEqual(calc.publica(d, SEG2 + 12 * HORA, AGENDAS)["total"], 90.0)
+
+    def test_atrasada_usa_o_prazo_gravado(self):
+        prazo_em = ag.soma_util(ag.grade(AGENDA, "CNC"), SEXTA + 16 * HORA + 30 * MIN, 60)
+        d = dem(criado=SEXTA + 16 * HORA + 30 * MIN, est=60, prazo_em=prazo_em, agenda_v=1)
+        self.assertFalse(calc.atrasada(d, SEXTA + 23 * HORA))                       # a noite de sexta não atrasa
+        self.assertFalse(calc.atrasada(d, SEG2 + 7 * HORA + 30 * MIN))              # no prazo exato ainda não
+        self.assertTrue(calc.atrasada(d, SEG2 + 7 * HORA + 30 * MIN + 1))
+
+
+class AtencaoUtil(unittest.TestCase):
+    def test_espera_e_pausa_so_contam_no_expediente(self):
+        sem_aceite = hora({})
+        sem_aceite["criado"] = SEXTA + 16 * HORA + 55 * MIN
+        agora = SEXTA + 22 * HORA
+        self.assertEqual(calc.atencao([sem_aceite], agora, AGENDAS), [])           # 5 min úteis
+        self.assertEqual([t["k"] for t in calc.atencao([sem_aceite], agora)[0]["tags"]], ["wait"])   # corrido: 5 h
+        tags = calc.atencao([sem_aceite], SEG2 + 7 * HORA + 20 * MIN, AGENDAS)[0]["tags"]
+        self.assertEqual([(t["k"], t["min"]) for t in tags], [("wait", 25.0)])      # 5 + 20 min úteis
+        pausada = hora({"status": "pause", "iniciado": SEXTA + 16 * HORA, "pausas": [pz(SEXTA + 16 * HORA + 50 * MIN)]})
+        self.assertEqual(calc.atencao([pausada], SEG2 + 7 * HORA + 9 * MIN, AGENDAS), [])      # 10 + 9 min
+        tags = calc.atencao([pausada], SEG2 + 7 * HORA + 10 * MIN, AGENDAS)[0]["tags"]
+        self.assertEqual([(t["k"], t["min"]) for t in tags], [("pause", 20.0)])
+
+
+class VistaUtil(unittest.TestCase):
+    def doc(self, **kw):
+        return {"rev": 1, "setores": [], "pessoas": [], "notas": [], "demandas": [], **kw}
+
+    def test_vista_leva_a_agenda_e_so_as_versoes_em_uso(self):
+        viva = dem(1, agenda_v=2)
+        feita = dem(2, status="done", fim=T0 + MIN, agenda_v=3)
+        doc = self.doc(demandas=[viva, feita], agenda={**AGENDA, "v": 4},
+                       agendas={"1": AGENDA, "2": {**AGENDA, "v": 2}, "3": {**AGENDA, "v": 3}})
+        v = calc.vista(doc, T0)
+        self.assertEqual(v["agenda"]["v"], 4)
+        self.assertEqual(list(v["agendas"]), ["2"])     # a 1 ninguém usa; a 3 é de demanda fechada
+        self.assertEqual(calc.vista(self.doc(), T0)["agenda"], ag.padrao())
+        self.assertEqual(calc.vista(self.doc(), T0)["agendas"], {})
+
+    def test_vista_mede_com_as_versoes_do_doc(self):
+        d = hora({})
+        doc = self.doc(demandas=[d], agendas=AGENDAS)
+        out = calc.vista(doc, SEXTA + 18 * HORA)["demandas"][0]
+        self.assertEqual(out["total"], 60.0)
+
+
+class GanttUtil(unittest.TestCase):
+    def test_sem_horario_a_saida_nao_muda(self):
+        self.assertNotIn("expediente", calc.gantt([dem(1)], T0 + MIN))
+        self.assertNotIn("expediente", calc.gantt([dem(1)], T0 + MIN, T0 - HORA, T0 + HORA, "setor"))
+        self.assertNotIn("expediente", calc.gantt([dem(1)], T0 + MIN, agenda=ag.padrao()))   # desligada
+
+    def test_expediente_da_janela_de_hoje_e_do_multidia(self):
+        agora = SEG2 + 10 * HORA
+        g = calc.gantt([], agora, agenda=AGENDA)   # agora-10h a agora+3h: segunda 00:00 a 13:00
+        self.assertEqual(g["expediente"]["geral"], [[SEG2 + 7 * HORA, SEG2 + 12 * HORA]])
+        self.assertEqual(g["expediente"]["setores"], {})
+        m = calc.gantt([], agora, SEG2, SEG2 + 2 * 86400000, "setor", agenda=AGENDA)
+        self.assertEqual(len(m["expediente"]["geral"]), 4)
+        self.assertEqual(m["grupos"], [])
+
+    def test_setor_com_horario_ou_feriado_proprio_ganha_o_seu(self):
+        a = {**AGENDA, "setores": {"SLD": {"dias": [1], "turnos": [["06:00", "08:00"]]}},
+             "feriados": [{"data": "2026-11-16", "nome": "x", "setores": ["CNC"]}]}
+        g = calc.gantt([], SEG2 + HORA, SEG2, SEG2 + 86400000, agenda=a)["expediente"]
+        self.assertEqual(sorted(g["setores"]), ["CNC", "SLD"])
+        self.assertEqual(g["setores"]["CNC"], [])                                       # feriado só dele
+        self.assertEqual(g["setores"]["SLD"], [[SEG2 + 6 * HORA, SEG2 + 8 * HORA]])
+        self.assertEqual(len(g["geral"]), 2)
+
+    def test_crono_leva_horario_ate_o_gantt_e_mede_util(self):
+        d = hora({"iniciado": SEG2 + 7 * HORA, "fim": SEG2 + 8 * HORA, "status": "done"})
+        c = calc.crono([d], SEG2 + 9 * HORA, 7, AGENDAS, AGENDA)
+        self.assertIn("expediente", c["gantt"])
+        self.assertEqual(c["kpis"]["espera"], 60.0)     # 1 h de sexta; a noite e o fim de semana não contam
+        self.assertEqual(c["kpis"]["execucao"], 60.0)
+        corrido = calc.crono([d], SEG2 + 9 * HORA, 7)
+        self.assertGreater(corrido["kpis"]["espera"], 60.0 * 60)
+        self.assertNotIn("expediente", corrido["gantt"])
+
+
 if __name__ == "__main__":
     unittest.main()
