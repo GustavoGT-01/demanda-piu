@@ -153,6 +153,11 @@ def cmd_lint(_a) -> int:
     return run([PY, "-m", "ruff", "check", "."])
 
 
+# checks de tela da bateria QA (docs/qa/): cada um sobe o próprio servidor; os bugs conhecidos ficam como known-bug
+CHECKS_QA = ("check_acesso", "check_criar", "check_ciclo", "check_admin", "check_tempo", "check_visoes",
+             "check_robustez")
+
+
 def _js(sem_jsdom: bool = False) -> tuple:
     """(código, linhas do resultado). Os checks de tela rodam juntos: cada um sobe o próprio servidor (porta 0).
 
@@ -175,7 +180,7 @@ def _js(sem_jsdom: bool = False) -> tuple:
     linhas.append("js: sintaxe de %d arquivos %s" % (len(arquivos), "OK" if not erro else "com erro"))
     tem_jsdom = subprocess.call([node, "-e", "require.resolve('jsdom')"], cwd=ROOT, env=os.environ,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
-    checks = ["tests/demandas_check.js"] if tem_jsdom else []
+    checks = ["tests/demandas_check.js", *("tests/%s.js" % n for n in CHECKS_QA)] if tem_jsdom else []
     if not tem_jsdom and sem_jsdom:
         linhas.append("js: jsdom não encontrado; checks de tela pulados a pedido (--sem-jsdom)")
     elif not tem_jsdom:
