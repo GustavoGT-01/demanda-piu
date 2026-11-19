@@ -140,6 +140,18 @@ function hsFora(g, a, b){
   if(c < b) out.push([c, b]);
   return out;
 }
+/* O instante em que `min` minutos de trabalho se completam a partir de `ini` (null se não cabe em 400 dias). */
+function hsSoma(g, ini, min){
+  let falta = Math.round(min * MIN);
+  if(!g || falta <= 0) return ini + Math.max(0, falta);
+  for(const [s0, e] of hsBlocos(g, ini, ini + 402 * DAY, 400)){
+    const x = Math.max(s0, ini);
+    if(e <= x) continue;
+    if(e - x >= falta) return x + falta;
+    falta -= e - x;
+  }
+  return null;
+}
 const hsAberto = (g, t) => !g || hsBlocos(g, t, t + 1, 1).some(([s, e]) => s <= t && t < e);
 /* A grade que vale para esta solicitação: a versão gravada nela, no setor destino (null = tempo corrido). */
 const hsDe = r => r.agenda_v == null || !D.v || !D.v.agendas ? null : hsGrade(D.v.agendas[String(r.agenda_v)], r.para && r.para.s);
@@ -150,7 +162,7 @@ const hsDif = (r, a, b) => b >= a ? hsEl(r, a, b) : -hsEl(r, b, a);
 /* ---------- regras de tempo (derivados do servidor + o tempo que passou desde a vista) ---------- */
 const isAct = r => r.status === 'new' || r.status === 'prog' || r.status === 'pause';
 const lateNow = r => isAct(r) && (!!r.atrasada || now() > num(r.prazo));
-const lateDone = r => r.status === 'done' && num(r.fim) > num(r.prazo);
+const lateDone = r => r.status === 'done' && (r.atraso != null ? num(r.atraso) > 0 : num(r.fim) > num(r.prazo));
 const dispSt = r => lateNow(r) ? 'late' : r.status;
 const openPause = r => {const p = (r.pausas || [])[r.pausas.length - 1]; return p && !p.fim ? p : null};
 function mets(r){
@@ -168,8 +180,8 @@ function slaCls(r){
 function remText(r){
   if(r.status === 'done'){const d = r.atraso != null ? num(r.atraso) : (num(r.fim) - num(r.prazo)) / MIN; return d <= 0 ? 'Concluída ' + fT(r.fim) + ' · no prazo' : 'Concluída com atraso de ' + dur(d)}
   if(r.status === 'canc') return 'Cancelada ' + (r.fim ? fT(r.fim) : '');
-  const rem = hsDif(r, now(), num(r.prazo)) / MIN;
-  return rem >= 0 ? 'Faltam ' + dur(rem) : 'Atrasada há ' + dur(-rem);
+  const N = now(), pz = num(r.prazo);
+  return N > pz ? 'Atrasada há ' + dur(hsEl(r, pz, N) / MIN) : 'Faltam ' + dur(hsEl(r, N, pz) / MIN);
 }
 const sortAtt = (a, b) => (lateNow(b) - lateNow(a)) || ((PRIO[b.prio] || PRIO.norm)[1] - (PRIO[a.prio] || PRIO.norm)[1]) || (num(a.prazo) - num(b.prazo));
 const slaC = v => v == null ? '' : v >= 85 ? 'dm-good' : v >= 65 ? 'dm-warnc' : 'dm-badc';
@@ -426,6 +438,7 @@ function toast(m){
 function gtoast(m){if(typeof window.toast === 'function') try{window.toast(m)}catch(_){/* sem toast do app */}}
 const dtoast = m => visible() ? toast(m) : gtoast(m);
 async function markReadFor(id){
+  if(D.imp) return;   // "Ver como" é só leitura: não marca os avisos do Escritório como lidos
   const ids = D.v ? D.v.notas.filter(n => n.dem === id && !n.lida).map(n => n.id) : [];
   for(const nid of ids) await call('nota/lida', {nid}, {quiet: true});
   if(ids.length){renderBell(); if(D.notif) renderNotif()}
@@ -504,6 +517,7 @@ function lost(m){
   D.lg.err = m || 'Identifique-se de novo.'; D.lg.code = '';
   closeModal(); render();
   dtoast('🔒 ' + D.lg.err);
+  loadPub().then(() => {if(!D.role) render()});   // a lista de pessoas da entrada é a de agora, não a da abertura da página
 }
 
 /* ---------- cabeçalho, abas e visualização como pessoa ---------- */
@@ -761,7 +775,7 @@ function calGrade(dias){
     const linhaAgora = nd.getTime() === k ? `<i class="cal-now" style="top:${Math.max(0, Math.min(H * CAL_PX, topo(agora))).toFixed(1)}px"></i>` : '';
     return `<div class="cal-col${k === hoje ? ' cal-today' : ''}${d.getDay() === 0 || d.getDay() === 6 ? ' cal-we' : ''}">${calFora(k, grade)}${blocos}${linhaAgora}</div>`;
   }).join('');
-  const cab = dias.map(k => {const d = new Date(k); return `<span class="${k === hoje ? 'cal-today' : ''}"><b>${DOW[d.getDay()]}</b> ${fD(k)}</span>`}).join('');
+  const cab = dias.map(k => {const d = new Date(k); return `<span class="${k === hoje ? 'cal-today' : ''}" data-act="calday" data-v="${k}" role="button" tabindex="0"><b>${DOW[d.getDay()]}</b> ${fD(k)}</span>`}).join('');
   return `<div class="cal-week"><div class="cal-wh" style="--dm-cols:${dias.length}"><span class="cal-tcol"></span>${cab}</div><div class="cal-wb" style="--dm-cols:${dias.length};height:${H * CAL_PX}px"><div class="cal-hours2">${horas.join('')}</div>${cols}</div><div class="dm-note">${grade ? 'A faixa sombreada é fora do horário de serviço (turnos, dias de folga e feriados).' : `O horário de serviço está desligado: a faixa sombreada é só uma referência (${p2(CAL_EXP[0])}h às ${p2(CAL_EXP[1])}h). Para configurar, vá em Administração, Expediente.`}</div></div>`;
 }
 function calSemana(){
@@ -775,7 +789,7 @@ function calDia(){
 }
 function calSide(){
   const c = D.cal, [GS, GE] = calJanela();
-  const dia = c.dia && c.dia >= GS && c.dia < GE ? c.dia : (c.modo === 'mes' ? 0 : GS);
+  const hoje0 = crJanela('dia', 0)[0], dia = c.dia && c.dia >= GS && c.dia < GE ? c.dia : (c.modo === 'mes' ? 0 : (hoje0 >= GS && hoje0 < GE ? hoje0 : GS));
   if(!dia) return `<div class="cal-side"><div class="dm-empty">Clique num dia para ver as solicitações dele.</div></div>`;
   const l = calPorDia(dia, dia + DAY).get(dia) || [];
   const faixas = [[0, 6, 'madrugada'], [6, 12, 'manhã'], [12, 18, 'tarde'], [18, 24, 'noite']];
@@ -858,7 +872,7 @@ function crLinha(r, L, NOWg, GS, GE, cols, we){
   const dl = num(r.prazo), dm = dl >= GS && dl <= GE ? `<i class="dm-gd${r.atrasada ? ' dm-late' : ''}" style="left:${L(dl).toFixed(2)}%" title="Prazo ${fT(dl)}"></i>` : '';
   const pl = r.plano ? `<i class="cr-plan" style="left:${L(r.plano.a).toFixed(2)}%;width:${Math.max(0.3, L(r.plano.b) - L(r.plano.a)).toFixed(2)}%"></i>` : '';
   const st = cols ? ` style="--dm-gcols:${cols}"` : '';
-  return `<div class="dm-grow" role="button" tabindex="0" data-act="open" data-id="${esc(r.id)}"><div class="dm-glab"><b>${esc(r.id)}</b>${chip(r.de)}→${chip(r.para)}${r.p ? av(r.p) : ''}<span class="dm-gt" title="${esc(r.titulo)}">${esc(r.titulo)}</span></div><div class="dm-gtrack"${st}>${we}${pl}${segs}${dm}<i class="dm-gnow" style="left:${L(NOWg).toFixed(2)}%"></i></div></div>`;
+  return `<div class="dm-grow" role="button" tabindex="0" data-act="open" data-id="${esc(r.id)}"><div class="dm-glab"><b>${esc(r.id)}</b>${chip(r.de)}→${chip(r.para)}${r.p ? av(r.p) : ''}<span class="dm-gt" title="${esc(r.titulo)}">${esc(r.titulo)}</span></div><div class="dm-gtrack"${st}>${we}${pl}${segs}${dm}${NOWg >= GS && NOWg <= GE ? `<i class="dm-gnow" style="left:${L(NOWg).toFixed(2)}%"></i>` : ''}</div></div>`;
 }
 function gantt(g, o){
   const modo = (o && o.modo) || '13h';
@@ -966,11 +980,15 @@ function vCrono(){
 const HS_DIAS = [[1, 'Seg'], [2, 'Ter'], [3, 'Qua'], [4, 'Qui'], [5, 'Sex'], [6, 'Sáb'], [7, 'Dom']];
 const hsClone = o => JSON.parse(JSON.stringify(o));
 const hsSemV = c => {const o = hsClone(c); delete o.v; return JSON.stringify(o)};
-const hsSujo = () => !!D.hs && hsSemV(D.hs.cfg) !== hsSemV(D.v.agenda);
+const hsSujo = () => !!D.hs && hsSemV(D.hs.cfg) !== D.hs.base;   // contra o que o formulário recebeu, não contra a vista de agora
 function hsIni(){
   const a = D.v && D.v.agenda ? D.v.agenda : null;
   if(!a) return false;
-  if(!D.hs || (!hsSujo() && D.hs.cfg.v !== a.v)) D.hs = {cfg: hsClone(a), escopo: (D.hs && D.hs.escopo) || ''};
+  if(!D.hs || ((!hsSujo() || hsSemV(D.hs.cfg) === hsSemV(a)) && D.hs.cfg.v !== a.v)){   // sem alteração minha, ou outro aparelho gravou o mesmo que eu editei
+    const e = (D.hs && D.hs.escopo) || D.hsEscopo || '';
+    D.hsEscopo = '';
+    D.hs = {cfg: hsClone(a), base: hsSemV(a), escopo: e && a.padrao && setores().some(x => x.id === e && x.ativo) ? e : ''};
+  }
   return true;
 }
 /* A grade em edição: a do setor escolhido (se tem a própria) ou a padrão. */
@@ -985,7 +1003,7 @@ function vHours(){
      <div class="hs-turnos">${turnos || '<p class="dm-note">Nenhum turno: não há trabalho nestes dias.</p>'}</div>
      <button type="button" class="dm-btn dm-sm" data-act="hs-add">＋ Turno</button>
      <p class="dm-note">Um turno que termina antes de começar (ex.: 22:00 às 06:00) atravessa a meia-noite e pertence ao dia em que começa.</p>`;
-  const fer = c.feriados.map((f, i) => `<div class="hs-fer"><input type="date" id="hs-fd-${i}" value="${esc(f.data)}" aria-label="Data do feriado ${i + 1}"><input type="text" id="hs-fn-${i}" value="${esc(f.nome)}" maxlength="60" placeholder="Nome (ex.: Natal)" aria-label="Nome do feriado ${i + 1}"><select id="hs-fs-${i}" aria-label="Setor do feriado ${i + 1}">${opt('', 'Todos os setores', f.setores[0] || '')}${secOpts(f.setores[0] || '', true)}</select><button type="button" class="dm-btn dm-sm" data-act="hs-fdel" data-v="${i}" aria-label="Remover feriado ${i + 1}">✕</button></div>`).join('');
+  const fer = c.feriados.map((f, i) => `<div class="hs-fer"><input type="date" id="hs-fd-${i}" value="${esc(f.data)}" aria-label="Data do feriado ${i + 1}"><input type="text" id="hs-fn-${i}" value="${esc(f.nome)}" maxlength="60" placeholder="Nome (ex.: Natal)" aria-label="Nome do feriado ${i + 1}"><select id="hs-fs-${i}" aria-label="Setor do feriado ${i + 1}">${f.setores.length > 1 ? `<option value="__varios" selected>${esc(f.setores.join(', '))}</option>` : ''}${opt('', 'Todos os setores', f.setores.length > 1 ? '__varios' : f.setores[0] || '')}${secOpts(f.setores.length > 1 ? '' : f.setores[0] || '', true)}</select><button type="button" class="dm-btn dm-sm" data-act="hs-fdel" data-v="${i}" aria-label="Remover feriado ${i + 1}">✕</button></div>`).join('');
   const sujo = hsSujo();
   return `<div class="dm-panel hs-box"><div class="dm-ph"><h3>Horário de serviço</h3><span class="dm-s">Versão ${num(c.v)}${sujo ? ' · alterações não salvas' : ''}</span></div>
    <label class="hs-on"><input type="checkbox" id="hs-ativa"${c.ativa ? ' checked' : ''}> <b>Contar o tempo só em horário de serviço</b></label>
@@ -1005,7 +1023,7 @@ function hsInput(id, v){
   if((m = /^hs-t([ab])-(\d+)$/.exec(id))){const t = hsAlvo().turnos[+m[2]]; if(t) t[m[1] === 'a' ? 0 : 1] = v}
   else if((m = /^hs-f([dns])-(\d+)$/.exec(id))){
     const f = h.cfg.feriados[+m[2]]; if(!f) return;
-    if(m[1] === 'd') f.data = v; else if(m[1] === 'n') f.nome = v; else f.setores = v ? [v] : [];
+    if(m[1] === 'd') f.data = v; else if(m[1] === 'n') f.nome = v; else if(v !== '__varios') f.setores = v ? [v] : [];
   }
   else return;
   const salvar = document.querySelector('[data-act=hs-save]'), desfazer = document.querySelector('[data-act=hs-undo]');
@@ -1020,7 +1038,7 @@ function hsMuda(a, d){
   else if(a === 'hs-del') alvo.turnos.splice(num(d.v), 1);
   else if(a === 'hs-fadd') h.cfg.feriados.push({data: '', nome: '', setores: []});
   else if(a === 'hs-fdel') h.cfg.feriados.splice(num(d.v), 1);
-  else if(a === 'hs-undo') D.hs = null;
+  else if(a === 'hs-undo'){D.hsEscopo = h.escopo; D.hs = null}
   renderView();
 }
 function hsChange(id, el){
@@ -1037,7 +1055,7 @@ async function hsSalva(el){
   const cfg = hsClone(h.cfg);
   cfg.feriados = cfg.feriados.filter(f => f.data || f.nome.trim());   // linha em branco que sobrou não é feriado
   const r = await run(el, 'agenda/salvar', {agenda: cfg}, 'Horário de serviço salvo.');
-  if(r) D.hs = null;
+  if(r){D.hsEscopo = h.escopo; D.hs = null}
   renderView();
 }
 /* No Cronoanálise: avisa quando as contagens estão paradas por causa do horário. */
@@ -1341,12 +1359,12 @@ async function pfPadrao(el){
 
 /* ---------- modais ---------- */
 const modalOn = () => !!root && $('dm-modal').classList.contains('dm-on');
-function openModal(html, wide){   // wide: true = largo; texto = classe própria da caixa
+function openModal(html, wide, semFoco){   // wide: true = largo; texto = classe própria da caixa; semFoco: redesenho, o foco fica onde estava
   const box = $('dm-mbox');
   box.className = 'dm-mbox' + (wide ? ' ' + (wide === true ? 'dm-wide' : wide) : '');
   box.innerHTML = html;
   $('dm-modal').classList.add('dm-on');
-  const f = box.querySelector('input:not([type=radio]):not([disabled]),textarea,select');
+  const f = semFoco ? null : box.querySelector('input:not([type=radio]):not([disabled]),textarea,select');
   if(f && f.focus) try{f.focus({preventScroll: true})}catch(_){f.focus()}
 }
 function closeModal(){
@@ -1399,12 +1417,13 @@ function rascLe(){
   try{const r = JSON.parse(localStorage.getItem(rascKey()) || 'null'); return r && typeof r === 'object' && num(r.t) > Date.now() - RASC_VIDA ? r : null}
   catch(_){return null}
 }
+const rascSig = f => JSON.stringify([f.tipo, f.titulo, f.desc, f.fromS, f.toS, f.toP, f.motivo, f.prio, f.est]);
 function rascGrava(){
   const f = D.form;
   if(!f || !D.role) return;
   try{
     if(!f.titulo.trim() && !f.desc.trim()) localStorage.removeItem(rascKey());
-    else localStorage.setItem(rascKey(), JSON.stringify({t: Date.now(), cid: f.cid, tipo: f.tipo, titulo: f.titulo, desc: f.desc, fromS: f.fromS, toS: f.toS, toP: f.toP, motivo: f.motivo, prio: f.prio, est: f.est, anexos: f.files.length}));
+    else localStorage.setItem(rascKey(), JSON.stringify({t: f.sig0 && rascSig(f) === f.sig0 ? f.t0 : Date.now(), /* abrir sem mexer não renova as 24 h */ cid: f.cid, tipo: f.tipo, titulo: f.titulo, desc: f.desc, fromS: f.fromS, toS: f.toS, toP: f.toP, motivo: f.motivo, prio: f.prio, est: f.est, anexos: f.files.length}));
   }catch(_){/* sem armazenamento no aparelho: o rascunho só não sobrevive */}
 }
 function rascApaga(){try{localStorage.removeItem(rascKey())}catch(_){/* idem */}}
@@ -1421,11 +1440,13 @@ function openNew(fresh){
       motivo: REASONS.includes(r.motivo) ? r.motivo : '', prio: PRIO[r.prio] ? r.prio : 'norm', est: est >= 1 && est <= 43200 ? est : 60,
       recup: num(r.t), semAnexos: num(r.anexos) > 0});
     if(typeof r.cid === 'string' && CID_RE.test(r.cid)) D.form.cid = r.cid;
+    D.form.sig0 = rascSig(D.form); D.form.t0 = num(r.t);
   }
   D.mod = {kind: 'new'};
   renderForm();
 }
 function renderForm(){
+  const aberto = $('dm-modal').classList.contains('dm-on') && D.mod && D.mod.kind === 'new', foco = aberto ? focoDe(document.activeElement) : null;
   const f = D.form, e = f.err, chipsEst = [30, 60, 120, 240, 480], custom = !chipsEst.includes(f.est);
   const cu = f.est % 60 === 0 && f.est >= 60 ? 'h' : 'm', cv = cu === 'h' ? f.est / 60 : f.est;
   const me = per(meId());
@@ -1445,25 +1466,50 @@ function renderForm(){
     <div class="dm-row"><span class="dm-note" style="margin:0">Personalizado:</span><input type="number" min="1" max="43200" id="dm-fm-estN" value="${esc(cv)}" style="width:92px;flex:none" aria-label="Tempo"><select id="dm-fm-estU" aria-label="Unidade">${opt('m', 'minutos', cu)}${opt('h', 'horas', cu)}</select></div>
     <div class="dm-prev" id="dm-fm-prev">${prevTxt(f.est)}</div><span class="dm-em">Informe um tempo entre 1 minuto e 30 dias.</span></div>
    <div class="dm-fld"><span class="dm-lbl">Anexos (JPG, PNG ou PDF, até 5 MB, no máximo 5)</span><div class="dm-files">${f.files.map((x, i) => `<span class="dm-file">📎 ${esc(x.name)} · ${fBytes(x.size)}<button type="button" class="dm-fx" data-act="m-rmfile" data-v="${i}" aria-label="Remover">✕</button></span>`).join('')}${f.files.length < ANX.n ? '<button type="button" class="dm-btn dm-sm" data-act="m-addfile">＋ Adicionar foto/arquivo</button>' : ''}</div></div>
-   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="m-submit">Enviar solicitação</button></div>`);
+   <div class="dm-mfoot"><button type="button" class="dm-btn" data-act="mclose">Cancelar</button><button type="button" class="dm-btn dm-primary" data-act="m-submit">Enviar solicitação</button></div>`, false, aberto);
+  if(foco){const x = $('dm-mbox').querySelector(foco.sel); if(x){try{x.focus({preventScroll: true})}catch(_){x.focus()} if(foco.ini != null && x.setSelectionRange) try{x.setSelectionRange(foco.ini, foco.fim)}catch(_){/* tipo sem seleção */}}}
   rascGrava();
 }
-const prevTxt = est => est > 0 ? `Prazo final: <b>${fDT(now() + est * MIN)}</b> (${dur(est)} a partir de agora)` : 'Informe o tempo estipulado.';
+/* Onde está o foco dentro do formulário (para voltar a ele depois de redesenhar): por id, ou pela ação e valor do botão. */
+function focoDe(a){
+  if(!a || !a.closest || !a.closest('#dm-mbox')) return null;
+  if(a.id) return {sel: '#' + a.id, ini: a.selectionStart, fim: a.selectionEnd};
+  if(a.dataset && a.dataset.act) return {sel: '[data-act="' + a.dataset.act + '"]' + (a.dataset.v != null ? '[data-v="' + String(a.dataset.v).replace(/"/g, '') + '"]' : '')};
+  return null;
+}
+function prevTxt(est){
+  if(!(est > 0)) return 'Informe o tempo estipulado.';
+  const g = hsGrade(D.v && D.v.agenda, D.form && D.form.toS || null);   // com o horário de serviço ligado, o prazo é o que o servidor vai gravar
+  if(!g) return `Prazo final: <b>${fDT(now() + est * MIN)}</b> (${dur(est)} a partir de agora)`;
+  const fim = hsSoma(g, now(), est);
+  return fim == null ? 'O horário de serviço não comporta esse tempo.' : `Prazo final: <b>${fDT(fim)}</b> (${dur(est)} de trabalho, em horário de serviço)`;
+}
 function setEstFromInputs(rerender){
   const n = parseFloat($('dm-fm-estN').value), u = $('dm-fm-estU').value;
   D.form.est = n > 0 ? Math.round(n * (u === 'h' ? 60 : 1)) : 0; D.form.err.est = 0;
-  if(rerender) renderForm(); else $('dm-fm-prev').innerHTML = prevTxt(D.form.est);
+  if(rerender) renderForm();
+  else{
+    $('dm-fm-prev').innerHTML = prevTxt(D.form.est);
+    $('dm-fm-estN').closest('.dm-fld').classList.remove('dm-err');
+    for(const b of $('dm-mbox').querySelectorAll('[data-act=m-est]')) b.setAttribute('aria-pressed', String(D.form.est === +b.dataset.v));
+  }
+}
+/* O que o servidor recusa num texto (tab, controles, separadores Unicode, meio emoji solto) sai daqui antes de enviar. */
+function limpaTxt(t, nl){
+  t = String(t == null ? '' : t).replace(/\t/g, ' ').replace(/\r\n?/g, nl ? '\n' : ' ');
+  t = t.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u0085\u2028\u2029]/g, ' ').replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
+  return nl ? t : t.replace(/\n/g, ' ');
 }
 async function submitNew(el){
-  const f = D.form, err = {}, t = f.titulo.trim();
-  if(t.length < 5 || t.length > 140) err.titulo = 1;
+  const f = D.form, err = {}, t = limpaTxt(f.titulo, false).trim(), comp = [...t].length;   // o servidor conta caracteres, não unidades UTF-16
+  if(comp < 5 || comp > 140 || !/[^\s\u200b-\u200f\u2060\ufeff]/.test(t)) err.titulo = 1;
   if(!f.toS) err.toS = 1;
   if(!f.motivo) err.motivo = 1;
   if(!(f.est >= 1 && f.est <= 43200)) err.est = 1;
   if(D.role === 'adm' && !f.fromS) err.fromS = 1;
   f.err = err;
   if(Object.keys(err).length){renderForm(); const e1 = $('dm-mbox').querySelector('.dm-fld.dm-err'); if(e1 && e1.scrollIntoView) e1.scrollIntoView({block: 'center'}); return}
-  const body = {titulo: t, tipo: f.tipo, motivo: f.motivo, prio: f.prio, est: Math.round(f.est), para: {s: f.toS, p: f.toP || null}, desc: f.desc.trim().slice(0, 2000), cid: f.cid};
+  const body = {titulo: t, tipo: f.tipo, motivo: f.motivo, prio: f.prio, est: Math.round(f.est), para: {s: f.toS, p: f.toP || null}, desc: limpaTxt(f.desc, true).trim().slice(0, 2000), cid: f.cid};
   if(D.role === 'adm') body.de_s = f.fromS;
   const before = new Set(reqs().map(r => r.id)), files = f.files.slice(), to = f.toS;
   el.disabled = true;
@@ -1492,7 +1538,7 @@ function suggestId(name){
 }
 function openSF(mode, id){
   const s = id ? sec(id) : null, n = setores().length;
-  D.sform = mode === 'edit' ? {mode, id, name: s.nome, icon: s.icone, color: col(s.cor), email: s.email || '', idTouched: true, err: {}} : {mode, id: '', name: '', icon: ICONS[n % ICONS.length], color: COLORS[n % COLORS.length], email: '', idTouched: false, err: {}};
+  D.sform = mode === 'edit' ? {mode, id, rev: num(s._rv), name: s.nome, icon: s.icone, color: col(s.cor), email: s.email || '', idTouched: true, err: {}} : {mode, id: '', name: '', icon: ICONS[n % ICONS.length], color: COLORS[n % COLORS.length], email: '', idTouched: false, err: {}};
   D.mod = {kind: 'sector'};
   renderSF();
 }
@@ -1528,7 +1574,7 @@ function genCode(){
 }
 function openUF(mode, id, setor){
   const p = id ? per(id) : null;
-  D.uform = mode === 'edit' ? {mode, id, name: p.nome, setor: p.setor, email: p.email || '', code: '', show: false, err: {}} : {mode, id: null, name: '', setor: setor || '', email: '', code: genCode(), show: true, err: {}};
+  D.uform = mode === 'edit' ? {mode, id, rev: num(p._rv), name: p.nome, setor: p.setor, email: p.email || '', code: '', show: false, err: {}} : {mode, id: null, name: '', setor: setor || '', email: '', code: genCode(), show: true, err: {}};
   D.mod = {kind: 'user'};
   renderUF();
 }
@@ -1571,7 +1617,7 @@ function b64(f){
     fr.readAsDataURL(f);
   });
 }
-async function upload(id, files){
+async function upload(id, files, extra){
   let ok = 0;
   for(const f of files){
     const e = checkFile(f);
@@ -1582,15 +1628,19 @@ async function upload(id, files){
     if(!r) break;
     ok++;
   }
-  if(ok) toast('📎 ' + ok + ' anexo(s) enviado(s)');
+  if(ok) toast('📎 ' + ok + ' anexo(s) enviado(s)' + (extra || ''));
   return ok;
 }
 function addFilesTo(r){
   pickFiles(async fs => {
     const room = ANX.n - r.anexos.length, ok = [];
     for(const f of fs){const e = checkFile(f); if(e) toast('⚠️ ' + e); else ok.push(f)}
-    if(ok.length > room) toast('⚠️ No máximo ' + ANX.n + ' anexos por solicitação.');
-    if(ok.length && room > 0){await upload(r.id, ok.slice(0, room)); render()}
+    const fora = Math.max(0, ok.length - Math.max(0, room));
+    if(fora && room <= 0) toast('⚠️ No máximo ' + ANX.n + ' anexos por solicitação.');
+    if(ok.length && room > 0){
+      await upload(r.id, ok.slice(0, room), fora ? ' · ' + fora + ' ficou(aram) de fora: o máximo é ' + ANX.n + ' por solicitação' : '');
+      render();
+    }
   });
 }
 async function openAnexo(aid){
@@ -1644,7 +1694,7 @@ function render(){
   $('dm-sub').textContent = who ? 'Identifique-se para ver as solicitações.' : isAdm() ? SUB_ADM : SUB_OP;
   renderChip(); renderImp(); renderTabs(); renderView(); renderBell();
   root.querySelector('.dm-fab').hidden = who || !!D.imp;
-  root.querySelector('.dm-hdnew').hidden = who;
+  root.querySelector('.dm-hdnew').hidden = who || !!D.imp;
   $('dm-bell').disabled = who;
   if(D.open) renderDrawer();
   if(D.notif) renderNotif();
@@ -1797,7 +1847,7 @@ function cfgEmail(m){
    <div class="dm-secx">Demanda para a fila do setor (sem pessoa)</div>
    <div class="dm-mlev">${fila.map(([k, l]) => `<label class="dm-inl"><input type="radio" name="dm-ml-fila" value="${k}"${f.fila_setor === k ? ' checked' : ''}> ${l}</label>`).join('')}</div></section>
   <section class="dm-cfgsec"><h3>Enviar teste</h3>
-   <div class="dm-cfglinha"><input id="dm-ml-para" type="email" placeholder="seu.email@empresa.com.br" autocomplete="off" style="flex:1;min-width:200px"><button type="button" class="dm-btn dm-sm" data-act="ml-teste">✉ Enviar teste</button></div>
+   <div class="dm-cfglinha"><input id="dm-ml-para" type="email" aria-label="E-mail para receber o teste" placeholder="seu.email@empresa.com.br" autocomplete="off" style="flex:1;min-width:200px"><button type="button" class="dm-btn dm-sm" data-act="ml-teste">✉ Enviar teste</button></div>
    <div id="dm-ml-resw">${mlRes(t)}</div>
    <p class="dm-note">O teste usa o que está no formulário, mesmo antes de salvar.</p></section>
   <section class="dm-cfgsec"><h3>Fila de envio<span class="dm-spacer"></span><small class="dm-note">${rodada}</small></h3>
@@ -2092,13 +2142,13 @@ function act(a, d, el, ev){
     case 'open': openDrawer(d.id); break;
     case 'close': closePanels(); break;
     case 'bell': openNotif(); break;
-    case 'noteall': run(el, 'nota/todas', {}, '', () => {}).then(() => {if(D.notif) renderNotif()}); break;
+    case 'noteall': if(D.imp) break; run(el, 'nota/todas', {}, '', () => {}).then(() => {if(D.notif) renderNotif()}); break;
     case 'noteopen': openDrawer(d.id); break;   // abrir marca como lidos todos os avisos da demanda
     case 'nf': D.nf = d.v; renderNotif(); break;
     case 'nfantigos': D.nfAntigos = true; renderNotif(); break;
     case 'alertview': {const al = el.closest('.dm-alert'); if(al) al.remove(); openDrawer(d.id); break}
     case 'ax': {const al = el.closest('.dm-alert'); if(al){const nid = al.dataset.n; al.remove(); if(nid) call('nota/lida', {nid: num(nid)}, {quiet: true}).then(() => {renderBell(); if(D.notif) renderNotif()})} break}
-    case 'new': if(!D.role) return; openNew(); break;
+    case 'new': if(!D.role || D.imp) return; openNew(); break;
     case 'theme': root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; break;
     case 'who': if(D.role) openWho(); else{const f = $('dm-login').querySelector('button'); if(f) f.focus({preventScroll: true})} break;
     case 'mclose': closeModal(); break;
@@ -2187,15 +2237,15 @@ function act(a, d, el, ev){
       f.err = e;
       if(Object.keys(e).length){renderSF(); return}
       const s = edit ? sec(f.id) : null;
-      run(el, 'setor/salvar', {modo: edit ? 'editar' : 'novo', id: edit ? f.id : id, nome: name, icone: f.icon, cor: f.color, email: f.email.trim(), rev: s ? num(s._rv) : 0},edit ? 'Setor atualizado' : '✅ Setor ' + id + ' criado. Agora cadastre os usuários dele.', closeModal);
+      run(el, 'setor/salvar', {modo: edit ? 'editar' : 'novo', id: edit ? f.id : id, nome: name, icone: f.icon, cor: f.color, email: f.email.trim(), rev: edit ? f.rev : 0},edit ? 'Setor atualizado' : '✅ Setor ' + id + ' criado. Agora cadastre os usuários dele.', closeModal);
       break;
     }
-    case 'sf-toggle': {const s = sec(D.sform.id); run(el, 'setor/ativar', {id: s.id, rev: num(s._rv)}, s.ativo ? 'Setor desativado' : 'Setor reativado', closeModal); break}
+    case 'sf-toggle': {const s = sec(D.sform.id); run(el, 'setor/ativar', {id: s.id, rev: D.sform.rev}, s.ativo ? 'Setor desativado' : 'Setor reativado', closeModal); break}
     case 'sf-del': {
       const s = sec(D.sform.id);
       if(reqs().some(x => x.de.s === s.id || x.para.s === s.id)){toast('Este setor tem histórico de solicitações. Desative em vez de excluir.'); return}
-      const n = usersOf(s.id).length;
-      modalConfirm('Excluir setor', 'Excluir <b>' + esc(s.nome) + '</b>' + (n ? ' e ' + n + ' usuário(s)' : '') + '? Esta ação não pode ser desfeita.', 'Excluir setor', b => run(b, 'setor/apagar', {id: s.id, rev: num(s._rv)}, 'Setor excluído', () => {if(D.fSec === s.id) D.fSec = ''; if(D.uSec === s.id) D.uSec = ''; closeModal()}));
+      const n = usersOf(s.id).length, sRev = D.sform.rev;
+      modalConfirm('Excluir setor', 'Excluir <b>' + esc(s.nome) + '</b>' + (n ? ' e ' + n + ' usuário(s)' : '') + '? Esta ação não pode ser desfeita.', 'Excluir setor', b => run(b, 'setor/apagar', {id: s.id, rev: sRev}, 'Setor excluído', () => {if(D.fSec === s.id) D.fSec = ''; if(D.uSec === s.id) D.uSec = ''; closeModal()}));
       break;
     }
     case 'uf-gen': D.uform.code = genCode(); D.uform.show = true; D.uform.err.code = 0; renderUF(); break;
@@ -2208,18 +2258,18 @@ function act(a, d, el, ev){
       if(!emailOk(f.email)) e.email = 1;
       f.err = e;
       if(Object.keys(e).length){renderUF(); return}
-      const p = edit ? per(f.id) : null, body = {modo: edit ? 'editar' : 'novo', nome: name, setor: f.setor, email: f.email.trim(), rev: p ? num(p._rv) : 0};
+      const p = edit ? per(f.id) : null, body = {modo: edit ? 'editar' : 'novo', nome: name, setor: f.setor, email: f.email.trim(), rev: edit ? f.rev : 0};
       if(edit) body.id = f.id;
       if(f.code) body.codigo = f.code;
       const msg = edit ? (f.code ? 'Dados e código atualizados' : 'Usuário atualizado') : '✅ ' + name + ' cadastrado(a) em ' + sec(f.setor).nome + ' · código ' + f.code;
       run(el, 'pessoa/salvar', body, msg, closeModal);
       break;
     }
-    case 'uf-toggle': {const p = per(D.uform.id); if(p) run(el, 'pessoa/ativar', {id: p.id, rev: num(p._rv)}, p.nome + (p.ativo ? ' desativado(a)' : ' reativado(a)'), closeModal); break}
+    case 'uf-toggle': {const p = per(D.uform.id); if(p) run(el, 'pessoa/ativar', {id: p.id, rev: D.uform.rev}, p.nome + (p.ativo ? ' desativado(a)' : ' reativado(a)'), closeModal); break}
     case 'uf-del': {
-      const p = per(D.uform.id); if(!p) return;
+      const p = per(D.uform.id), pRev = D.uform.rev; if(!p) return;
       if(reqs().some(x => x.de.p === p.id || x.para.p === p.id)){toast('Este usuário tem histórico de solicitações. Desative em vez de excluir.'); return}
-      modalConfirm('Excluir usuário', 'Excluir <b>' + esc(p.nome) + '</b> definitivamente? Esta ação não pode ser desfeita.', 'Excluir usuário', b => run(b, 'pessoa/apagar', {id: p.id, rev: num(p._rv)}, 'Usuário excluído', closeModal));
+      modalConfirm('Excluir usuário', 'Excluir <b>' + esc(p.nome) + '</b> definitivamente? Esta ação não pode ser desfeita.', 'Excluir usuário', b => run(b, 'pessoa/apagar', {id: p.id, rev: pRev}, 'Usuário excluído', closeModal));
       break;
     }
   }
@@ -2244,15 +2294,15 @@ function onInput(e){
   else if(id === 'dm-fm-desc' && D.form){D.form.desc = v; rascGrava()}
   else if(id === 'dm-fm-estN' && D.form) setEstFromInputs();
   else if(id === 'dm-sf-name' && D.sform){const f = D.sform; f.name = v; if(f.mode === 'new' && !f.idTouched){f.id = suggestId(v); $('dm-sf-id').value = f.id} f.err.name = 0; e.target.closest('.dm-fld').classList.remove('dm-err'); updateSFPrev()}
-  else if(id === 'dm-sf-id' && D.sform){const f = D.sform; f.id = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); e.target.value = f.id; f.idTouched = true; updateSFPrev()}
-  else if(id === 'dm-uf-name' && D.uform) D.uform.name = v;
+  else if(id === 'dm-sf-id' && D.sform){const f = D.sform; f.id = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); e.target.value = f.id; f.idTouched = true; f.err.id = 0; e.target.closest('.dm-fld').classList.remove('dm-err'); updateSFPrev()}
+  else if(id === 'dm-uf-name' && D.uform){D.uform.name = v; if(D.uform.err.name && v.trim().length >= 2){D.uform.err.name = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}}
   else if((id === 'dm-uf-email' && D.uform) || (id === 'dm-sf-email' && D.sform)){
     const f = id === 'dm-uf-email' ? D.uform : D.sform;
     f.email = v;
     if(f.err.email && emailOk(v)){f.err.email = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}
   }
   else if(id === 'dm-rs-c'){const b = $('dm-rs-ok'); if(b) b.disabled = v.trim().toUpperCase() !== 'RESTAURAR'}
-  else if(id === 'dm-uf-code' && D.uform){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.uform.code = c}
+  else if(id === 'dm-uf-code' && D.uform){const c = v.replace(/\D/g, '').slice(0, 4); if(c !== v) e.target.value = c; D.uform.code = c; if(D.uform.err.code && /^[0-9]{4}$/.test(c)){D.uform.err.code = 0; e.target.closest('.dm-fld').classList.remove('dm-err')}}
 }
 function onChange(e){
   const id = e.target.id, v = e.target.value;
@@ -2299,7 +2349,12 @@ async function boot(){
   render();
 }
 async function refresh(){
-  if(!D.role) return;
+  if(!D.role){   // na tela "Quem é você?": a lista de setores e pessoas acompanha o cadastro (pessoa nova, pessoa desativada)
+    const antes = JSON.stringify(D.pub);
+    await loadPub();
+    if(!D.role && JSON.stringify(D.pub) !== antes && !document.activeElement.closest('#dm-lgform')) render();
+    return;
+  }
   const r = D.role === 'adm' ? await call('', undefined, {quiet: true}) : await call('vista', {}, {quiet: true});
   if(!r || !root) return;
   if(isAdm() && D.tab === 'crono' && visible()){loadCrono(true); if(D.cr.modo !== '13h') loadCronograma(true)}
@@ -2319,7 +2374,7 @@ const LIVE = {
   refresh: () => refresh(),
   config: sec => openCfg(sec),   // botão ⚙ Configurações da casca (app.js)
   conexao: st => conexao(st),    // a casca (app.js) avisa: {ultima, proxima} = sem conexão; null = voltou
-  hs: {grade: hsGrade, util: hsUtil, expediente: hsExpediente, aberto: hsAberto},   // contas puras do horário de serviço (os testes conferem a paridade com o Python)
+  hs: {grade: hsGrade, util: hsUtil, soma: hsSoma, expediente: hsExpediente, aberto: hsAberto},   // contas puras do horário de serviço (os testes conferem a paridade com o Python)
 };
 
 const SVGNS = 'http://www.w3.org/2000/svg';

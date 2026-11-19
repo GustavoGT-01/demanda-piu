@@ -81,7 +81,7 @@ def _inteiro(v, lo: int, hi: int):
 def _pasta_ok(v) -> str | None:
     """Caminho absoluto aceito como pasta local, ou None. Nunca dentro de data/ (o backup entraria no backup) nem a
     raiz de um disco; a pasta mãe tem de existir (não inventa a letra de um pen drive que não está plugado)."""
-    if not isinstance(v, str) or not v.strip() or len(v) > 260:
+    if not isinstance(v, str) or not v.strip() or len(v) > 260 or "\x00" in v:
         return None
     p = Path(v.strip())
     if not p.is_absolute() or p.parent == p:

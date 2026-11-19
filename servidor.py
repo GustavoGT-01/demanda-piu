@@ -441,7 +441,7 @@ class Handler(BaseHTTPRequestHandler):
         rest = path[len("/api/local/demandas"):].lstrip("/") if path != "/api/local/demandas" else ""
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
-        except (UnicodeError, ValueError):
+        except (UnicodeError, ValueError, RecursionError):
             return self._fail(400, "JSON inválido.")
         if not isinstance(body, dict):
             return self._fail(400, "Pedido inválido.")
@@ -469,7 +469,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail(404, "Não encontrado.")
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
-        except (UnicodeError, ValueError):
+        except (UnicodeError, ValueError, RecursionError):
             return self._fail(400, "JSON inválido.")
         if not isinstance(body, dict):
             return self._fail(400, "Pedido inválido.")
@@ -508,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail(404, "Não encontrado.")
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
-        except (UnicodeError, ValueError):
+        except (UnicodeError, ValueError, RecursionError):
             return self._fail(400, "JSON inválido.")
         if not isinstance(body, dict):
             return self._fail(400, "Pedido inválido.")
@@ -539,7 +539,7 @@ class Handler(BaseHTTPRequestHandler):
             if method == "POST":
                 try:
                     body = json.loads(raw.decode("utf-8")) if raw else {}
-                except (UnicodeError, ValueError):
+                except (UnicodeError, ValueError, RecursionError):
                     return self._fail(400, "JSON inválido.")
                 return self._json({"padrao": av.salvar_padrao(body)})
             return self._json({"padrao": av.padrao()})
@@ -627,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(data.decode("utf-8") or "{}")
                 net_save(body["on"] if isinstance(body.get("on"), bool) else None, body.get("newpin") is True,
                          body.get("newpin_op") is True)
-            except (ValueError, AttributeError, OSError):
+            except (ValueError, AttributeError, OSError, RecursionError):
                 return self._fail(400, "Falha ao gravar a configuração da rede.")
             return self._json(self._rede())
         if path == "/api/backup" or path.startswith("/api/backup/"):

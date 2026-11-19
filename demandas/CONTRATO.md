@@ -170,7 +170,7 @@ uma demanda que já foi aceita; cadastro com `rev` velho), 413 (anexo grande), 4
 | `POST nota/todas` | `{}` | idem, marca todas as que o ator vê |
 | `POST aviso/prefs` | `{}` lê · `{prefs: {eventos?, silencio?, urgente_fura?}}` grava · `{padrao: true}` volta ao padrão | cada um as próprias (ADM = `"adm"`) → `{prefs}` (padrão + diferenças, e `proprio`); não muda o `rev` |
 | `POST setor/salvar` | `{modo: "novo"\|"editar", id, nome, icone, cor, rev}` | ADM |
-| `POST setor/ativar` | `{id, rev}` (alterna) | ADM; desativar recusa com demanda aberta (400 com `abertas`) |
+| `POST setor/ativar` | `{id, rev}` (alterna) | ADM; desativar recusa com demanda aberta (400 com a frase "Setor com N demanda(s) em aberto…") |
 | `POST setor/apagar` | `{id, rev}` | ADM; recusa se há histórico (principal ou arquivo) |
 | `POST pessoa/salvar` | `{modo, id?, nome, setor, codigo?, rev}` | ADM; código obrigatório no novo |
 | `POST pessoa/ativar` | `{id, rev}` | ADM; desativar devolve as demandas dela à fila do setor |

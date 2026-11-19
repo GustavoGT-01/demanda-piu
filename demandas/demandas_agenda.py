@@ -20,6 +20,7 @@ LIM = {"feriados": 400, "turnos": 6, "versoes": 50, "nome": 60}
 HHMM_RE = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 DATA_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 SETOR_RE = re.compile(r"^[A-Z0-9]{2,4}$")
+CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029\ud800-\udfff]")
 
 
 def padrao() -> dict:
@@ -55,7 +56,7 @@ def _grade_valida(raw, onde: str) -> dict:
         raise ValueError("%s: no máximo %d turnos." % (onde, LIM["turnos"]))
     limpos = []
     for t in turnos:
-        if not (isinstance(t, list) and len(t) == 2 and all(isinstance(x, str) and HHMM_RE.match(x) for x in t)):
+        if not (isinstance(t, list) and len(t) == 2 and all(isinstance(x, str) and HHMM_RE.fullmatch(x) for x in t)):
             raise ValueError("%s: horário do turno inválido (use HH:MM)." % onde)
         if t[0] == t[1]:
             raise ValueError("%s: o turno não pode começar e terminar na mesma hora." % onde)
@@ -90,7 +91,7 @@ def normaliza(raw, setores=None) -> dict:
     if not isinstance(exc, dict):
         raise ValueError("Horários por setor inválidos.")
     for sid, g in exc.items():
-        if not isinstance(sid, str) or not SETOR_RE.match(sid) or (setores is not None and sid not in setores):
+        if not isinstance(sid, str) or not SETOR_RE.fullmatch(sid) or (setores is not None and sid not in setores):
             raise ValueError("Setor inválido no horário por setor.")
         out["setores"][sid] = _grade_valida(g, "Setor " + sid)
     fer = raw.get("feriados") if raw.get("feriados") is not None else []
@@ -98,17 +99,17 @@ def normaliza(raw, setores=None) -> dict:
         raise ValueError("No máximo %d feriados." % LIM["feriados"])
     vistos = set()
     for f in fer:
-        if not isinstance(f, dict) or not isinstance(f.get("data"), str) or not DATA_RE.match(f["data"]):
+        if not isinstance(f, dict) or not isinstance(f.get("data"), str) or not DATA_RE.fullmatch(f["data"]):
             raise ValueError("Data de feriado inválida.")
         try:
             datetime.date.fromisoformat(f["data"])
         except ValueError:
             raise ValueError("Data de feriado inválida: %s." % f["data"]) from None
         nome = f.get("nome", "")
-        if not isinstance(nome, str) or len(nome.strip()) > LIM["nome"]:
+        if not isinstance(nome, str) or len(nome.strip()) > LIM["nome"] or CTRL_RE.search(nome):
             raise ValueError("Nome de feriado com mais de %d letras." % LIM["nome"])
         ss = f.get("setores", [])
-        if not isinstance(ss, list) or any(not isinstance(s, str) or not SETOR_RE.match(s) or
+        if not isinstance(ss, list) or any(not isinstance(s, str) or not SETOR_RE.fullmatch(s) or
                                            (setores is not None and s not in setores) for s in ss):
             raise ValueError("Setor inválido no feriado de %s." % f["data"])
         chave = (f["data"], tuple(sorted(set(ss))))

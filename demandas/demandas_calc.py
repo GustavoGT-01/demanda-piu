@@ -54,7 +54,7 @@ def grade_de(d: dict, agendas):
     v = d.get("agenda_v")
     if v is None or not agendas:
         return None
-    return ag.grade(agendas.get(str(v)), d["para"]["s"])
+    return ag.grade(agendas.get(str(v)), d.get("agenda_s") or d["para"]["s"])
 
 
 def _ou(*vals):
@@ -137,7 +137,14 @@ def atrasada(d: dict, agora: int) -> bool:
 
 
 def atrasou_concluida(d: dict) -> bool:
-    return d.get("status") == "done" and d.get("fim") is not None and d["fim"] > prazo(d)
+    """Concluída depois do prazo. Em horário de serviço vale o atraso útil gravado ao fechar (passar do prazo só de
+    noite ou no fim de semana não é atraso), para o cartão, o KPI e a barra dizerem a mesma coisa."""
+    if d.get("status") != "done" or d.get("fim") is None:
+        return False
+    u = d.get("util")
+    if isinstance(u, dict) and isinstance(u.get("atraso"), int):
+        return u["atraso"] > 0
+    return d["fim"] > prazo(d)
 
 
 def _min(ms) -> float:
@@ -271,7 +278,7 @@ def atencao(demandas: list, agora: int, agendas=None) -> list:
             continue
         tags, score = [], 0
         if atrasada(d, agora):
-            tags.append({"k": "late", "min": _min(agora - prazo(d))})
+            tags.append({"k": "late", "min": _min(ag.util_entre(grade_de(d, agendas), prazo(d), agora))})
             score += 100
         if d.get("prio") == "urg":
             tags.append({"k": "urg", "min": None})
@@ -433,7 +440,7 @@ def gantt(demandas: list, agora: int, ini=None, fim=None, por=None, limite=None,
     elegiveis = [d for d in demandas
                  if (ativa(d) or d.get("status") == "done") and _na_janela(d, ini, fim, agora)]
     # O corte segue a atenção (atrasada e urgente primeiro), nunca a ordem do arquivo.
-    escolhidas = sorted(elegiveis, key=lambda d: chave_atencao(d, agora))[:max(0, teto)]
+    escolhidas = sorted(elegiveis, key=lambda d: (not ativa(d), chave_atencao(d, agora)))[:max(0, teto)]
     por_chave: dict = {}
     for d in escolhidas:
         por_chave.setdefault(d["para"]["p"] if por == "pessoa" else d["para"]["s"], []).append(d)

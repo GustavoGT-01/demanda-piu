@@ -17,6 +17,7 @@ import secrets
 import sys
 import threading
 import time
+import unicodedata
 from collections import OrderedDict
 
 import demandas_agenda as ag
@@ -30,8 +31,8 @@ import store
 LOCK = ds.LOCK
 CODE_RE = re.compile(r"^[0-9]{4}$")
 SAL_RE = re.compile(r"^[0-9a-f]{32}$")
-CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
-CTRL_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")   # descrição e comentário aceitam \n
+CTRL_RE = re.compile(r"[\x00-\x1f\x7f\x85\u2028\u2029\ud800-\udfff]")   # inclui separadores Unicode de linha e meio emoji solto
+CTRL_NL_RE = re.compile(r"[\x00-\x09\x0b-\x1f\x7f\x85\u2028\u2029\ud800-\udfff]")   # descrição e comentário aceitam \n
 CID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")          # chave do pedido gerada pela tela (UUID)
 EMAIL_RE = re.compile(r"^[^@\s,;<>\"]{1,64}@[A-Za-z0-9.-]{1,252}\.[A-Za-z]{2,}$")   # sem espaço/quebra: nada de cabeçalho extra
 EMAIL_MAX = 254
@@ -79,12 +80,14 @@ _parede = time.time
 
 # ---------- entradas ----------
 
-def _texto(v, nome: str, lo: int, hi: int, nl: bool = False) -> str:
+def _texto(v, nome: str, lo: int, hi: int, nl: bool = False, visivel: bool = False) -> str:
     if not isinstance(v, str) or (CTRL_NL_RE if nl else CTRL_RE).search(v):
         raise ApiError(400, nome + ": texto com caractere não permitido.")
     s = v.strip()
     if not lo <= len(s) <= hi:
         raise ApiError(400, "%s: de %d a %d caracteres." % (nome, lo, hi))
+    if visivel and not any(unicodedata.category(c)[0] not in "CZ" for c in s):   # só invisíveis (largura zero, etc.)
+        raise ApiError(400, nome + ": escreva ao menos uma letra ou número visível.")
     return s
 
 
@@ -98,9 +101,9 @@ def _int(v, nome: str, lo: int, hi: int) -> int:
     return v
 
 
-def _de(v, opcoes, nome: str):
+def _de(v, opcoes, nome: str, fem: bool = False):
     if not isinstance(v, str) or v not in opcoes:
-        raise ApiError(400, nome + " inválido.")
+        raise ApiError(400, nome + (" inválida." if fem else " inválido."))
     return v
 
 
@@ -145,7 +148,7 @@ def _check_code(pid: str, sal: str, hsh: str, codigo) -> None:
         st[2] += 1
     ok = False
     try:
-        ok = isinstance(codigo, str) and bool(CODE_RE.match(codigo)) and hmac.compare_digest(_hash(codigo, sal), hsh)
+        ok = isinstance(codigo, str) and bool(CODE_RE.fullmatch(codigo)) and hmac.compare_digest(_hash(codigo, sal), hsh)
     finally:
         with _FAILS_LOCK:
             st[2] -= 1
@@ -267,7 +270,7 @@ def _pessoa_entrar(doc: dict, body: dict) -> dict:
     p = _find(doc["pessoas"], pid) if isinstance(pid, str) else None
     s = _find(doc["setores"], p.get("setor")) if p else None
     if p is None or not p.get("ativo") or s is None or not s.get("ativo") \
-            or not isinstance(p.get("sal"), str) or not SAL_RE.match(p["sal"]) or not isinstance(p.get("hash"), str):
+            or not isinstance(p.get("sal"), str) or not SAL_RE.fullmatch(p["sal"]) or not isinstance(p.get("hash"), str):
         raise ApiError(404, "Pessoa não encontrada.")
     return p
 
@@ -430,10 +433,10 @@ def _criar(doc: dict, ator, body: dict, t: int):
     cid, feito = _cid(doc, body)
     if feito:
         return False
-    titulo = _texto(body.get("titulo"), "Título", 5, 140)
+    titulo = _texto(body.get("titulo"), "Título", 5, 140, visivel=True)
     tipo = _de(body.get("tipo"), TIPOS, "Tipo")
     motivo = _de(body.get("motivo"), MOTIVOS, "Motivo")
-    prio = _de(body.get("prio"), PRIO, "Prioridade")
+    prio = _de(body.get("prio"), PRIO, "Prioridade", True)
     est = _int(body.get("est"), "Tempo estipulado", 1, EST_MAX)
     desc = _texto(_opcional(body.get("desc")), "Descrição", 0, 2000, nl=True) or "Sem descrição adicional."
     para = body.get("para")
@@ -456,6 +459,7 @@ def _criar(doc: dict, ator, body: dict, t: int):
         except ValueError as exc:
             raise ApiError(400, str(exc)) from None
         d["agenda_v"] = doc["agenda"]["v"]
+        d["agenda_s"] = s   # a grade (e o prazo) ficam presos a este setor, mesmo se a demanda for repassada
     _evento(d, "created", quem, "", t)
     if p is not None:
         _evento(d, "assigned", quem, "Responsável: " + _nome_pessoa(doc, p), t)
@@ -578,7 +582,7 @@ def _prioridade(doc: dict, ator, body: dict, t: int):
     _so_adm(ator)
     d = _dem(doc, body)
     _ativa(d)
-    prio = _de(body.get("prio"), PRIO, "Prioridade")
+    prio = _de(body.get("prio"), PRIO, "Prioridade", True)
     if prio == d["prio"]:
         return False
     _evento(d, "prio", ADM, PRIO.get(d["prio"], str(d["prio"])) + " → " + PRIO[prio], t)
@@ -817,10 +821,11 @@ def _setor_apagar(doc: dict, ator, body: dict, t: int):
         doc["pessoas"].remove(p)
         _tk_revoga(p["id"])
     doc["setores"].remove(s)
+    _agenda_sem_setor(doc, s["id"])
 
 
 def _novo_codigo(p: dict, codigo) -> None:
-    if not isinstance(codigo, str) or not CODE_RE.match(codigo):
+    if not isinstance(codigo, str) or not CODE_RE.fullmatch(codigo):
         raise ApiError(400, "O código tem exatamente 4 números.")
     p["sal"] = secrets.token_hex(16)
     p["hash"] = _hash(codigo, p["sal"])
@@ -894,6 +899,27 @@ def _pessoa_apagar(doc: dict, ator, body: dict, t: int):
 
 # ---------- horário de serviço ----------
 
+def _agenda_sem_setor(doc: dict, sid: str) -> None:
+    """Setor excluído: tira o horário próprio e os feriados dele da agenda (senão todo `agenda/salvar` seguinte
+    falharia por "setor inválido" e a tela, que não lista o setor, não teria como remover). Muda uma versão."""
+    a = doc["agenda"]
+    feriados = []
+    for f in a["feriados"]:
+        resto = [x for x in f["setores"] if x != sid]
+        if f["setores"] and not resto:
+            continue   # o feriado era só desse setor
+        feriados.append({**f, "setores": resto})
+    novo = {**a, "setores": {k: v for k, v in a["setores"].items() if k != sid}, "feriados": feriados}
+    if ag.sem_versao(novo) == ag.sem_versao(a):
+        return
+    novo["v"] = a["v"] + 1
+    doc["agenda"] = novo
+    em_uso = {str(d["agenda_v"]) for d in doc["demandas"] if calc.ativa(d) and d.get("agenda_v") is not None}
+    em_uso.add(str(novo["v"]))
+    doc["agendas"][str(novo["v"])] = json.loads(json.dumps(novo))
+    doc["agendas"] = {v: x for v, x in doc["agendas"].items() if v in em_uso}
+
+
 def _agenda_salvar(doc: dict, ator, body: dict, t: int):
     """O ADM grava o horário de serviço inteiro (padrão, exceções por setor, feriados). Só vale para demandas criadas
     daqui para frente: cada demanda guarda a versão que usou (`agenda_v`) e a tela de cada uma segue nela."""
@@ -913,8 +939,6 @@ def _agenda_salvar(doc: dict, ator, body: dict, t: int):
     em_uso.add(str(novo["v"]))
     doc["agendas"][str(novo["v"])] = json.loads(json.dumps(novo))
     doc["agendas"] = {v: a for v, a in doc["agendas"].items() if v in em_uso}
-    for v in sorted(doc["agendas"], key=int)[:-ds.MAX["versoes"]]:
-        del doc["agendas"][v]
 
 
 # ---------- leituras de ADM ----------
@@ -940,7 +964,10 @@ def _cronograma(doc: dict, ator, body: dict, t: int) -> dict:
     O teto de linhas é do servidor (calc.GANTT_MULTI); a tela recebe `cortado` e avisa."""
     _so_adm(ator)
     de = _int(body.get("de"), "Início", 0, 10 ** 15)
-    ate = _int(body.get("ate"), "Fim", de + 1, 10 ** 15)
+    ate = _int(body.get("ate"), "Fim", 0, 10 ** 15)
+    de, ate = min(de, ate), max(de, ate)
+    if ate <= de:
+        raise ApiError(400, "Fim inválido.")
     if ate - de > CRONO_MAX:
         raise ApiError(400, "Período de até 31 dias.")
     por = _de(body.get("por"), CRONO_POR, "Agrupamento")
@@ -1188,4 +1215,6 @@ def _handle(method: str, rest: str, body: dict, ctx: dict) -> dict:
         out, depois = _gravar(doc, ator, t, acao, body)
     if depois is not None:
         depois()
+        if isinstance(out, dict) and out.get("anexos_uso") is not None:   # o arquivo só sai aqui: o total já não é o da vista
+            out["anexos_uso"] = ds.uso_anexos()
     return out

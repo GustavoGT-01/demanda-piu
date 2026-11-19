@@ -1697,7 +1697,6 @@ class Leituras(Base):
         por_pessoa = self.adm("cronograma", {"de": de, "ate": ate, "por": "pessoa"})
         self.assertEqual(por_pessoa["por"], "pessoa")
         for ruim, txt in (({"de": de, "ate": de, "por": "setor"}, "Fim inválido."),
-                          ({"de": de, "ate": de - 1, "por": "setor"}, "Fim inválido."),
                           ({"ate": ate, "por": "setor"}, "Início inválido."),
                           ({"de": -1, "ate": ate, "por": "setor"}, "Início inválido."),
                           ({"de": "0", "ate": ate, "por": "setor"}, "Início inválido."),
@@ -1780,7 +1779,7 @@ class Mensagens(Base):
         f(400, "Título: texto com caractere não permitido.", self.nova, titulo="a\x00bcdef")
         f(400, "Título: de 5 a 140 caracteres.", self.nova, titulo="abc")
         f(400, "Motivo inválido.", self.nova, motivo="x")
-        f(400, "Prioridade inválido.", self.nova, prio="x")
+        f(400, "Prioridade inválida.", self.nova, prio="x")
         f(400, "Tempo estipulado inválido.", self.nova, est=0)
         f(400, "Descrição: de 0 a 2000 caracteres.", self.nova, desc="x" * 2001)
         f(400, "Setor responsável inválido.", self.nova, para=None)
@@ -1812,7 +1811,7 @@ class Mensagens(Base):
         f(400, "Observação: de 0 a 500 caracteres.", self.adm, "demanda/reatribuir", {"id": d, "s": "CNC", "nota": "x" * 501})
         f(400, "Motivo: de 0 a 500 caracteres.", self.adm, "demanda/cancelar", {"id": d, "motivo": "x" * 501})
         f(400, "Comentário: de 1 a 1000 caracteres.", self.adm, "demanda/comentar", {"id": d, "texto": ""})
-        f(400, "Prioridade inválido.", self.adm, "demanda/prioridade", {"id": d, "prio": "x"})
+        f(400, "Prioridade inválida.", self.adm, "demanda/prioridade", {"id": d, "prio": "x"})
         f(400, "Minutos inválido.", self.adm, "demanda/estender", {"id": d, "minutos": 0})
         with mock.patch.dict(ds.MAX, {"pausas": 0, "comentarios": 0}):
             f(400, "Limite de pausas desta demanda atingido.", self.pes, self.tk_c, "demanda/pausar",

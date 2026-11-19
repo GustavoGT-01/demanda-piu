@@ -109,6 +109,8 @@ def _demanda(d: dict) -> dict | None:
     for k in ("agenda_v", "prazo_em"):   # só as demandas criadas com o horário de serviço ligado têm
         if _int(d.get(k), None) is None:
             d.pop(k, None)
+    if not (isinstance(d.get("agenda_s"), str) and SETOR_RE.fullmatch(d["agenda_s"])):
+        d.pop("agenda_s", None)   # o setor cuja grade a demanda usa (o da criação)
     u = d.get("util")   # durações úteis gravadas ao fechar (ms); "atraso" é opcional
     if isinstance(u, dict) and all(_int(u.get(k), None) is not None for k in UTIL):
         d["util"] = {k: u[k] for k in UTIL}
@@ -143,8 +145,15 @@ def _agendas(raw: dict) -> tuple:
                 versoes[v] = ag.normaliza(a)
         except ValueError:
             continue
-    mais_novas = sorted(versoes, key=int)[-MAX["versoes"]:]
-    return atual, {v: versoes[v] for v in mais_novas}
+    return atual, versoes
+
+
+def _poda_versoes(doc: dict) -> None:
+    """No máximo MAX["versoes"] cópias, as mais novas; nunca some uma versão que demanda ativa ainda usa."""
+    em_uso = {str(d["agenda_v"]) for d in doc["demandas"] if d.get("status") in ("new", "prog", "pause")
+              and d.get("agenda_v") is not None}
+    novas = set(sorted(doc["agendas"], key=int)[-MAX["versoes"]:])
+    doc["agendas"] = {v: a for v, a in doc["agendas"].items() if v in novas or v in em_uso}
 
 
 def _normaliza(raw: dict) -> dict:
@@ -169,6 +178,7 @@ def _normaliza(raw: dict) -> dict:
             n["pid"] = None
         doc["notas"].append(n)
     doc["agenda"], doc["agendas"] = _agendas(raw)
+    _poda_versoes(doc)
     # [chave do pedido, o que ele gravou]: pedido repetido pela tela (resposta perdida) não grava duas vezes
     cids = raw.get("cids") if isinstance(raw.get("cids"), list) else []
     doc["cids"] = [c for c in cids if isinstance(c, list) and len(c) == 2 and all(isinstance(x, str) for x in c)
