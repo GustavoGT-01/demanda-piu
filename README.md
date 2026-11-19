@@ -17,9 +17,10 @@ Só Python 3.10+ (biblioteca padrão). Nada para instalar além dele.
    - **PIN dos operadores:** abre só a tela de operador.
    O PIN é pedido uma vez por aparelho e vale por 30 dias. Gerar um PIN novo derruba quem entrou com o antigo.
 
-**Não monte túnel nem proxy neste computador** (ngrok, Cloudflare Tunnel, IIS, nginx etc.). Todo pedido que chega
-pelo próprio computador (`127.0.0.1`) entra como Escritório, sem PIN: com um túnel, qualquer visitante da internet
-viraria administrador. Para outros aparelhos, use só o acesso pela rede com PIN.
+**Túnel ou proxy (ngrok, Cloudflare Tunnel, IIS, nginx) só com `DEMANDAS_HOSTS`.** Todo pedido que chega pelo
+próprio computador (`127.0.0.1`) entra como Escritório, sem PIN — e um túnel conecta justamente por ali, então
+sem essa variável qualquer visitante da internet viraria administrador. Com ela, o pedido que chega pelo domínio
+conta como de fora e só passa com o PIN: ver "Pela internet, com domínio próprio" abaixo.
 
 Para desligar: feche a janela preta do servidor. Se ela não existe — porque a Central subiu pela tarefa agendada
 abaixo, ou porque a janela foi fechada antes de o servidor morrer — dê dois cliques em `parar.bat`. Ele derruba o
@@ -36,6 +37,56 @@ a não ser que você rode `remover-inicio.bat` como administrador.
 3. No PC: **suspensão e hibernação desligadas** (Opções de energia), na BIOS **ligar ao voltar a energia**
    ("Restore on AC power loss = Power On"), **IP fixo** reservado no roteador e **no-break no PC e no roteador**.
    Um PC que "dorme", ou um roteador sem energia, deixa todos os aparelhos sem a Central.
+
+## Pela internet, com domínio próprio (Cloudflare Tunnel)
+
+A Central continua rodando só neste computador; o túnel dá um endereço `https://` com o seu domínio, sem abrir
+porta no roteador e sem IP fixo. **Quem entra pelo domínio nunca é o Escritório automático: precisa do PIN.**
+
+1. **Domínio na Cloudflare.** Registre na Cloudflare (um `.com` sai a preço de custo) ou, se o domínio for
+   `.com.br` do Registro.br, adicione-o na Cloudflare (plano grátis) e troque os nameservers no Registro.br.
+   O que o túnel exige é o DNS na Cloudflare, não a compra lá.
+2. **Instale o cloudflared** no PC da Central:
+
+   ```powershell
+   winget install --id Cloudflare.cloudflared
+   ```
+
+3. **Crie o túnel** em <https://one.dash.cloudflare.com> → *Networks* → *Tunnels* → *Create a tunnel* →
+   *Cloudflared*. Cole no PowerShell **como administrador** o comando que o painel mostra (ele instala o
+   cloudflared como serviço do Windows, que sobe junto com o PC).
+4. **Aponte o subdomínio** na aba *Public Hostname* do túnel: subdomínio `demandas`, seu domínio, tipo `HTTP`,
+   URL `127.0.0.1:8090`. Não mexa no *HTTP Host Header*: o programa aceita o domínio como ele chega.
+5. **Avise o programa qual é o domínio** (é isto que liga o modo hospedado). No PowerShell como administrador:
+
+   ```powershell
+   setx DEMANDAS_HOSTS "demandas.seudominio.com" /M
+   ```
+
+   Vale para a tarefa agendada e para o `iniciar.bat`; reinicie o PC (ou a tarefa) depois. Mais de um domínio:
+   separe por vírgula. Sem a variável, o domínio é recusado com `421 Host não aceito`.
+6. **Confira**, na janela do `iniciar.bat` ou em `data/servidor-saida.log` (é lá que vai o que o servidor
+   imprime quando sobe pela tarefa agendada), a linha
+   `Modo hospedado (só com PIN, nunca como o computador principal): https://demandas.seudominio.com`.
+   Abra o endereço: deve aparecer a tela do PIN. Os PINs estão em **⚙ Configurações**, no próprio PC.
+7. **Trave também na Cloudflare (recomendado).** Zero Trust → *Access* → *Applications* → *Add an application*
+   → *Self-hosted*, domínio `demandas.seudominio.com`, política *Allow* para os e-mails (ou para um domínio de
+   e-mail) com *One-time PIN*. Grátis até 50 pessoas. Fica uma camada antes do PIN: mesmo que o endereço vaze,
+   ninguém chega à tela de entrada.
+
+O que o modo hospedado muda, por dentro (`servidor.py`):
+
+| | Pelo PC (`127.0.0.1:8090`) | Pela rede local | Pelo domínio |
+|---|---|---|---|
+| Papel | Escritório, sem PIN | PIN (rede ligada) | **PIN sempre**, mesmo com a rede desligada |
+| ⚙ Configurações, Backup, Servidor | sim | não | **não** |
+| `Origin` aceito | `http://` do próprio PC | `http://` do IP | só `https://` do domínio |
+| Cookie da sessão | — | sem `Secure` | com `Secure` |
+| Bloqueio de 5 PINs errados | — | por IP da rede | por IP real do visitante (`CF-Connecting-IP`) |
+
+Cuidados: o PC precisa ficar ligado e sem suspensão (ver a seção acima); o endereço só responde enquanto a
+Central e o serviço do cloudflared estiverem no ar; e o backup continua sendo local — um túnel não substitui
+cópia fora do PC.
 
 ## Modo demonstração (apresentação com dados fictícios)
 Para mostrar o sistema sem tocar nos dados de verdade, dê dois cliques em `iniciar-demo.bat`:

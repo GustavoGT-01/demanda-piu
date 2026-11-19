@@ -108,6 +108,23 @@ class Base(unittest.TestCase):
         self.assertEqual(st, 200, raw.decode("utf-8", "replace"))
         return json.loads(raw)
 
+    def raw(self, linhas, corpo=b"", rede=False):
+        """Pedido cru; devolve (quantas respostas HTTP vieram, a primeira linha)."""
+        s = socket.create_connection((self.ip_visto if rede else "127.0.0.1", self.port), timeout=30)
+        if rede and not self.ip:
+            linhas = [*linhas, "%s: 1" % H_REDE]
+        try:
+            s.sendall(("\r\n".join(linhas) + "\r\n\r\n").encode() + corpo)
+            raw = b""
+            while True:
+                part = s.recv(65536)
+                if not part:
+                    break
+                raw += part
+        finally:
+            s.close()
+        return raw.count(b"HTTP/1."), raw.split(b"\r\n", 1)[0].decode()
+
     def finge_rede(self):
         """Sem placa, faz contar como "da rede" só o pedido marcado com H_REDE; com placa, não mexe em nada.
 
@@ -491,22 +508,6 @@ class PelaRede(Base):
 class Detalhes(Base):
     """Os detalhes que o teste de mutação cobra: textos de erro, cabeçalhos, limites e uma resposta só por pedido."""
 
-    def raw(self, linhas, corpo=b"", rede=False):
-        """Pedido cru; devolve (quantas respostas HTTP vieram, a primeira linha)."""
-        s = socket.create_connection((self.ip_visto if rede else "127.0.0.1", self.port), timeout=30)
-        if rede and not self.ip:
-            linhas = [*linhas, "%s: 1" % H_REDE]
-        try:
-            s.sendall(("\r\n".join(linhas) + "\r\n\r\n").encode() + corpo)
-            raw = b""
-            while True:
-                part = s.recv(65536)
-                if not part:
-                    break
-                raw += part
-        finally:
-            s.close()
-        return raw.count(b"HTTP/1."), raw.split(b"\r\n", 1)[0].decode()
 
     def texto(self, *args, **kw):
         st, _, raw = self.req(*args, **kw)
@@ -1360,6 +1361,217 @@ class RecusaGrande(unittest.TestCase):
             h._fail(st, "x")
             self.assertIs(h.close_connection, fecha, st)
             self.assertEqual(h.enviados[0][:2], (st, "x"))
+
+
+class Hospedado(Base):
+    """Modo hospedado (DEMANDAS_HOSTS): o pedido que chega pelo domínio vem de fora, ainda que pelo loopback.
+
+    É o caso do túnel (Cloudflare, ngrok) rodando no próprio PC: sem isto, quem abrisse o domínio entraria
+    como o computador principal, sem PIN. A conexão destes testes sai do loopback de propósito.
+    """
+
+    DOM = "demandas.exemplo.com"
+
+    def setUp(self):
+        super().setUp()
+        p = mock.patch.object(servidor, "HOSTS_PUB", frozenset({self.DOM}))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def dom(self, method, path, body=None, headers=None, host=None):
+        """Pedido como o túnel entrega: Host do domínio, conexão pelo loopback."""
+        h = {"Host": host or self.DOM}
+        h.update(headers or {})
+        return self.req(method, path, body, h)
+
+    def texto(self, *args, **kw):
+        st, _, raw = self.dom(*args, **kw)
+        return st, raw.decode("utf-8")
+
+    def forma(self, **extra):
+        f = {"Content-Type": "application/x-www-form-urlencoded", "Origin": "https://" + self.DOM}
+        f.update(extra)
+        return f
+
+    def entra(self, pin, ip_real=None):
+        form = self.forma(**({"CF-Connecting-IP": ip_real} if ip_real else {}))
+        st, h, _ = self.dom("POST", "/api/login", ("pin=" + pin).encode(), form)
+        self.assertEqual(st, 303)
+        return {"Cookie": h["Set-Cookie"].split(";")[0]}
+
+    # ---------- a variável ----------
+    def test_hosts_publicos_le_a_lista(self):
+        self.assertEqual(servidor.hosts_publicos("demandas.exemplo.com"), frozenset({"demandas.exemplo.com"}))
+        self.assertEqual(servidor.hosts_publicos(" A.exemplo.com ,b.exemplo.com. ;c.exemplo.com"),
+                         frozenset({"a.exemplo.com", "b.exemplo.com", "c.exemplo.com"}))
+        self.assertEqual(servidor.hosts_publicos("x.exemplo.com:8443"), frozenset({"x.exemplo.com:8443"}))
+        for torto in ("", "   ", ",,", "https://x.exemplo.com", "x.exemplo.com/caminho", "x exemplo.com",
+                      "x.exemplo.com:", "evil.com?a=1", "-x.exemplo.com", "*.exemplo.com", "a" * 300):
+            self.assertEqual(servidor.hosts_publicos(torto), frozenset(), torto)
+        self.assertEqual(servidor.hosts_publicos("bom.exemplo.com, https://ruim.com"),
+                         frozenset({"bom.exemplo.com"}))
+        self.assertEqual(servidor.hosts_publicos(None), servidor.hosts_publicos(os.environ.get("DEMANDAS_HOSTS")))
+
+    def test_variavel_vem_do_ambiente(self):
+        with mock.patch.dict(os.environ, {"DEMANDAS_HOSTS": "a.exemplo.com"}):
+            self.assertEqual(servidor.hosts_publicos(), frozenset({"a.exemplo.com"}))
+        with mock.patch.dict(os.environ, {"DEMANDAS_HOSTS": ""}):
+            self.assertEqual(servidor.hosts_publicos(), frozenset())
+
+    # ---------- Host ----------
+    def test_o_dominio_passa_e_o_resto_segue_recusado(self):
+        self.assertEqual(self.dom("GET", "/api/eu")[0], 401)
+        self.assertEqual(self.texto("GET", "/api/eu", host="outro.exemplo.com"), (421, "Host não aceito."))
+        self.assertEqual(self.texto("GET", "/api/eu", host="evil.com"), (421, "Host não aceito."))
+        self.assertEqual(self.dom("GET", "/api/eu", host=self.DOM.upper() + ".")[0], 401)
+        self.assertEqual(self.req("GET", "/api/eu")[0], 200)
+
+    def test_sem_a_variavel_o_dominio_volta_a_ser_recusado(self):
+        with mock.patch.object(servidor, "HOSTS_PUB", frozenset()):
+            self.assertEqual(self.texto("GET", "/api/eu"), (421, "Host não aceito."))
+
+    # ---------- nunca "maquina" ----------
+    def test_pelo_dominio_nunca_e_o_computador_principal(self):
+        self.assertEqual(self.texto("GET", "/api/eu"), (401, "Entre com o PIN."))
+        self.assertIn(b'name="pin"', self.dom("GET", "/")[2])
+        self.assertEqual(self.dom("HEAD", "/index.html")[0], 200)
+        sessao = self.entra(servidor.net_config()["pin"])
+        self.assertEqual(json.loads(self.dom("GET", "/api/eu", headers=sessao)[2])["papel"], "completo")
+        for rota in ("/api/rede", "/api/servidor"):
+            self.assertEqual(self.texto("GET", rota, headers=sessao), (403, "Só no computador principal."))
+        self.assertEqual(self.texto("GET", "/api/servidor"), (401, "Entre com o PIN."))
+
+    def test_login_pelo_dominio_sem_a_rede_ligada(self):
+        self.assertFalse(servidor.NET_ON)
+        sessao = self.entra(servidor.net_config()["pin"])
+        resp = self.dom("POST", "/api/local/demandas/vista", {}, {**sessao, "Origin": "https://" + self.DOM})
+        self.assertEqual(resp[0], 200)
+
+    def test_cookie_do_dominio_sai_com_secure(self):
+        pin = servidor.net_config()["pin"]
+        _, h, _ = self.dom("POST", "/api/login", ("pin=" + pin).encode(), self.forma())
+        self.assertRegex(h["Set-Cookie"],
+                         r"^demandas_s=[A-Za-z0-9_-]{43}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=2592000$")
+
+    def test_operador_pelo_dominio_so_alcanca_a_tela_dele(self):
+        op = self.entra(servidor.net_config()["pin_op"])
+        self.assertEqual(json.loads(self.dom("GET", "/api/eu", headers=op)[2])["papel"], "operador")
+        self.assertEqual(self.dom("GET", "/app.js", headers=op)[0], 200)
+        self.assertEqual(self.texto("GET", "/api/rede", headers=op), (403, servidor.OPERADOR_MSG))
+
+    # ---------- Origin ----------
+    def test_origem_https_do_dominio_passa_e_o_resto_nao(self):
+        sessao = self.entra(servidor.net_config()["pin"])
+        vista = "/api/local/demandas/vista"
+        self.assertEqual(self.dom("POST", vista, {}, {**sessao, "Origin": "https://" + self.DOM})[0], 200)
+        for ruim in ("http://" + self.DOM, "https://evil.com", "https://" + self.DOM + ":8443", "null"):
+            self.assertEqual(self.texto("POST", vista, {}, {**sessao, "Origin": ruim}),
+                             (403, "Origem não aceita."), ruim)
+        self.assertEqual(self.dom("POST", vista, {}, sessao)[0], 200)
+        self.assertEqual(self.post("vista", {}, {"Origin": "http://127.0.0.1:%d" % self.port})[0], 200)
+        self.assertEqual(self.post("vista", {}, {"Origin": "https://" + self.DOM})[0], 403)
+
+    def test_origem_com_porta_quando_o_dominio_tem_porta(self):
+        with mock.patch.object(servidor, "HOSTS_PUB", frozenset({"x.exemplo.com:8443"})):
+            st, _, _ = self.req("POST", "/api/login", b"pin=0",
+                                {"Host": "x.exemplo.com:8443", "Origin": "https://x.exemplo.com:8443",
+                                 "Content-Type": "application/x-www-form-urlencoded"})
+            self.assertEqual(st, 200)
+
+    # ---------- IP real ----------
+    def test_bloqueio_conta_pelo_ip_do_cabecalho_do_proxy(self):
+        for _ in range(5):
+            self.dom("POST", "/api/login", b"pin=000000", self.forma(**{"CF-Connecting-IP": "198.51.100.9"}))
+        self.assertIn("198.51.100.9", servidor.FAILS)
+        self.assertNotIn("127.0.0.1", servidor.FAILS)
+        pin = servidor.net_config()["pin"]
+        bloqueado = self.dom("POST", "/api/login", ("pin=" + pin).encode(),
+                             self.forma(**{"CF-Connecting-IP": "198.51.100.9"}))
+        self.assertEqual(bloqueado[0], 200)
+        self.entra(pin, ip_real="203.0.113.7")
+
+    def test_x_forwarded_for_vale_o_ultimo_e_o_torto_cai_no_endereco(self):
+        self.dom("POST", "/api/login", b"pin=000000", self.forma(**{"X-Forwarded-For": "10.0.0.1, 203.0.113.9"}))
+        self.assertIn("203.0.113.9", servidor.FAILS)
+        servidor.FAILS.clear()
+        self.dom("POST", "/api/login", b"pin=000000", self.forma(**{"CF-Connecting-IP": "nao-e-ip"}))
+        self.assertIn("127.0.0.1", servidor.FAILS)
+        servidor.FAILS.clear()
+        self.dom("POST", "/api/login", b"pin=000000",
+                 self.forma(**{"CF-Connecting-IP": "x", "X-Forwarded-For": "203.0.113.5"}))
+        self.assertIn("203.0.113.5", servidor.FAILS)
+
+    def test_cabecalho_de_proxy_nao_vale_fora_do_dominio(self):
+        self.precisa_rede()
+        form = {"Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": "203.0.113.1",
+                "Origin": "http://%s:%d" % (self.ip_host, self.port)}
+        self.req("POST", "/api/login", b"pin=000000", form, rede=True)
+        self.assertIn(self.ip_visto, servidor.FAILS)
+        self.assertNotIn("203.0.113.1", servidor.FAILS)
+
+    # ---------- corpo grande ----------
+    def test_corpo_grande_pelo_dominio_exige_o_pin(self):
+        sessao = self.entra(servidor.net_config()["pin"])   # a entrada fica fora do teto abaixo
+        with mock.patch.object(servidor, "MAX_BODY_ANON", 4):
+            self.assertEqual(self.texto("POST", "/api/local/demandas/vista", b"{      }"),
+                             (413, "Entre com o PIN antes de enviar arquivos."))
+            self.assertEqual(self.dom("POST", "/api/local/demandas/vista", b"{      }", sessao)[0], 200)
+            self.assertEqual(self.post("vista", b"{      }")[0], 200)
+
+
+    # ---------- sem Host, e o _ip_cliente de perto ----------
+    def test_pedido_sem_host_nao_vira_publico(self):
+        with mock.patch.object(servidor, "HOSTS_PUB", frozenset({"xxxx"})):
+            n, linha = self.raw(["GET /api/eu HTTP/1.0"])   # sem cabeçalho Host
+            self.assertEqual((n, linha.split(" ")[1]), (1, "200"))   # segue sendo o computador principal
+            n, linha = self.raw(["POST /api/local/demandas/vista HTTP/1.0", "Origin: http://XXXX",
+                                 "Content-Type: application/json", "Content-Length: 2"], b"{}")
+            self.assertEqual((n, linha.split(" ")[1]), (1, "403"))   # sem Host nenhuma origem casa
+
+    def ip_handler(self, headers, ip="127.0.0.1"):
+        h = servidor.Handler.__new__(servidor.Handler)
+        h.headers = headers
+        h.client_address = (ip, 4321)
+        return h
+
+    def test_ip_cliente_so_confia_no_cabecalho_do_dominio(self):
+        casos = [
+            ({"CF-Connecting-IP": "203.0.113.1"}, "127.0.0.1", "127.0.0.1"),                  # sem domínio: ignora
+            ({"Host": self.DOM, "CF-Connecting-IP": "203.0.113.1"}, "127.0.0.1", "203.0.113.1"),   # o túnel
+            ({"Host": self.DOM, "CF-Connecting-IP": "203.0.113.1"}, "192.168.0.9", "192.168.0.9"),  # não é o túnel
+            ({"Host": self.DOM, "X-Forwarded-For": "203.0.113.9, lixo"}, "127.0.0.1", "203.0.113.9"),
+            ({"Host": self.DOM, "X-Forwarded-For": "lixo, pior"}, "127.0.0.1", "127.0.0.1"),
+            ({"Host": self.DOM, "CF-Connecting-IP": " 2001:db8::1 "}, "127.0.0.1", "2001:db8::1"),
+            ({"Host": self.DOM}, "127.0.0.1", "127.0.0.1"),                                   # sem cabeçalho nenhum
+        ]
+        for headers, conexao, esperado in casos:
+            self.assertEqual(self.ip_handler(headers, conexao)._ip_cliente(), esperado, headers)
+
+    def test_main_anuncia_o_modo_hospedado(self):
+        nao = AssertionError("não devia ligar servidor de verdade")
+        with mock.patch.object(servidor, "HOSTS_PUB", frozenset({"b.exemplo.com", "a.exemplo.com"})), \
+                mock.patch.object(servidor, "net_config", return_value={"on": False, "pin": "123456", "pin_op": "654321"}), \
+                mock.patch.object(servidor, "sessions_load"), \
+                mock.patch.object(servidor, "api_mod"), \
+                mock.patch.object(servidor, "iniciar_fundo"), \
+                mock.patch.object(servidor, "sempre", mock.Mock(side_effect=nao)), \
+                mock.patch.object(servidor, "Server") as srv, \
+                mock.patch("sys.stdout", io.StringIO()) as saida:
+            servidor.main([])
+        self.assertIn("Modo hospedado (só com PIN, nunca como o computador principal): "
+                      "https://a.exemplo.com, https://b.exemplo.com", saida.getvalue())
+        srv.return_value.serve_forever.assert_called_once()
+
+    def test_main_calado_sem_a_variavel(self):
+        with mock.patch.object(servidor, "HOSTS_PUB", frozenset()), \
+                mock.patch.object(servidor, "net_config", return_value={"on": False, "pin": "123456", "pin_op": "654321"}), \
+                mock.patch.object(servidor, "sessions_load"), \
+                mock.patch.object(servidor, "api_mod"), \
+                mock.patch.object(servidor, "iniciar_fundo"), \
+                mock.patch.object(servidor, "Server"), \
+                mock.patch("sys.stdout", io.StringIO()) as saida:
+            servidor.main([])
+        self.assertNotIn("Modo hospedado", saida.getvalue())
 
 
 if __name__ == "__main__":

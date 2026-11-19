@@ -3,6 +3,8 @@
 Acesso: o próprio computador entra direto (papel "maquina", o Escritório); pela rede,
 com o acesso ligado, só com PIN. O PIN do escritório abre tudo ("completo"); o PIN dos operadores só alcança a tela
 de operador das demandas ("operador"). O papel chega ao demandas/api.py em ctx["papel"].
+DEMANDAS_HOSTS=demandas.empresa.com.br liga o modo hospedado (túnel Cloudflare ou proxy): o pedido que chega
+por esse domínio conta como de fora, nunca como "maquina", e só passa com o PIN — ver hosts_publicos().
 Só biblioteca padrão. Rodar: py -3 servidor.py (ou iniciar.bat).
 """
 
@@ -49,6 +51,25 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 TYPES = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
          ".html": "text/html; charset=utf-8"}
+PROXY_IPS = ("CF-Connecting-IP", "X-Forwarded-For")   # só valem no pedido do domínio (ver _ip_cliente)
+
+
+def hosts_publicos(bruto: str | None = None) -> frozenset:
+    """Domínios aceitos de fora, de DEMANDAS_HOSTS ("a.com.br, b.com.br"). Nome de máquina, não URL: entrada
+    com esquema, caminho ou caractere estranho é descartada em silêncio (um valor torto nunca abre acesso)."""
+    bruto = os.environ.get("DEMANDAS_HOSTS") if bruto is None else bruto
+    nomes = set()
+    for parte in (bruto or "").replace(";", ",").split(","):
+        nome = parte.strip().lower().rstrip(".")
+        if re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}(:[0-9]{1,5})?", nome):
+            nomes.add(nome)
+    return frozenset(nomes)
+
+
+# Modo hospedado: com DEMANDAS_HOSTS definida, o pedido que chega com esse Host veio de fora (túnel Cloudflare
+# ou proxy no próprio PC). Ele nunca vale como "maquina", só passa com o PIN e o cookie dele sai com Secure —
+# senão o túnel, que conecta pelo loopback, daria acesso total sem senha a quem abrisse o domínio.
+HOSTS_PUB = hosts_publicos()
 
 # Acesso pela rede (data/rede.json). Fora da máquina tudo exige o PIN; a própria máquina entra direto.
 NET_ON = False          # estado em uso: só muda ao religar o servidor (é ele que escolhe a interface)
@@ -324,13 +345,30 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return {"127.0.0.1:%d" % port, "localhost:%d" % port}
 
+    def _publico(self) -> bool:
+        """Pedido que entrou por um domínio de DEMANDAS_HOSTS: veio de fora, mesmo conectando pelo loopback
+        (o túnel roda no próprio PC). Quem chega assim nunca é "maquina" e sempre precisa do PIN."""
+        host = (self.headers.get("Host") or "").strip().lower().rstrip(".")
+        return host in HOSTS_PUB
+
     def _host_ok(self) -> bool:
         # Host estranho = outro site apontando um domínio para 127.0.0.1 (DNS rebinding)
         host = self.headers.get("Host")
-        if host is None or host in self._local() or (NET_ON and ip_host(host, self.server.server_address[1])):
+        if host is None or host in self._local() or self._publico() \
+                or (NET_ON and ip_host(host, self.server.server_address[1])):
             return True
         self._fail(421, "Host não aceito.")
         return False
+
+    def _origens(self) -> set:
+        """Origens aceitas num POST: o próprio computador por http e o domínio público só por https (o túnel
+        nunca entrega http). Já passou pelo _host_ok, então o Host aqui é um dos aceitos."""
+        ok = {"http://" + h for h in self._local()}
+        if self._publico():
+            ok.add("https://" + (self.headers.get("Host") or "").strip().lower().rstrip("."))
+        else:
+            ok.add("http://" + (self.headers.get("Host") or ""))
+        return ok
 
     def _remote(self) -> bool:
         try:
@@ -338,14 +376,28 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return True
 
+    def _ip_cliente(self) -> str:
+        """IP de quem pediu, para o bloqueio de PIN errado. O cabeçalho do proxy vale só no pedido do domínio
+        público vindo do loopback (é o túnel no próprio PC); de qualquer outro lugar ele é forjável e é
+        ignorado. Sem ele, o túnel jogaria toda a internet num único balde de 5 erros."""
+        if self._publico() and not self._remote():
+            for nome in PROXY_IPS:
+                for bruto in reversed((self.headers.get(nome) or "").split(",")):   # o último é o do proxy
+                    try:
+                        return str(ipaddress.ip_address(bruto.strip()))
+                    except ValueError:
+                        continue
+        return self.client_address[0]
+
     def _auth_ok(self) -> bool:
-        """Quem vem da rede precisa da sessão aberta com o PIN; sem ela, a página de entrada.
+        """Quem vem da rede ou do domínio precisa da sessão aberta com o PIN; sem ela, a página de entrada.
         Guarda o perfil do pedido em self.papel: "maquina", "completo" ou "operador"."""
         self.papel = None
-        if not self._remote():
+        publico = self._publico()
+        if not publico and not self._remote():
             self.papel = "maquina"
             return True
-        if not NET_ON:
+        if not publico and not NET_ON:
             self._fail(403, "Acesso pela rede desligado.")
             return False
         self.papel = session_ok(self.headers.get("Cookie"))
@@ -594,27 +646,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._fail(400, "Content-Length ausente ou inválido.")
         if length > MAX_BODY:
             return self._recusa_grande("Arquivo grande demais.", length)
-        if length > MAX_BODY_ANON and self._remote() and not (NET_ON and session_ok(self.headers.get("Cookie"))):
+        de_fora = self._publico() or self._remote()   # túnel ou rede: sem sessão, só o PIN entra
+        com_sessao = (self._publico() or NET_ON) and session_ok(self.headers.get("Cookie"))
+        if length > MAX_BODY_ANON and de_fora and not com_sessao:
             return self._recusa_grande("Entre com o PIN antes de enviar arquivos.", length)
         # o corpo é lido antes de qualquer recusa: fechar a conexão com dados por ler vira RST no Windows
         data = self.rfile.read(length) if length else b""
         if not self._host_ok():
             return
         origin = self.headers.get("Origin")
-        allowed = {"http://" + h for h in self._local()} | {"http://" + (self.headers.get("Host") or "")}
-        if origin is not None and origin not in allowed:
+        if origin is not None and origin not in self._origens():
             return self._fail(403, "Origem não aceita.")  # outro site postando no servidor
         path = self.path.split("?", 1)[0]
         if path == "/api/login":
-            if not (self._remote() and NET_ON):
+            if not (self._publico() or (self._remote() and NET_ON)):
                 return self._fail(403, "Acesso pela rede desligado.")
             pin = (parse_qs(data.decode("utf-8", "replace")).get("pin") or [""])[0].strip()
-            token = check_pin(self.client_address[0], pin)
+            token = check_pin(self._ip_cliente(), pin)
             if token is None:
                 return self._login_page("PIN errado. Depois de 5 erros, espere 5 minutos.")
             self.send_response(303)
             self.send_header("Location", "/")
-            self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d" % (COOKIE, token, SESSION_DAYS * 86400))
+            # Secure só no domínio: o cookie do túnel nunca deve sair por http, e o da rede local não tem https
+            self.send_header("Set-Cookie", "%s=%s; Path=/; HttpOnly; SameSite=Strict%s; Max-Age=%d"
+                             % (COOKIE, token, "; Secure" if self._publico() else "", SESSION_DAYS * 86400))
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
@@ -796,6 +851,9 @@ def main(argv=None) -> None:
     print(f"Central de demandas aberta em http://{HOST}:{PORT}")
     if NET_ON:
         print("Acesso pela rede ligado (com PIN): " + ", ".join("http://%s:%d" % (a, PORT) for a in lan_addresses()))
+    if HOSTS_PUB:
+        print("Modo hospedado (só com PIN, nunca como o computador principal): "
+              + ", ".join("https://%s" % h for h in sorted(HOSTS_PUB)))
     server.serve_forever()
 
 
