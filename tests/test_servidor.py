@@ -1217,10 +1217,12 @@ class Fundo(unittest.TestCase):
         return mock.patch.multiple(servidor, sempre=mock.Mock(side_effect=nao), ligado=mock.Mock(side_effect=nao),
                                    _roda_filho=mock.Mock(side_effect=nao))
 
-    def roda_main(self, rede, server=None, lan=("10.0.0.5",)):
+    def roda_main(self, rede, server=None, lan=("10.0.0.5",), hosts=frozenset()):
+        """hosts fixo: sem isso um DEMANDAS_HOSTS na máquina de quem roda os testes entra na saída do main."""
         srv = mock.Mock()
         srv.serve_forever.side_effect = KeyboardInterrupt
         with self.sem_processos(), mock.patch.object(servidor, "net_config", return_value={"on": rede}), \
+                mock.patch.object(servidor, "HOSTS_PUB", hosts), \
                 mock.patch.object(servidor, "sessions_load") as sl, \
                 mock.patch.object(servidor, "Server", side_effect=server, return_value=srv) as cls, \
                 mock.patch.object(servidor, "lan_addresses", return_value=list(lan)), \

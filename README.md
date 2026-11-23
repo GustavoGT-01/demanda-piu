@@ -52,11 +52,12 @@ porta no roteador e sem IP fixo. **Quem entra pelo domínio nunca é o Escritór
    winget install --id Cloudflare.cloudflared
    ```
 
-3. **Crie o túnel** em <https://one.dash.cloudflare.com> → *Networks* → *Tunnels* → *Create a tunnel* →
-   *Cloudflared*. Cole no PowerShell **como administrador** o comando que o painel mostra (ele instala o
+3. **Crie o túnel** em <https://one.dash.cloudflare.com> → *Networking* → *Tunnels* → *Create a tunnel*.
+   Escolha o Windows e cole no PowerShell **como administrador** o comando que o painel mostra (ele instala o
    cloudflared como serviço do Windows, que sobe junto com o PC).
-4. **Aponte o subdomínio** na aba *Public Hostname* do túnel: subdomínio `demandas`, seu domínio, tipo `HTTP`,
-   URL `127.0.0.1:8090`. Não mexa no *HTTP Host Header*: o programa aceita o domínio como ele chega.
+4. **Aponte o subdomínio** na aba *Routes* do túnel: *Add route* → *Published application*, subdomínio
+   `demandas`, seu domínio, *Service URL* `http://127.0.0.1:8090`. Não mexa no *HTTP Host Header*: o programa
+   aceita o domínio como ele chega. A rota cria o registro de DNS sozinha — não crie nada à mão.
 5. **Avise o programa qual é o domínio** (é isto que liga o modo hospedado). No PowerShell como administrador:
 
    ```powershell
@@ -69,10 +70,11 @@ porta no roteador e sem IP fixo. **Quem entra pelo domínio nunca é o Escritór
    imprime quando sobe pela tarefa agendada), a linha
    `Modo hospedado (só com PIN, nunca como o computador principal): https://demandas.seudominio.com`.
    Abra o endereço: deve aparecer a tela do PIN. Os PINs estão em **⚙ Configurações**, no próprio PC.
-7. **Trave também na Cloudflare (recomendado).** Zero Trust → *Access* → *Applications* → *Add an application*
-   → *Self-hosted*, domínio `demandas.seudominio.com`, política *Allow* para os e-mails (ou para um domínio de
-   e-mail) com *One-time PIN*. Grátis até 50 pessoas. Fica uma camada antes do PIN: mesmo que o endereço vaze,
-   ninguém chega à tela de entrada.
+7. **Trave também na Cloudflare (recomendado).** Zero Trust → *Access controls* → *Applications* → *Create new
+   application* → *Self-hosted and private* → *Add public hostname*, domínio `demandas.seudominio.com`, uma
+   política *Allow* com os e-mails (ou um domínio de e-mail) e o provedor *One-time PIN* (código por e-mail).
+   Toda aplicação do Access nega por padrão. Fica uma camada antes do PIN: mesmo que o endereço vaze, ninguém
+   chega à tela de entrada. O plano gratuito do Zero Trust atende um time pequeno; o limite aparece no painel.
 
 O que o modo hospedado muda, por dentro (`servidor.py`):
 
